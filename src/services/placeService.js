@@ -1,0 +1,45 @@
+import api from './api'
+
+export const placeService = {
+  // RF03 - Tinder de Viagens (requer auth + tripId)
+  discover: (tripId, day) =>
+    api
+      .get('/places/discover', { params: { tripId, ...(day != null && { day }) } })
+      .then((res) => {
+        const d = res?.data ?? {};
+        const places = Array.isArray(d.data) ? d.data : Array.isArray(d.places) ? d.places : [];
+        return {
+          places,
+          likesRemaining: d.likesRemaining ?? 5,
+          likesLimit: d.likesLimit ?? 5,
+          currentDay: d.currentDay ?? 1,
+          upgradeRequired: d.upgradeRequired === true,
+          totalTripDays: d.totalTripDays,
+          freeMaxDays: d.freeMaxDays,
+        };
+      }),
+  like: (tripId, placeId, itineraryDay, placeData) =>
+    api.post('/places/like', { tripId, placeId, itineraryDay, placeData }).then((res) => ({
+      ...res.data,
+      likesRemaining: res.data.likesRemaining ?? res.data.data?.likesRemaining,
+      currentDay: res.data.currentDay,
+    })),
+  dislike: (tripId, placeId, place) =>
+    api.post('/places/dislike', { tripId, placeId, place }),
+  skip: (tripId, place) =>
+    api.post('/places/skip', { tripId, place }),
+  cacheSkippedPlaces: (tripId, places) =>
+    api.post('/places/discover/cache-skipped', { tripId, places }),
+
+  // RF09 - Recomendador Gratuito (público, via API Gateway)
+  // POST /api/places/recommendations-free → Gateway → Place Service → Agente IA
+  getRecommendationsFree: (formData) =>
+    api
+      .post('/places/recommendations-free', formData)
+      .then((res) => ({ recommendations: res.data.data || [], count: res.data.count ?? 0 })),
+  addFavorite: (recommendation) =>
+    api.post('/places/recommendations-free/favorites', recommendation),
+  removeFavorite: (id) => api.delete(`/places/recommendations-free/favorites/${id}`),
+  getFavorites: () =>
+    api.get('/places/recommendations-free/favorites').then((res) => res.data.data || []),
+}
