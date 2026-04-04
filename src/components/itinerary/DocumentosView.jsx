@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
@@ -54,12 +55,16 @@ export function DocumentosView({ tripId, trip, hasPlanejamentoCompleto, onUpgrad
           </div>
           <h2 className="text-2xl font-bold mb-2">Assistente de Documentos</h2>
           <p className="text-text-secondary mb-6">
-            Checklist de documentos e lista de bagagem personalizada por IA. Disponível no plano Planejamento Completo.
+            Checklist de viagem, recomendações de bagagem por IA e apoio documental — tudo alinhado ao seu roteiro (não é o
+            mesmo fluxo da página Descobrir). Incluso no Planejamento Completo.
           </p>
-          <Button className="w-full" size="lg">
+          <Link
+            to={`/pagamento?tripId=${encodeURIComponent(tripId || '')}`}
+            className="w-full rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-[#1c1c0d] hover:opacity-90 hover:shadow-primary px-8 py-4 text-base"
+          >
             <Icon name="workspace_premium" />
             Adquirir Planejamento Completo
-          </Button>
+          </Link>
           {import.meta.env.DEV && (
             <Button variant="secondary" className="w-full mt-2" size="sm" onClick={handleDevUpgrade}>
               Testar plano (dev)

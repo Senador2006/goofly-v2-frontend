@@ -10,12 +10,11 @@ export const placeService = {
         const places = Array.isArray(d.data) ? d.data : Array.isArray(d.places) ? d.places : [];
         return {
           places,
-          likesRemaining: d.likesRemaining ?? 5,
-          likesLimit: d.likesLimit ?? 5,
+          likesRemaining: d.likesRemaining ?? null,
+          likesLimit: d.likesLimit ?? null,
           currentDay: d.currentDay ?? 1,
-          upgradeRequired: d.upgradeRequired === true,
-          totalTripDays: d.totalTripDays,
-          freeMaxDays: d.freeMaxDays,
+          totalLikes: d.totalLikes ?? 0,
+          tdvRestriction: d.tdvRestriction ?? null,
         };
       }),
   like: (tripId, placeId, itineraryDay, placeData) =>
@@ -30,6 +29,8 @@ export const placeService = {
     api.post('/places/skip', { tripId, place }),
   cacheSkippedPlaces: (tripId, places) =>
     api.post('/places/discover/cache-skipped', { tripId, places }),
+  getTdvSummary: (tripId) =>
+    api.get('/places/discover/summary', { params: { tripId } }).then((res) => res.data.data),
 
   // RF09 - Recomendador Gratuito (público, via API Gateway)
   // POST /api/places/recommendations-free → Gateway → Place Service → Agente IA

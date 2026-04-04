@@ -19,7 +19,7 @@ export function Discover() {
     <div className="flex flex-col min-h-[calc(100vh-2rem)]">
       <Header
         title="Descobrir"
-        subtitle="Recomendador Gratuito — 3 lugares para sua próxima viagem"
+        subtitle="Gratuito: 3 ideias por interesse. Roteiro completo, TDV em todos os dias, documentos e recomendações da viagem estão no Planejamento Completo."
         showSearch={true}
       />
       <RecommendationsFree isAuthenticated={isAuthenticated} />

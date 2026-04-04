@@ -47,7 +47,7 @@ export function Pagamento() {
         </div>
         <h1 className="text-2xl font-bold text-[#1c1c0d] dark:text-white mb-2">Tudo certo!</h1>
         <p className="text-text-secondary text-center max-w-sm mb-6">
-          Planejamento Completo ativado. Roteiro completo e documentos liberados. Redirecionando...
+          Roteiro integral, TDV em todos os dias, documentos e recomendações da viagem liberados. Redirecionando...
         </p>
       </div>
     )
@@ -59,7 +59,9 @@ export function Pagamento() {
         Desbloqueie seu roteiro
       </h1>
       <p className="text-text-secondary mb-8">
-        O TDV gratuito pode ser usado em 25% dos dias da sua viagem. Com o Planejamento Completo você usa o roteiro em todos os dias e libera documentos.
+        No plano gratuito você vê cerca de 25% do roteiro e usa o TDV em até 25% dos dias da viagem. Ao adquirir o
+        Planejamento Completo, tudo que é da sua viagem (roteiro, TDV, documentos e recomendações contextuais) fica
+        liberado. A página Descobrir continua gratuita à parte, para explorar ideias antes de planejar.
       </p>
 
       <div className="bg-background-light dark:bg-[#23220f] border border-border-light dark:border-border-dark rounded-2xl p-6 mb-8">
@@ -69,17 +71,21 @@ export function Pagamento() {
           </div>
           <div>
             <h2 className="font-bold text-[#1c1c0d] dark:text-white">Planejamento Completo</h2>
-            <p className="text-sm text-text-secondary">Roteiro completo + Documentos</p>
+            <p className="text-sm text-text-secondary">Sua viagem, sem limite</p>
           </div>
         </div>
         <ul className="space-y-2 text-sm text-text-secondary mb-6">
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />
-            Usar o TDV em todos os dias da viagem (sem limite de 25%)
+            Roteiro completo (100% das atividades)
           </li>
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />
-            Checklist de documentos da viagem
+            TDV em todos os dias do planejamento
+          </li>
+          <li className="flex items-center gap-2">
+            <Icon name="check" className="text-primary shrink-0" />
+            Assistente de documentos e recomendações de bagagem por IA (por viagem)
           </li>
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />

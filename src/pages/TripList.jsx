@@ -21,10 +21,12 @@ export function TripList() {
   const [deletingId, setDeletingId] = useState(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
+  const tripQueryParams = () => (filterParam !== 'all' ? { status: filterParam } : {})
+
   const loadTrips = async () => {
     try {
       setError(null)
-      const data = await tripService.getTrips(filterParam !== 'all' ? { status: filterParam } : {})
+      const data = await tripService.getTrips(tripQueryParams())
       setTrips(Array.isArray(data) ? data : [])
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Erro ao carregar viagens')
@@ -34,17 +36,29 @@ export function TripList() {
     }
   }
 
+  /** Recarrega lista sem sobrescrever com erro de rede (ex.: após delete já bem-sucedido). */
+  const refreshTripsBestEffort = async () => {
+    try {
+      const data = await tripService.getTrips(tripQueryParams())
+      setTrips(Array.isArray(data) ? data : [])
+    } catch {
+      /* mantém estado atual */
+    }
+  }
+
   useEffect(() => {
     setLoading(true)
     loadTrips()
   }, [filterParam])
 
   const handleDelete = async (tripId) => {
+    setDeletingId(tripId)
+    setError(null)
     try {
-      setDeletingId(tripId)
       await tripService.deleteTrip(tripId)
       setConfirmDeleteId(null)
-      await loadTrips()
+      setTrips((prev) => prev.filter((t) => String(t.id) !== String(tripId)))
+      await refreshTripsBestEffort()
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Erro ao apagar viagem')
     } finally {

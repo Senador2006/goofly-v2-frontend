@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
@@ -17,33 +17,23 @@ function getDisplayImageUrl(value) {
   return value || PLACEHOLDER_IMAGE
 }
 
-const LIKES_PER_DAY = 5
-
 /**
- * TDV — Tinder de Viagens
- * Lugares em cards (info + links). Like → roteiro; recusados/não vistos → cache para outros dias.
- * 5 likes por dia; 25% dos dias gratuitos (tripLimitService no backend).
- * Só chama discover quando está ativo (aba TDV) e a lista de lugares está vazia — evita gastar requests ao sair/voltar.
+ * TDV — uma coluna principal: card em destaque, resumo e histórico abaixo (sem terceira barra lateral).
  */
-export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
+export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSatisfied, finalizingTdv = false }) {
+  const navigate = useNavigate()
   const [places, setPlaces] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [likesRemaining, setLikesRemaining] = useState(LIKES_PER_DAY)
-  const [likesUsed, setLikesUsed] = useState(0)
   const [currentDay, setCurrentDay] = useState(1)
+  const [totalLikes, setTotalLikes] = useState(0)
+  const [likedPlaces, setLikedPlaces] = useState([])
+  const [dislikedPlaces, setDislikedPlaces] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [swipeFeedback, setSwipeFeedback] = useState(null)
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [totalTripDays, setTotalTripDays] = useState(null)
-  const [freeMaxDays, setFreeMaxDays] = useState(null)
-  const [upgradeRequired, setUpgradeRequired] = useState(false)
+  const [tdvRestriction, setTdvRestriction] = useState(null)
 
   const currentPlace = places[currentIndex]
-  const dayFull = likesRemaining <= 0 && likesUsed >= LIKES_PER_DAY
-  const atFreeDayLimit = freeMaxDays != null && currentDay > freeMaxDays
-  const likeDisabled = likesRemaining <= 0 || atFreeDayLimit
-  const showLimitReached = upgradeRequired || (atFreeDayLimit && !currentPlace)
 
   const loadPlaces = useCallback(async (day) => {
     if (!tripId) {
@@ -55,22 +45,28 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
     try {
       const res = await placeService.discover(tripId, day)
       const p = res.places ?? []
-      const lr = res.likesRemaining ?? LIKES_PER_DAY
-      const limit = res.likesLimit ?? LIKES_PER_DAY
       const cd = res.currentDay ?? 1
+      setTdvRestriction(res.tdvRestriction ?? null)
       setPlaces(Array.isArray(p) ? p : [])
-      setLikesRemaining(lr)
-      setLikesUsed((limit ?? LIKES_PER_DAY) - lr)
+      setTotalLikes(res.totalLikes ?? 0)
       setCurrentDay(day != null ? day : cd)
       setCurrentIndex(0)
-      if (res.totalTripDays != null) setTotalTripDays(res.totalTripDays)
-      if (res.freeMaxDays != null) setFreeMaxDays(res.freeMaxDays)
-      setUpgradeRequired(Boolean(res.upgradeRequired))
-      if (res.upgradeRequired) setShowUpgradeModal(true)
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Erro ao carregar lugares')
     } finally {
       setLoading(false)
+    }
+  }, [tripId])
+
+  const loadSummary = useCallback(async () => {
+    if (!tripId) return
+    try {
+      const summary = await placeService.getTdvSummary(tripId)
+      setLikedPlaces(summary?.likedPlaces || [])
+      setDislikedPlaces(summary?.dislikedPlaces || [])
+      setTotalLikes(summary?.likesCount || 0)
+    } catch {
+      // silencioso
     }
   }, [tripId])
 
@@ -81,22 +77,23 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
       setPlaces([])
       setCurrentDay(1)
       setCurrentIndex(0)
+      setLikedPlaces([])
+      setDislikedPlaces([])
+      setTotalLikes(0)
+      setTdvRestriction(null)
+      setError(null)
     }
   }, [tripId])
 
-  // Só chama discover quando o usuário está na aba TDV e não tem lugares (evita chamadas ao sair/voltar)
   useEffect(() => {
     if (!isActive || !tripId || places.length > 0 || loading) return
     loadPlaces()
-  }, [isActive, tripId, places.length, loading, loadPlaces])
+    loadSummary()
+  }, [isActive, tripId, places.length, loading, loadPlaces, loadSummary])
 
   const handleNextDay = useCallback(async () => {
     if (!tripId) return
     const nextDay = currentDay + 1
-    if (freeMaxDays != null && nextDay > freeMaxDays) {
-      setShowUpgradeModal(true)
-      return
-    }
     if (places.length > 0) {
       try {
         await placeService.cacheSkippedPlaces(tripId, places)
@@ -107,12 +104,12 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
     }
     await loadPlaces(nextDay)
     onItineraryUpdate?.()
-  }, [tripId, places, currentDay, freeMaxDays, loadPlaces, onItineraryUpdate])
+  }, [tripId, places, currentDay, loadPlaces, onItineraryUpdate])
 
   const getPlaceId = (p) => p?.id ?? p?.placeId ?? p?.place_id
 
   const handleLike = useCallback(async () => {
-    if (!currentPlace || !tripId || likesRemaining <= 0) return
+    if (!currentPlace || !tripId) return
     const placeId = getPlaceId(currentPlace)
     if (!placeId) {
       setError('Lugar sem ID válido')
@@ -124,26 +121,30 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
       const placeData = {
         name: currentPlace.name,
         description: currentPlace.description || currentPlace.aiReasoning,
-        location: currentPlace.location || (currentPlace.city && currentPlace.country ? `${currentPlace.city}, ${currentPlace.country}` : undefined)
+        location:
+          currentPlace.location ||
+          (currentPlace.city && currentPlace.country ? `${currentPlace.city}, ${currentPlace.country}` : undefined),
       }
       const res = await placeService.like(tripId, placeId, currentDay, placeData)
-      setLikesRemaining(typeof res?.likesRemaining === 'number' ? res.likesRemaining : Math.max(0, likesRemaining - 1))
-      setLikesUsed((u) => u + 1)
+      setTotalLikes(typeof res?.likesUsedTotal === 'number' ? res.likesUsedTotal : totalLikes + 1)
       setCurrentDay(res?.currentDay ?? currentDay)
+      setLikedPlaces((prev) => [{ placeId, name: currentPlace.name, day: res?.currentDay ?? currentDay }, ...prev])
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
       setCurrentIndex(0)
       onItineraryUpdate?.()
     } catch (err) {
       setSwipeFeedback(null)
       const code = err.response?.data?.error?.code
-      if (code === 'UPGRADE_REQUIRED') {
-        setShowUpgradeModal(true)
+      const msg = err.response?.data?.error?.message || err.message || 'Erro ao dar like'
+      if (code === 'TDV_DAY_LIMIT') {
         setError(null)
+        setPlaces([])
+        setTdvRestriction({ message: msg })
       } else {
-        setError(err.response?.data?.error?.message || 'Erro ao dar like')
+        setError(msg)
       }
     }
-  }, [currentPlace, tripId, currentDay, likesRemaining, onItineraryUpdate])
+  }, [currentPlace, tripId, currentDay, totalLikes, onItineraryUpdate])
 
   const handleDislike = useCallback(async () => {
     if (!currentPlace || !tripId) return
@@ -156,6 +157,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
     setTimeout(() => setSwipeFeedback(null), 400)
     try {
       await placeService.dislike(tripId, placeId, currentPlace)
+      setDislikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev].slice(0, 30))
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
       setCurrentIndex(0)
     } catch (err) {
@@ -171,208 +173,250 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
         e.preventDefault()
         handleDislike()
       }
-      if (e.key === 'ArrowRight' && !likeDisabled) {
+      if (e.key === 'ArrowRight') {
         e.preventDefault()
         handleLike()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [currentPlace, likeDisabled, handleLike, handleDislike])
+  }, [currentPlace, handleLike, handleDislike])
 
-  if (loading) return <LoadingSpinner />
-  if (error) {
+  const firstDest = trip?.destinations?.[0]
+  const destTitle = firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Sua viagem'
+
+  const choicesPanel = (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl mx-auto">
+      <div className="p-3 sm:p-4 rounded-2xl bg-primary/[0.08] dark:bg-primary/[0.06] border border-primary/20">
+        <h5 className="font-bold text-xs sm:text-sm mb-1 flex items-center gap-2 text-[#1c1c0d] dark:text-white">
+          <Icon name="favorite" className="text-base text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
+          Curtidas
+        </h5>
+        <p className="text-[10px] text-text-secondary mb-2">Preferências que entram no roteiro</p>
+        {likedPlaces.length === 0 ? (
+          <p className="text-xs text-text-secondary">Nenhuma ainda — curta um card!</p>
+        ) : (
+          <ul className="space-y-1.5 max-h-28 overflow-y-auto">
+            {likedPlaces.map((place, idx) => (
+              <li
+                key={`${place.placeId}-${idx}`}
+                className="text-xs text-[#1c1c0d] dark:text-white flex items-start gap-2"
+              >
+                <Icon name="check_circle" className="text-primary text-sm shrink-0 mt-0.5" />
+                <span className="line-clamp-2">{place.name}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="p-3 sm:p-4 rounded-2xl bg-red-500/[0.07] border border-red-500/20">
+        <h5 className="font-bold text-xs sm:text-sm mb-1 flex items-center gap-2 text-[#1c1c0d] dark:text-white">
+          <Icon name="close" className="text-base text-red-500 dark:text-red-400" />
+          Descartados
+        </h5>
+        <p className="text-[10px] text-text-secondary mb-2">Evitados nas próximas sugestões</p>
+        {dislikedPlaces.length === 0 ? (
+          <p className="text-xs text-text-secondary">Nenhum descarte ainda</p>
+        ) : (
+          <ul className="space-y-1.5 max-h-28 overflow-y-auto">
+            {dislikedPlaces.map((place, idx) => (
+              <li
+                key={`${place.placeId}-${idx}`}
+                className="text-xs text-[#1c1c0d] dark:text-white/90 flex items-start gap-2"
+              >
+                <Icon name="not_interested" className="text-red-500/80 text-sm shrink-0 mt-0.5" />
+                <span className="line-clamp-2">{place.name}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+
+  if (loading) {
     return (
-      <div className="p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm">
-        {error}
+      <div className="flex-1 flex items-center justify-center min-h-[280px] bg-background-light dark:bg-[#1a190b]">
+        <LoadingSpinner />
       </div>
     )
   }
 
-  const firstDest = trip?.destinations?.[0]
-  const likesLimit = likesRemaining + likesUsed
+  if (error) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background-light dark:bg-[#1a190b]">
+        <div className="max-w-md w-full p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-2xl text-sm text-center">
+          {error}
+        </div>
+        <Button variant="secondary" className="mt-4 rounded-full" onClick={() => loadPlaces(currentDay)}>
+          Tentar de novo
+        </Button>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex flex-1 flex-col lg:flex-row overflow-hidden bg-background-light dark:bg-[#23220f]">
-      {showUpgradeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-card-dark rounded-2xl shadow-xl max-w-md w-full p-6 border border-border-light dark:border-border-dark">
-            <div className="flex justify-end">
-              <button type="button" onClick={() => setShowUpgradeModal(false)} className="text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white p-1" aria-label="Fechar">
-                <Icon name="close" />
-              </button>
-            </div>
-            <div className="rounded-full bg-primary/20 w-12 h-12 flex items-center justify-center mb-4">
-              <Icon name="lock" className="text-2xl text-primary" />
-            </div>
-            <h2 className="text-xl font-bold text-[#1c1c0d] dark:text-white mb-2">Limite atingido</h2>
-            <p className="text-text-secondary text-sm mb-6">
-              Só 25% dos dias da viagem são gratuitos. Adquira o planejamento completo para usar o TDV em todos os dias.
-            </p>
-            <Link to={tripId ? `/pagamento?tripId=${tripId}` : '/pagamento'} className="block w-full">
-              <Button className="w-full rounded-full font-bold">Adquirir planejamento completo</Button>
-            </Link>
-            <button type="button" onClick={() => setShowUpgradeModal(false)} className="w-full mt-3 py-2 text-sm text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white">
-              Fechar
-            </button>
+    <div className="flex flex-1 flex-col min-h-0 overflow-y-auto overflow-x-hidden bg-gradient-to-b from-background-light to-white dark:from-card-dark dark:to-background-dark">
+      {/* Faixa de contexto — substitui a barra lateral */}
+      <div className="flex-shrink-0 px-4 pt-4 pb-3 sm:px-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 max-w-3xl mx-auto">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Tinder de Viagens</p>
+            <p className="text-lg sm:text-xl font-bold text-[#1c1c0d] dark:text-white truncate">{destTitle}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark shadow-sm">
+              <Icon name="calendar_today" className="text-sm text-primary" />
+              Dia {currentDay}
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark shadow-sm">
+              <Icon name="favorite" className="text-sm text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
+              {totalLikes} curtida{totalLikes === 1 ? '' : 's'}
+            </span>
+            {tdvRestriction?.maxDays != null && tdvRestriction?.tripDays != null && (
+              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/25">
+                Grátis: {tdvRestriction.maxDays}/{tdvRestriction.tripDays} dias TDV
+              </span>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
-      <aside className="hidden xl:flex w-80 flex-col border-r border-border-light dark:border-border-dark p-6 md:p-8 bg-white dark:bg-card-dark overflow-y-auto">
-        <div className="mb-10">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-text-secondary mb-4">Sua Jornada</h3>
-          <h4 className="text-xl font-bold text-[#1c1c0d] dark:text-white">
-            {firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Viagem'}
-          </h4>
-        </div>
-        <div className="mb-10 p-5 rounded-xl bg-primary/10 dark:bg-primary/5 border border-primary/20">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-sm font-bold text-[#1c1c0d] dark:text-white">Dia {currentDay} — Likes</span>
-            <span className="text-sm font-bold text-[#1c1c0d] dark:text-white">{likesUsed}/{likesLimit}</span>
-          </div>
-          <div className="h-2 w-full bg-surface-light dark:bg-surface-dark rounded-full overflow-hidden">
-            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${likesLimit ? (likesUsed / likesLimit) * 100 : 0}%` }} />
-          </div>
-          {dayFull && places.length > 0 && !atFreeDayLimit && (
-            <Button onClick={handleNextDay} className="w-full mt-3 rounded-full">Próximo dia →</Button>
-          )}
-        </div>
-      </aside>
-
-      <main className="flex-1 flex flex-col items-center justify-center p-4 md:p-6 lg:p-8 min-h-0">
-        <div className="w-full max-w-3xl xl:max-w-4xl flex flex-col items-center">
+      <main className="flex-1 flex flex-col items-center px-4 sm:px-6 pb-6 min-h-0">
+        <div className="w-full max-w-lg sm:max-w-xl flex flex-col items-center gap-5 sm:gap-6">
           {currentPlace ? (
             <>
-              <div className="relative w-full flex justify-center items-center" style={{ minHeight: 'min(70vh, 520px)' }}>
+              <div className="relative w-full flex justify-center items-center" style={{ minHeight: 'min(58vh, 440px)' }}>
                 {places[currentIndex + 1] && (
                   <div
-                    className="absolute w-[92%] max-w-3xl aspect-[4/5] rounded-2xl overflow-hidden shadow-lg border border-border-light dark:border-border-dark bg-white dark:bg-card-dark transition-transform duration-300"
-                    style={{ transform: 'scale(0.92)', opacity: 0.6 }}
+                    className="absolute w-[94%] max-w-xl aspect-[3/4] rounded-3xl overflow-hidden shadow-lg border border-border-light dark:border-border-dark bg-card-dark transition-transform duration-300"
+                    style={{ transform: 'scale(0.94)', opacity: 0.55 }}
                   >
-                    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${getDisplayImageUrl(places[currentIndex + 1].image_url || places[currentIndex + 1].imageUrl)})` }} />
+                    <div
+                      className="absolute inset-0 bg-cover bg-center"
+                      style={{
+                        backgroundImage: `url(${getDisplayImageUrl(places[currentIndex + 1].image_url || places[currentIndex + 1].imageUrl)})`,
+                      }}
+                    />
                   </div>
                 )}
                 <div
-                  className={`relative w-full max-w-3xl aspect-[3/4] md:aspect-[4/5] rounded-2xl overflow-hidden shadow-xl border border-border-light dark:border-border-dark transition-transform duration-300 group ${swipeFeedback === 'like' ? 'scale-105 ring-4 ring-primary' : ''} ${swipeFeedback === 'dislike' ? 'scale-95 opacity-80' : ''}`}
+                  className={`relative w-full max-w-xl aspect-[3/4] sm:aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-black/5 dark:ring-white/10 transition-transform duration-300 group ${
+                    swipeFeedback === 'like' ? 'scale-[1.02] ring-4 ring-primary' : ''
+                  } ${swipeFeedback === 'dislike' ? 'scale-[0.98] opacity-85' : ''}`}
                 >
-                  <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" style={{ backgroundImage: `url(${getDisplayImageUrl(currentPlace.image_url || currentPlace.imageUrl)})` }} />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
-                  <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8 text-white">
-                    <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
+                  <div
+                    className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
+                    style={{
+                      backgroundImage: `url(${getDisplayImageUrl(currentPlace.image_url || currentPlace.imageUrl)})`,
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-7 text-white">
+                    <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1">
                       {(currentPlace.tags || currentPlace.categories || []).filter(Boolean).map((tag) => {
-                        const label = typeof tag === 'string' ? tag : (tag?.name || tag?.label || String(tag))
+                        const label = typeof tag === 'string' ? tag : tag?.name || tag?.label || String(tag)
                         return (
-                          <span key={label} className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+                          <span
+                            key={label}
+                            className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[9px] sm:text-[10px] font-bold uppercase tracking-wider whitespace-nowrap"
+                          >
                             {label}
                           </span>
                         )
                       })}
                     </div>
-                    <h1 className="text-3xl md:text-4xl font-extrabold mb-2 leading-tight">{currentPlace.name}</h1>
-                    <div className="flex items-center gap-2 text-white/90 mb-3">
+                    <h2 className="text-2xl sm:text-3xl font-extrabold mb-2 leading-tight drop-shadow-md">
+                      {currentPlace.name}
+                    </h2>
+                    <div className="flex items-center gap-2 text-white/90 mb-2">
                       <Icon name="location_on" className="text-sm shrink-0" />
-                      <span className="text-sm font-medium truncate">
-                        {currentPlace.location || (currentPlace.city && currentPlace.country ? `${currentPlace.city}, ${currentPlace.country}` : currentPlace.city || currentPlace.country || 'Destino')}
+                      <span className="text-xs sm:text-sm font-medium truncate">
+                        {currentPlace.location ||
+                          (currentPlace.city && currentPlace.country
+                            ? `${currentPlace.city}, ${currentPlace.country}`
+                            : currentPlace.city || currentPlace.country || 'Destino')}
                       </span>
                     </div>
-                    <p className="text-base text-white/90 max-w-lg leading-relaxed line-clamp-3">{currentPlace.description || currentPlace.aiReasoning || 'Descubra este lugar.'}</p>
-                    {(currentPlace.videoLinks || currentPlace.video_links)?.length > 0 && (
-                      <a
-                        href={(currentPlace.videoLinks || currentPlace.video_links)[0]}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 mt-3 text-sm text-white/90 hover:text-white font-medium"
-                      >
-                        <Icon name="play_circle" className="text-lg" />
-                        Ver Reel no Instagram
-                      </a>
-                    )}
+                    <p className="text-sm text-white/90 max-w-lg leading-relaxed line-clamp-4">
+                      {currentPlace.description || currentPlace.aiReasoning || 'Descubra este lugar.'}
+                    </p>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-center gap-6 md:gap-8 mt-6 md:mt-8">
+
+              <div className="flex items-center justify-center gap-8 sm:gap-10">
                 <button
                   type="button"
                   onClick={handleDislike}
-                  className="size-14 md:size-20 rounded-full bg-white dark:bg-card-dark flex items-center justify-center text-text-secondary hover:text-red-500 hover:shadow-xl hover:scale-110 active:scale-95 transition-all border border-border-light dark:border-border-dark"
+                  className="size-14 sm:size-16 rounded-full bg-white dark:bg-card-dark flex items-center justify-center text-text-secondary hover:text-red-500 hover:shadow-xl hover:scale-105 active:scale-95 transition-all border-2 border-border-light dark:border-border-dark"
                   aria-label="Descartar"
                 >
-                  <Icon name="close" className="text-3xl md:text-4xl" />
+                  <Icon name="close" className="text-2xl sm:text-3xl" />
                 </button>
                 <button
                   type="button"
                   onClick={handleLike}
-                  disabled={likeDisabled}
-                  className="size-14 md:size-20 rounded-full bg-primary flex items-center justify-center text-[#1c1c0d] hover:shadow-[0_10px_30px_rgba(249,245,6,0.4)] hover:scale-110 active:scale-95 transition-all disabled:opacity-50 disabled:hover:scale-100"
+                  className="size-16 sm:size-[4.25rem] rounded-full bg-primary flex items-center justify-center text-[#1c1c0d] shadow-primary hover:scale-105 active:scale-95 transition-all"
                   aria-label="Curtir"
-                  title={atFreeDayLimit ? 'Limite gratuito (25% dos dias). Faça upgrade.' : undefined}
                 >
-                  <Icon name="favorite" className="text-3xl md:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
+                  <Icon name="favorite" className="text-3xl sm:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
                 </button>
               </div>
-              <p className="text-xs text-text-secondary mt-3">Setas ← → do teclado: descartar ou curtir.</p>
+              <p className="text-[11px] text-text-secondary -mt-2">Teclado: ← descartar · → curtir</p>
             </>
-          ) : showLimitReached ? (
-            <EmptyState
-              icon="lock"
-              title="Limite atingido"
-              description="Só 25% dos dias são gratuitos. Adquira o planejamento completo para continuar."
-              action={
-                <Link to={tripId ? `/pagamento?tripId=${tripId}` : '/pagamento'} className="block w-full max-w-xs mx-auto">
-                  <Button className="w-full rounded-full font-bold py-4">Adquirir planejamento completo</Button>
-                </Link>
-              }
-            />
-          ) : dayFull && places.length === 0 ? (
-            <EmptyState
-              icon="explore"
-              title="Dia completo!"
-              description="Avance para o próximo dia ou recarregue para ver mais sugestões."
-              action={
-                <div className="flex gap-2 flex-wrap justify-center">
-                  <Button
-                    onClick={async () => {
-                      if (freeMaxDays != null && currentDay + 1 > freeMaxDays) {
-                        setShowUpgradeModal(true)
-                        return
-                      }
-                      await loadPlaces(currentDay + 1)
-                      onItineraryUpdate?.()
-                    }}
-                    className="rounded-full"
-                  >
-                    Próximo dia
-                  </Button>
-                  <Button variant="outline" onClick={() => loadPlaces(currentDay)} className="rounded-full">Recarregar</Button>
-                </div>
-              }
-            />
+          ) : tdvRestriction ? (
+            <div className="text-center max-w-md px-2 py-4 w-full">
+              <div className="size-14 rounded-full bg-primary/15 flex items-center justify-center mx-auto mb-3">
+                <Icon name="lock" className="text-2xl text-primary" />
+              </div>
+              <h3 className="text-lg font-bold text-[#1c1c0d] dark:text-white mb-2">Limite do plano gratuito</h3>
+              <p className="text-text-secondary text-sm mb-5 leading-relaxed">{tdvRestriction.message}</p>
+              <Button
+                type="button"
+                className="rounded-full"
+                onClick={() => navigate(`/pagamento?tripId=${encodeURIComponent(tripId)}`)}
+              >
+                <Icon name="workspace_premium" />
+                Planejamento Completo
+              </Button>
+              <p className="text-[11px] text-text-secondary mt-4 leading-relaxed">
+                Roteiro integral, TDV em todos os dias, documentos e recomendações desta viagem.
+              </p>
+            </div>
           ) : (
-            <EmptyState
-              icon="explore"
-              title="Sem mais lugares agora"
-              description="Avance para o próximo dia ou recarregue."
-              action={
-                <div className="flex gap-2 flex-wrap justify-center">
-                  <Button
-                    onClick={async () => {
-                      if (freeMaxDays != null && currentDay + 1 > freeMaxDays) {
-                        setShowUpgradeModal(true)
-                        return
-                      }
-                      await loadPlaces(currentDay + 1)
-                      onItineraryUpdate?.()
-                    }}
-                    className="rounded-full"
-                  >
-                    Próximo dia
-                  </Button>
-                  <Button variant="outline" onClick={() => loadPlaces()} className="rounded-full">Recarregar</Button>
-                </div>
-              }
-            />
+            <div className="w-full flex flex-col items-center py-2">
+              <EmptyState
+                icon="explore"
+                title="Sem mais lugares agora"
+                description="Avance o dia ou recarregue. Quando quiser, finalize para gerar o roteiro."
+                action={
+                  <div className="flex gap-2 flex-wrap justify-center">
+                    <Button onClick={handleNextDay} className="rounded-full">
+                      Próximo dia
+                    </Button>
+                    <Button variant="outline" onClick={() => loadPlaces(currentDay)} className="rounded-full">
+                      Recarregar
+                    </Button>
+                  </div>
+                }
+              />
+            </div>
           )}
+
+          {choicesPanel}
+
+          <div className="w-full max-w-xl p-4 sm:p-5 rounded-2xl bg-white dark:bg-surface-dark/80 border border-border-light dark:border-border-dark shadow-sm">
+            <p className="text-xs sm:text-sm text-text-secondary mb-3 leading-relaxed">
+              Ao finalizar, a IA combina o formulário da viagem com suas curtidas e descartes para montar o roteiro.
+            </p>
+            <Button onClick={onTdvSatisfied} disabled={finalizingTdv || totalLikes < 1} className="w-full rounded-full py-3">
+              {finalizingTdv ? 'Gerando roteiro...' : 'Estou satisfeito — gerar roteiro'}
+            </Button>
+            {totalLikes < 1 && (
+              <p className="text-[11px] text-text-secondary mt-2 text-center">Curta pelo menos um lugar antes de concluir.</p>
+            )}
+          </div>
         </div>
       </main>
     </div>
