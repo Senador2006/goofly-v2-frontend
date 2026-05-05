@@ -6,6 +6,46 @@ import { useAuth } from '../context/AuthContext'
 import { userService } from '../services/userService'
 import { paymentService } from '../services/paymentService'
 
+const MERCADO_PAGO_SCRIPT_ID = 'mercado-pago-sdk'
+let mercadoPagoScriptPromise = null
+
+function loadMercadoPagoSdk() {
+  if (window.MercadoPago) {
+    return Promise.resolve(window.MercadoPago)
+  }
+
+  if (mercadoPagoScriptPromise) {
+    return mercadoPagoScriptPromise
+  }
+
+  mercadoPagoScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.getElementById(MERCADO_PAGO_SCRIPT_ID)
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(window.MercadoPago), { once: true })
+      existingScript.addEventListener('error', () => reject(new Error('Não foi possível carregar o checkout do Mercado Pago.')), { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.id = MERCADO_PAGO_SCRIPT_ID
+    script.src = 'https://sdk.mercadopago.com/js/v2'
+    script.async = true
+    script.onload = () => resolve(window.MercadoPago)
+    script.onerror = () => reject(new Error('Não foi possível carregar o checkout do Mercado Pago.'))
+    document.body.appendChild(script)
+  }).catch((error) => {
+    mercadoPagoScriptPromise = null
+    throw error
+  })
+
+  return mercadoPagoScriptPromise
+}
+
+function isApprovedPayment(result) {
+  const status = String(result?.data?.status || result?.status || '').toLowerCase()
+  return ['approved', 'paid'].includes(status)
+}
+
 export function Pagamento() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -15,73 +55,118 @@ export function Pagamento() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   const [showBrick, setShowBrick] = useState(false)
-  const brickInitialized = useRef(false)
+  const brickControllerRef = useRef(null)
+  const isMountedRef = useRef(false)
 
   useEffect(() => {
-    if (!showBrick || brickInitialized.current) return
-    brickInitialized.current = true
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
-    const script = document.createElement('script')
-    script.src = 'https://sdk.mercadopago.com/js/v2'
-    script.onload = () => {
-      const mp = new window.MercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY)
+  useEffect(() => {
+    if (!showBrick) return
 
-      mp.bricks().create('payment', 'paymentBrick_container', {
-        initialization: {
-          amount: 12.00,
-        },
-        customization: {
-          paymentMethods: {
-            creditCard: 'all',
-            debitCard: 'all',
-            ticket: 'all',
-            bankTransfer: 'all',
+    let cancelled = false
+
+    const mountBrick = async () => {
+      try {
+        setError(null)
+
+        if (!import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY) {
+          throw new Error('A chave pública do Mercado Pago não está configurada.')
+        }
+
+        if (brickControllerRef.current?.unmount) {
+          await brickControllerRef.current.unmount()
+          brickControllerRef.current = null
+        }
+
+        const MercadoPago = await loadMercadoPagoSdk()
+        if (cancelled) return
+
+        const mp = new MercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY)
+        const bricksBuilder = mp.bricks()
+        brickControllerRef.current = await bricksBuilder.create('payment', 'paymentBrick_container', {
+          initialization: {
+            amount: 12.00,
           },
-        },
-        callbacks: {
-          onReady: () => {},
-          onSubmit: async (formData) => {
-            setLoading(true)
-            setError(null)
-            try {
-              const data = formData.formData ?? formData
-              const payload = {
-                token: data.token,
-                payment_method_id: data.payment_method_id,
-                transaction_amount: data.transaction_amount ?? 12.00,
-                payer: {
-                  email: data.payer?.email || user?.email,
-                  identification: {
-                    type: data.payer?.identification?.type,
-                    number: data.payer?.identification?.number,
+          customization: {
+            paymentMethods: {
+              creditCard: 'all',
+              debitCard: 'all',
+              ticket: 'all',
+              bankTransfer: 'all',
+            },
+          },
+          callbacks: {
+            onReady: () => {},
+            onSubmit: async (formData) => {
+              setLoading(true)
+              setError(null)
+              try {
+                const data = formData.formData ?? formData
+                const payload = {
+                  token: data.token,
+                  payment_method_id: data.payment_method_id,
+                  transaction_amount: data.transaction_amount ?? 12.00,
+                  payer: {
+                    email: data.payer?.email || user?.email,
+                    identification: {
+                      type: data.payer?.identification?.type,
+                      number: data.payer?.identification?.number,
+                    }
                   }
                 }
+
+                const paymentResult = await paymentService.pay(payload)
+                if (!isApprovedPayment(paymentResult)) {
+                  throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
+                }
+
+                await userService.completeCheckout()
+                await refreshUser().catch(() => {})
+
+                if (!isMountedRef.current) return
+                setSuccess(true)
+                setTimeout(() => {
+                  navigate(tripId ? `/trips/${tripId}/itinerary` : '/', { replace: true })
+                }, 2000)
+              } catch (err) {
+                if (!isMountedRef.current) return
+                setError(err.response?.data?.error?.message || err.message || 'Erro ao processar o pagamento.')
+              } finally {
+                if (isMountedRef.current) {
+                  setLoading(false)
+                }
               }
-              await paymentService.pay(payload)
-              await userService.completeCheckout().catch(() => {})
-              await refreshUser().catch(() => {})
-              setSuccess(true)
-              setTimeout(() => {
-                navigate(tripId ? `/trips/${tripId}/itinerary` : '/', { replace: true })
-              }, 2000)
-            } catch (err) {
-              setError(err.response?.data?.error?.message || err.message || 'Erro ao processar.')
-            } finally {
-              setLoading(false)
-            }
+            },
+            onError: (brickError) => {
+              console.error('Erro no Brick:', brickError)
+              if (isMountedRef.current) {
+                setError('O checkout apresentou um problema ao carregar. Recarregue a página e tente novamente.')
+              }
+            },
           },
-          onError: (error) => {
-            console.error('Erro no Brick:', error)
-          },
-        },
-      })
+        })
+      } catch (sdkError) {
+        if (!cancelled && isMountedRef.current) {
+          setError(sdkError.message || 'Não foi possível iniciar o checkout.')
+        }
+      }
     }
-    document.body.appendChild(script)
+
+    mountBrick()
 
     return () => {
-      brickInitialized.current = false
+      cancelled = true
+      if (brickControllerRef.current?.unmount) {
+        Promise.resolve(brickControllerRef.current.unmount()).catch(() => {})
+      }
+      brickControllerRef.current = null
     }
-  }, [showBrick])
+  }, [showBrick, navigate, refreshUser, tripId, user?.email])
 
   if (success) {
     return (

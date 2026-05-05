@@ -26,7 +26,7 @@ export function Itinerary() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const isPlanning = trip?.status === 'planejando'
-  const hasPlanejamentoCompleto = user?.subscription_type === 'planejamento_completo' &&
+  const hasPlanejamentoCompleto = ['planejamento_completo', 'premium'].includes(user?.subscription_type) &&
     (!user?.subscription_expires_at || new Date(user.subscription_expires_at) > new Date())
 
   const handleDeletePlanning = async () => {
@@ -229,8 +229,20 @@ export function Itinerary() {
                 <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary" />
                 <div className="bg-background-light dark:bg-[#23220f] p-4 rounded-xl shadow-sm border border-border-light dark:border-border-dark">
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
-                      {act.startTime || act.start_time || '09:00'} • {act.duration || '1h'}
+                    {act.image_url && (
+                      <div
+                        className="w-full h-32 rounded-xl bg-cover bg-center mb-3"
+                        style={{ backgroundImage: `url(${act.image_url})` }}
+                      />
+                    )}
+                    <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">
+                      {act.startTime || act.start_time || act.time || '09:00'}
+                      {' · '}
+                      {act.duration
+                        ? act.duration
+                        : act.duration_minutes
+                          ? `${Math.round(act.duration_minutes / 60 * 10) / 10}h`
+                          : '2h'}
                     </span>
                   </div>
                   <h3 className="font-bold text-lg mb-1">{act.name}</h3>

@@ -23,7 +23,7 @@ export function Login() {
       const errData = err.response?.data?.error
       const message = typeof errData === 'object' && errData?.message
         ? errData.message
-        : err.response?.data?.errors?.[0]?.msg || 'Email ou senha inválidos. Verifique suas credenciais ou cadastre-se.'
+        : err.response?.data?.errors?.[0]?.msg || 'Não foi possível entrar. Verifique seu e-mail e senha e tente novamente.'
       setError(message)
     } finally {
       setLoading(false)
@@ -70,7 +70,7 @@ export function Login() {
                 required
                 minLength={8}
                 className="w-full bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
-                placeholder="••••••••"
+                placeholder="********"
               />
             </div>
             <Button type="submit" className="w-full justify-center" disabled={loading}>

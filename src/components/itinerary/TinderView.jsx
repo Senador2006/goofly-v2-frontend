@@ -7,6 +7,7 @@ import { EmptyState } from '../common/EmptyState'
 import { placeService } from '../../services/placeService'
 
 const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80'
+const LIKES_PER_DAY = 5
 
 function getDisplayImageUrl(value) {
   if (value == null) return PLACEHOLDER_IMAGE
@@ -17,7 +18,13 @@ function getDisplayImageUrl(value) {
   return value || PLACEHOLDER_IMAGE
 }
 
-const LIKES_PER_DAY = 5
+function getRequestErrorMessage(err, fallback = 'Erro ao carregar lugares') {
+  const status = err.response?.status
+  if (status === 429) {
+    return 'Muitas requisições em pouco tempo. Aguarde alguns segundos e tente novamente.'
+  }
+  return err.response?.data?.error?.message || fallback
+}
 
 /**
  * TDV — Tinder de Viagens
@@ -38,6 +45,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
   const [totalTripDays, setTotalTripDays] = useState(null)
   const [freeMaxDays, setFreeMaxDays] = useState(null)
   const [upgradeRequired, setUpgradeRequired] = useState(false)
+  const autoLoadAttemptedRef = useRef(false)
 
   const currentPlace = places[currentIndex]
   const dayFull = likesRemaining <= 0 && likesUsed >= LIKES_PER_DAY
@@ -68,7 +76,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
       setUpgradeRequired(Boolean(res.upgradeRequired))
       if (res.upgradeRequired) setShowUpgradeModal(true)
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Erro ao carregar lugares')
+      setError(getRequestErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -81,14 +89,19 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
       setPlaces([])
       setCurrentDay(1)
       setCurrentIndex(0)
+      setError(null)
+      autoLoadAttemptedRef.current = false
     }
   }, [tripId])
 
-  // Só chama discover quando o usuário está na aba TDV e não tem lugares (evita chamadas ao sair/voltar)
   useEffect(() => {
-    if (!isActive || !tripId || places.length > 0 || loading) return
+    if (!isActive) return
+    if (places.length > 0) return
+    if (autoLoadAttemptedRef.current) return
+
+    autoLoadAttemptedRef.current = true
     loadPlaces()
-  }, [isActive, tripId, places.length, loading, loadPlaces])
+  }, [isActive, places.length, loadPlaces])
 
   const handleNextDay = useCallback(async () => {
     if (!tripId) return
@@ -101,7 +114,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
       try {
         await placeService.cacheSkippedPlaces(tripId, places)
       } catch (err) {
-        setError(err.response?.data?.error?.message || 'Erro ao avançar')
+        setError(getRequestErrorMessage(err, 'Erro ao avançar'))
         return
       }
     }
@@ -140,7 +153,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
         setShowUpgradeModal(true)
         setError(null)
       } else {
-        setError(err.response?.data?.error?.message || 'Erro ao dar like')
+        setError(getRequestErrorMessage(err, 'Erro ao dar like'))
       }
     }
   }, [currentPlace, tripId, currentDay, likesRemaining, onItineraryUpdate])
@@ -160,7 +173,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
       setCurrentIndex(0)
     } catch (err) {
       setSwipeFeedback(null)
-      setError(err.response?.data?.error?.message || 'Erro ao descartar')
+      setError(getRequestErrorMessage(err, 'Erro ao descartar'))
     }
   }, [currentPlace, tripId])
 
@@ -184,7 +197,18 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive }) {
   if (error) {
     return (
       <div className="p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm">
-        {error}
+        <p>{error}</p>
+        <Button
+          variant="secondary"
+          className="mt-3"
+          onClick={() => {
+            autoLoadAttemptedRef.current = true
+            setError(null)
+            loadPlaces(currentDay)
+          }}
+        >
+          Tentar novamente
+        </Button>
       </div>
     )
   }
