@@ -7,6 +7,7 @@ import { TinderView } from '../components/itinerary/TinderView'
 import { DocumentosView } from '../components/itinerary/DocumentosView'
 import { tripService } from '../services/tripService'
 import { useAuth } from '../context/AuthContext'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 const MODE_ROTEIRO = 'roteiro'
 const MODE_TDV = 'tdv'
@@ -23,6 +24,9 @@ export function Itinerary() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [deleting, setDeleting] = useState(false)
+
+  const tripDestCity = trip?.destinations?.[0]?.city
+  useDocumentTitle(tripDestCity ? `Roteiro · ${tripDestCity}` : 'Roteiro')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [finalizingTdv, setFinalizingTdv] = useState(false)
   const deleteInFlightRef = useRef(false)

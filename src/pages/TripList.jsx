@@ -7,11 +7,13 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { EmptyState } from '../components/common/EmptyState'
 import { tripService } from '../services/tripService'
 import { formatDateRange } from '../utils/formatters'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&q=80'
 const STATUS_LABELS = { planejando: 'Planejando', ativa: 'Em andamento', concluida: 'Concluída' }
 
 export function TripList() {
+  useDocumentTitle('Minhas viagens')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const filterParam = searchParams.get('status') || 'all'

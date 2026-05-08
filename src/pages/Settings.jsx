@@ -3,8 +3,10 @@ import { useTheme } from '../context/ThemeContext'
 import { Header } from '../components/layout/Header'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export function Settings() {
+  useDocumentTitle('Configurações')
   const { user, logout } = useAuth()
   const { isDark, toggleTheme } = useTheme()
 

@@ -7,10 +7,12 @@ import { EmptyState } from '../components/common/EmptyState'
 import { memoryService } from '../services/memoryService'
 import { tripService } from '../services/tripService'
 import { formatDate } from '../utils/formatters'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&q=80'
 
 export function Memories() {
+  useDocumentTitle('Memórias')
   const [searchParams] = useSearchParams()
   const tripIdParam = searchParams.get('tripId')
   const [tripId, setTripId] = useState(tripIdParam)

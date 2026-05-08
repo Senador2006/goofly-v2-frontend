@@ -1,10 +1,13 @@
-import api from './api'
+import api, { AI_TIMEOUT_MS } from './api'
 
 export const placeService = {
   // RF03 - Tinder de Viagens (requer auth + tripId)
   discover: (tripId, day) =>
     api
-      .get('/places/discover', { params: { tripId, ...(day != null && { day }) } })
+      .get('/places/discover', {
+        params: { tripId, ...(day != null && { day }) },
+        timeout: AI_TIMEOUT_MS,
+      })
       .then((res) => {
         const d = res?.data ?? {};
         const places = Array.isArray(d.data) ? d.data : Array.isArray(d.places) ? d.places : [];
@@ -36,7 +39,7 @@ export const placeService = {
   // POST /api/places/recommendations-free → Gateway → Place Service → Agente IA
   getRecommendationsFree: (formData) =>
     api
-      .post('/places/recommendations-free', formData)
+      .post('/places/recommendations-free', formData, { timeout: AI_TIMEOUT_MS })
       .then((res) => ({ recommendations: res.data.data || [], count: res.data.count ?? 0 })),
   addFavorite: (recommendation) =>
     api.post('/places/recommendations-free/favorites', recommendation),

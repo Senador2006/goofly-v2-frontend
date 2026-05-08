@@ -1,6 +1,7 @@
 import { Header } from '../components/layout/Header'
 import { RecommendationsFree } from '../components/discover/RecommendationsFree'
 import { useAuth } from '../context/AuthContext'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 /**
  * Página Descobrir - RF09 Recomendador Gratuito
@@ -13,6 +14,7 @@ import { useAuth } from '../context/AuthContext'
  * @see docs/project/README.md - "Recomendador de Locais" (gratuito)
  */
 export function Discover() {
+  useDocumentTitle('Descobrir')
   const { isAuthenticated } = useAuth()
 
   return (

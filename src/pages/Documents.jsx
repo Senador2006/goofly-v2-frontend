@@ -7,8 +7,10 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { EmptyState } from '../components/common/EmptyState'
 import { documentService } from '../services/documentService'
 import { tripService } from '../services/tripService'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export function Documents() {
+  useDocumentTitle('Documentos')
   const [searchParams] = useSearchParams()
   const tripIdParam = searchParams.get('tripId')
   const [tripId, setTripId] = useState(tripIdParam)
@@ -138,7 +140,13 @@ export function Documents() {
                       </div>
                       <div>
                         <p className="font-bold text-lg">{doc.name}</p>
-                        <p className="text-sm text-text-secondary">{doc.reminder || doc.required ? 'Obrigatório' : 'Opcional'}</p>
+                        <p className="text-sm text-text-secondary">
+                          {doc.reminder
+                            ? doc.reminder
+                            : doc.required
+                              ? 'Obrigatório'
+                              : 'Opcional'}
+                        </p>
                       </div>
                     </div>
                     <span

@@ -7,6 +7,7 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { dashboardService } from '../services/dashboardService'
 import { memoryService } from '../services/memoryService'
 import { formatDate } from '../utils/formatters'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80'
 const MEMORY_IMAGES = [
@@ -15,6 +16,7 @@ const MEMORY_IMAGES = [
 ]
 
 export function Dashboard() {
+  useDocumentTitle('Dashboard')
   const [overview, setOverview] = useState(null)
   const [recentMemories, setRecentMemories] = useState([])
   const [loading, setLoading] = useState(true)

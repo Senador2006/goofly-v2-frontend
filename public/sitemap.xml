@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!--
+    Sitemap inicial — apenas rotas públicas (não-autenticadas).
+    Demais páginas (dashboard, trips, memories, documents) são privadas:
+    qualquer URL anônima redireciona para /login.
+
+    Substituir <loc> pelo domínio real em produção (ex.: https://app.goofly.com).
+    Recomendação: gerar dinamicamente via build step quando o domínio
+    for definido.
+  -->
+  <url>
+    <loc>/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>/register</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>/discover</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>

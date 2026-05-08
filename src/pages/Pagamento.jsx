@@ -4,12 +4,14 @@ import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
 import { useAuth } from '../context/AuthContext'
 import { userService } from '../services/userService'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 /**
  * Página de pagamento (simulação) — RF04.5
  * Por enquanto não cobra nada: ao confirmar, ativa Planejamento Completo e libera roteiro + documentos.
  */
 export function Pagamento() {
+  useDocumentTitle('Planejamento Completo')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tripId = searchParams.get('tripId')
