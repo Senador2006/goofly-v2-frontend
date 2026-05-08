@@ -5,9 +5,11 @@ import { Button } from '../components/common/Button'
 import { useAuth } from '../context/AuthContext'
 import { userService } from '../services/userService'
 import { paymentService } from '../services/paymentService'
+import { createLogger } from '../utils/logger'
 
 const MERCADO_PAGO_SCRIPT_ID = 'mercado-pago-sdk'
 let mercadoPagoScriptPromise = null
+const logger = createLogger('pages.pagamento')
 
 function loadMercadoPagoSdk() {
   if (window.MercadoPago) {
@@ -143,7 +145,7 @@ export function Pagamento() {
               }
             },
             onError: (brickError) => {
-              console.error('Erro no Brick:', brickError)
+              logger.error('Erro no Brick:', brickError)
               if (isMountedRef.current) {
                 setError('O checkout apresentou um problema ao carregar. Recarregue a página e tente novamente.')
               }
