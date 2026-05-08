@@ -5,16 +5,15 @@ import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
 import { EmptyState } from '../common/EmptyState'
 import { placeService } from '../../services/placeService'
-
-const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80'
+import { PLACEHOLDER_COVER } from '../../constants/placeholders'
 
 function getDisplayImageUrl(value) {
-  if (value == null) return PLACEHOLDER_IMAGE
+  if (value == null) return PLACEHOLDER_COVER
   const s = typeof value === 'string' ? value.trim() : String(value)
   const urlMatch = s.match(/https?:\/\/[^\s)]+/i)
   if (urlMatch) return urlMatch[0].replace(/[)\],]+$/, '')
   if (/^https?:\/\//i.test(s)) return s
-  return value || PLACEHOLDER_IMAGE
+  return value || PLACEHOLDER_COVER
 }
 
 /**

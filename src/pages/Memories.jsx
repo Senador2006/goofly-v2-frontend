@@ -8,8 +8,7 @@ import { memoryService } from '../services/memoryService'
 import { tripService } from '../services/tripService'
 import { formatDate } from '../utils/formatters'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-
-const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&q=80'
+import { PLACEHOLDER_THUMB } from '../constants/placeholders'
 
 export function Memories() {
   useDocumentTitle('Memórias')
@@ -143,7 +142,7 @@ export function Memories() {
                   </div>
                   <div className="rounded-xl overflow-hidden shadow-sm border border-border-light dark:border-border-dark">
                     <img
-                      src={mem.photo_url || mem.image_url || PLACEHOLDER_IMAGE}
+                      src={mem.photo_url || mem.image_url || PLACEHOLDER_THUMB}
                       alt={mem.caption || 'Memória'}
                       className="w-full h-48 object-cover"
                     />

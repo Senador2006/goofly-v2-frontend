@@ -8,8 +8,7 @@ import { EmptyState } from '../components/common/EmptyState'
 import { tripService } from '../services/tripService'
 import { formatDateRange } from '../utils/formatters'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-
-const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&q=80'
+import { PLACEHOLDER_THUMB } from '../constants/placeholders'
 const STATUS_LABELS = { planejando: 'Planejando', ativa: 'Em andamento', concluida: 'Concluída' }
 
 export function TripList() {
@@ -116,7 +115,7 @@ export function TripList() {
               >
                 <div
                   className="h-40 bg-center bg-cover group-hover:scale-105 transition-transform duration-500"
-                  style={{ backgroundImage: `url(${PLACEHOLDER_IMAGE})` }}
+                  style={{ backgroundImage: `url(${PLACEHOLDER_THUMB})` }}
                 />
                 <div className="p-6">
                   <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">
