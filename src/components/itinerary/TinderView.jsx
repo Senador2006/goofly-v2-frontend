@@ -16,6 +16,13 @@ function getDisplayImageUrl(value) {
   return value || PLACEHOLDER_COVER
 }
 
+function getPlaceId(p) {
+  return p?.id ?? p?.placeId ?? p?.place_id
+}
+
+/** Quando restam poucos cards, pede outro discover em background (servidor já chama o agente até 3× por request). */
+const PREFETCH_WHEN_REMAINING_AT_MOST = 5
+
 /**
  * TDV — uma coluna principal: card em destaque, resumo e histórico abaixo (sem terceira barra lateral).
  */
@@ -31,6 +38,14 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const [error, setError] = useState(null)
   const [swipeFeedback, setSwipeFeedback] = useState(null)
   const [tdvRestriction, setTdvRestriction] = useState(null)
+  /** Pilha LIFO: desfazer só a última curtida/descarte (espelha o servidor). */
+  const [undoStack, setUndoStack] = useState([])
+  const [undoLoading, setUndoLoading] = useState(false)
+  const [undoNotice, setUndoNotice] = useState(null)
+  const undoBusyRef = useRef(false)
+
+  const prefetchInFlightRef = useRef(false)
+  const prefetchReturnedEmptyRef = useRef(false)
 
   const currentPlace = places[currentIndex]
 
@@ -42,30 +57,21 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     setLoading(true)
     setError(null)
     try {
-      const res = await placeService.discover(tripId, day)
+      const res = await placeService.discoverSession(tripId, day)
       const p = res.places ?? []
       const cd = res.currentDay ?? 1
       setTdvRestriction(res.tdvRestriction ?? null)
       setPlaces(Array.isArray(p) ? p : [])
+      setUndoStack([])
       setTotalLikes(res.totalLikes ?? 0)
+      setLikedPlaces(res.likedPlaces || [])
+      setDislikedPlaces(res.dislikedPlaces || [])
       setCurrentDay(day != null ? day : cd)
       setCurrentIndex(0)
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Erro ao carregar lugares')
     } finally {
       setLoading(false)
-    }
-  }, [tripId])
-
-  const loadSummary = useCallback(async () => {
-    if (!tripId) return
-    try {
-      const summary = await placeService.getTdvSummary(tripId)
-      setLikedPlaces(summary?.likedPlaces || [])
-      setDislikedPlaces(summary?.dislikedPlaces || [])
-      setTotalLikes(summary?.likesCount || 0)
-    } catch {
-      // silencioso
     }
   }, [tripId])
 
@@ -81,14 +87,89 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setTotalLikes(0)
       setTdvRestriction(null)
       setError(null)
+      setUndoStack([])
     }
   }, [tripId])
 
+  const deckKey = places
+    .map((p) => getPlaceId(p))
+    .filter(Boolean)
+    .sort()
+    .join('|')
   useEffect(() => {
-    if (!isActive || !tripId || places.length > 0 || loading) return
+    prefetchReturnedEmptyRef.current = false
+  }, [deckKey])
+
+  // Carrega ao ativar a aba / mudar viagem. Não incluir places.length nem loading nas deps:
+  // com lista vazia (API ok) ou erro (ex.: 429), isso re-disparava o efeito em loop.
+  useEffect(() => {
+    if (!isActive || !tripId) return
     loadPlaces()
-    loadSummary()
-  }, [isActive, tripId, places.length, loading, loadPlaces, loadSummary])
+  }, [isActive, tripId, loadPlaces])
+
+  // Antecipa o próximo lote quando o baralho está baixo (o TDV no back já agrega até 3 chamadas ao agente por GET).
+  useEffect(() => {
+    if (!isActive || !tripId || loading) return
+    const n = places.length
+    if (n === 0 || n > PREFETCH_WHEN_REMAINING_AT_MOST) return
+    if (prefetchInFlightRef.current || prefetchReturnedEmptyRef.current) return
+
+    const excludePlaceIds = places.map(getPlaceId).filter(Boolean)
+    if (excludePlaceIds.length === 0) return
+
+    const existingIds = new Set(excludePlaceIds.map((id) => String(id)))
+
+    let cancelled = false
+    prefetchInFlightRef.current = true
+
+    ;(async () => {
+      try {
+        const res = await placeService.discover(tripId, currentDay, excludePlaceIds)
+        if (cancelled) return
+        const incoming = Array.isArray(res.places) ? res.places : []
+        if (incoming.length === 0) {
+          if (res.tdvRestriction) setTdvRestriction(res.tdvRestriction)
+          else prefetchReturnedEmptyRef.current = true
+          return
+        }
+        let wouldAdd = 0
+        for (const p of incoming) {
+          const id = getPlaceId(p)
+          const sid = id != null ? String(id) : ''
+          if (sid && !existingIds.has(sid)) wouldAdd += 1
+        }
+        if (wouldAdd === 0) {
+          prefetchReturnedEmptyRef.current = true
+          return
+        }
+        setPlaces((prev) => {
+          const seen = new Set(
+            prev.map(getPlaceId).filter(Boolean).map((id) => String(id))
+          )
+          const out = [...prev]
+          for (const p of incoming) {
+            const id = getPlaceId(p)
+            const sid = id != null ? String(id) : ''
+            if (sid && !seen.has(sid)) {
+              seen.add(sid)
+              out.push(p)
+            }
+          }
+          return out
+        })
+        setTdvRestriction(res.tdvRestriction ?? null)
+        if (typeof res.totalLikes === 'number') setTotalLikes(res.totalLikes)
+      } catch {
+        // silencioso: o utilizador ainda tem cartas no baralho
+      } finally {
+        prefetchInFlightRef.current = false
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isActive, tripId, loading, places, currentDay])
 
   const handleNextDay = useCallback(async () => {
     if (!tripId) return
@@ -105,8 +186,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     onItineraryUpdate?.()
   }, [tripId, places, currentDay, loadPlaces, onItineraryUpdate])
 
-  const getPlaceId = (p) => p?.id ?? p?.placeId ?? p?.place_id
-
   const handleLike = useCallback(async () => {
     if (!currentPlace || !tripId) return
     const placeId = getPlaceId(currentPlace)
@@ -114,7 +193,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setError('Lugar sem ID válido')
       return
     }
-    setSwipeFeedback('like')
+      setSwipeFeedback('like')
+      setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
     try {
       const placeData = {
@@ -130,6 +210,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setLikedPlaces((prev) => [{ placeId, name: currentPlace.name, day: res?.currentDay ?? currentDay }, ...prev])
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
       setCurrentIndex(0)
+      setUndoStack((prev) => [...prev, { type: 'like', place: { ...currentPlace } }])
       onItineraryUpdate?.()
     } catch (err) {
       setSwipeFeedback(null)
@@ -153,17 +234,75 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       return
     }
     setSwipeFeedback('dislike')
+      setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
     try {
       await placeService.dislike(tripId, placeId, currentPlace)
       setDislikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev].slice(0, 30))
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
       setCurrentIndex(0)
+      setUndoStack((prev) => [...prev, { type: 'dislike', place: { ...currentPlace } }])
     } catch (err) {
       setSwipeFeedback(null)
       setError(err.response?.data?.error?.message || 'Erro ao descartar')
     }
   }, [currentPlace, tripId])
+
+  const handleUndo = useCallback(async () => {
+    if (!tripId || undoBusyRef.current) return
+
+    let entry
+    setUndoStack((prev) => {
+      if (prev.length === 0) return prev
+      entry = prev[prev.length - 1]
+      return prev.slice(0, -1)
+    })
+
+    if (!entry) return
+
+    const pid = getPlaceId(entry.place)
+    if (!pid) {
+      setUndoStack((prev) => [...prev, entry])
+      return
+    }
+
+    undoBusyRef.current = true
+    setUndoLoading(true)
+    setUndoNotice(null)
+
+    try {
+      if (entry.type === 'like') {
+        const res = await placeService.undoLike(tripId, pid)
+        if (typeof res?.likesUsedTotal === 'number') setTotalLikes(res.likesUsedTotal)
+        if (typeof res?.currentDay === 'number') setCurrentDay(res.currentDay)
+        setLikedPlaces((prev) => {
+          const i = prev.findIndex((p) => String(p.placeId) === String(pid))
+          if (i === -1) return prev
+          return prev.filter((_, idx) => idx !== i)
+        })
+        onItineraryUpdate?.()
+      } else {
+        await placeService.undoDislike(tripId, pid)
+        setDislikedPlaces((prev) => {
+          const i = prev.findIndex((p) => String(p.placeId) === String(pid))
+          if (i === -1) return prev
+          return prev.filter((_, idx) => idx !== i)
+        })
+      }
+
+      setPlaces((prev) => {
+        const filtered = prev.filter((x) => getPlaceId(x) !== pid)
+        return [entry.place, ...filtered]
+      })
+      setCurrentIndex(0)
+    } catch (err) {
+      setUndoStack((prev) => [...prev, entry])
+      setUndoNotice(err.response?.data?.error?.message || err.message || 'Não foi possível desfazer')
+    } finally {
+      undoBusyRef.current = false
+      setUndoLoading(false)
+    }
+  }, [tripId, onItineraryUpdate])
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -400,6 +539,26 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                   </div>
                 }
               />
+            </div>
+          )}
+
+          {(undoStack.length > 0 || undoLoading || undoNotice) && (
+            <div className="w-full max-w-xl flex flex-col items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={undoStack.length === 0 || undoLoading}
+                className="rounded-full"
+                onClick={handleUndo}
+                aria-label="Desfazer última ação no TDV"
+              >
+                <Icon name="undo" className="text-lg" />
+                {undoLoading ? 'Desfazendo...' : 'Desfazer última ação'}
+              </Button>
+              {undoNotice && (
+                <p className="text-[11px] text-red-500 dark:text-red-400 text-center px-2">{undoNotice}</p>
+              )}
             </div>
           )}
 
