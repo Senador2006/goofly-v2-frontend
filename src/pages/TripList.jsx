@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { Header } from '../components/layout/Header'
 import { Icon } from '../components/common/Icon'
@@ -20,6 +20,7 @@ export function TripList() {
   const [error, setError] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+  const deleteInFlightRef = useRef(null)
 
   const loadTrips = async () => {
     try {
@@ -40,7 +41,10 @@ export function TripList() {
   }, [filterParam])
 
   const handleDelete = async (tripId) => {
+    if (deleteInFlightRef.current === tripId) return
+
     try {
+      deleteInFlightRef.current = tripId
       setDeletingId(tripId)
       await tripService.deleteTrip(tripId)
       setConfirmDeleteId(null)
@@ -48,6 +52,7 @@ export function TripList() {
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Erro ao apagar viagem')
     } finally {
+      deleteInFlightRef.current = null
       setDeletingId(null)
     }
   }
