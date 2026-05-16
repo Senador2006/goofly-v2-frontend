@@ -7,11 +7,12 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { EmptyState } from '../components/common/EmptyState'
 import { tripService } from '../services/tripService'
 import { formatDateRange } from '../utils/formatters'
-
-const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&q=80'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { PLACEHOLDER_THUMB } from '../constants/placeholders'
 const STATUS_LABELS = { planejando: 'Planejando', ativa: 'Em andamento', concluida: 'Concluída' }
 
 export function TripList() {
+  useDocumentTitle('Minhas viagens')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const filterParam = searchParams.get('status') || 'all'
@@ -22,16 +23,28 @@ export function TripList() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const deleteInFlightRef = useRef(null)
 
+  const tripQueryParams = () => (filterParam !== 'all' ? { status: filterParam } : {})
+
   const loadTrips = async () => {
     try {
       setError(null)
-      const data = await tripService.getTrips(filterParam !== 'all' ? { status: filterParam } : {})
+      const data = await tripService.getTrips(tripQueryParams())
       setTrips(Array.isArray(data) ? data : [])
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Erro ao carregar viagens')
       setTrips([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  /** Recarrega lista sem sobrescrever com erro de rede (ex.: após delete já bem-sucedido). */
+  const refreshTripsBestEffort = async () => {
+    try {
+      const data = await tripService.getTrips(tripQueryParams())
+      setTrips(Array.isArray(data) ? data : [])
+    } catch {
+      /* mantém estado atual */
     }
   }
 
@@ -48,7 +61,8 @@ export function TripList() {
       setDeletingId(tripId)
       await tripService.deleteTrip(tripId)
       setConfirmDeleteId(null)
-      await loadTrips()
+      setTrips((prev) => prev.filter((t) => String(t.id) !== String(tripId)))
+      await refreshTripsBestEffort()
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Erro ao apagar viagem')
     } finally {
@@ -105,7 +119,7 @@ export function TripList() {
               >
                 <div
                   className="h-40 bg-center bg-cover group-hover:scale-105 transition-transform duration-500"
-                  style={{ backgroundImage: `url(${PLACEHOLDER_IMAGE})` }}
+                  style={{ backgroundImage: `url(${PLACEHOLDER_THUMB})` }}
                 />
                 <div className="p-6">
                   <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">

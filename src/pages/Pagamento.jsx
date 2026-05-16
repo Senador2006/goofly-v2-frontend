@@ -49,6 +49,7 @@ function isApprovedPayment(result) {
 }
 
 export function Pagamento() {
+  useDocumentTitle('Planejamento Completo')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tripId = searchParams.get('tripId')
@@ -178,7 +179,7 @@ export function Pagamento() {
         </div>
         <h1 className="text-2xl font-bold text-[#1c1c0d] dark:text-white mb-2">Tudo certo!</h1>
         <p className="text-text-secondary text-center max-w-sm mb-6">
-          Planejamento Completo ativado. Roteiro completo e documentos liberados. Redirecionando...
+          Roteiro integral, TDV em todos os dias, documentos e recomendações da viagem liberados. Redirecionando...
         </p>
       </div>
     )
@@ -201,17 +202,21 @@ export function Pagamento() {
           </div>
           <div>
             <h2 className="font-bold text-[#1c1c0d] dark:text-white">Planejamento Completo</h2>
-            <p className="text-sm text-text-secondary">Roteiro completo + Documentos</p>
+            <p className="text-sm text-text-secondary">Sua viagem, sem limite</p>
           </div>
         </div>
         <ul className="space-y-2 text-sm text-text-secondary mb-6">
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />
-            Usar o TDV em todos os dias da viagem (sem limite de 25%)
+            Roteiro completo (100% das atividades)
           </li>
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />
-            Checklist de documentos da viagem
+            TDV em todos os dias do planejamento
+          </li>
+          <li className="flex items-center gap-2">
+            <Icon name="check" className="text-primary shrink-0" />
+            Assistente de documentos e recomendações de bagagem por IA (por viagem)
           </li>
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />

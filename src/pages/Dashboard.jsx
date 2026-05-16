@@ -7,14 +7,17 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { dashboardService } from '../services/dashboardService'
 import { memoryService } from '../services/memoryService'
 import { formatDate } from '../utils/formatters'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import {
+  PLACEHOLDER_COVER,
+  PLACEHOLDER_MEMORY_A,
+  PLACEHOLDER_MEMORY_B,
+} from '../constants/placeholders'
 
-const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&q=80'
-const MEMORY_IMAGES = [
-  'https://images.unsplash.com/photo-1523482580670-f6bf7f562d61?w=400&q=80',
-  'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=400&q=80',
-]
+const MEMORY_IMAGES = [PLACEHOLDER_MEMORY_A, PLACEHOLDER_MEMORY_B]
 
 export function Dashboard() {
+  useDocumentTitle('Dashboard')
   const [overview, setOverview] = useState(null)
   const [recentMemories, setRecentMemories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -120,7 +123,7 @@ export function Dashboard() {
             <div className="flex gap-5">
               <div
                 className="size-24 rounded-full flex-shrink-0 bg-center bg-cover border-2 border-primary"
-                style={{ backgroundImage: `url(${PLACEHOLDER_IMAGE})` }}
+                style={{ backgroundImage: `url(${PLACEHOLDER_COVER})` }}
               />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">

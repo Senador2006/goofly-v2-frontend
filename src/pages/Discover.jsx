@@ -1,6 +1,7 @@
 import { Header } from '../components/layout/Header'
 import { RecommendationsFree } from '../components/discover/RecommendationsFree'
 import { useAuth } from '../context/AuthContext'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 /**
  * Página Descobrir - RF09 Recomendador Gratuito
@@ -13,13 +14,14 @@ import { useAuth } from '../context/AuthContext'
  * @see docs/project/README.md - "Recomendador de Locais" (gratuito)
  */
 export function Discover() {
+  useDocumentTitle('Descobrir')
   const { isAuthenticated } = useAuth()
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-2rem)]">
       <Header
         title="Descobrir"
-        subtitle="Recomendador Gratuito — 3 lugares para sua próxima viagem"
+        subtitle="Gratuito: 3 ideias por interesse. Roteiro completo, TDV em todos os dias, documentos e recomendações da viagem estão no Planejamento Completo."
         showSearch={true}
       />
       <RecommendationsFree isAuthenticated={isAuthenticated} />

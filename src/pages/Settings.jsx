@@ -3,10 +3,61 @@ import { useTheme } from '../context/ThemeContext'
 import { Header } from '../components/layout/Header'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useState } from 'react'
+import { userService } from '../services/userService'
 
 export function Settings() {
-  const { user, logout } = useAuth()
+  useDocumentTitle('Configurações')
+  const { user, logout, refreshUser } = useAuth()
   const { isDark, toggleTheme } = useTheme()
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(user?.name || '')
+  const [email, setEmail] = useState(user?.email || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  const startEdit = () => {
+    setName(user?.name || '')
+    setEmail(user?.email || '')
+    setError(null)
+    setEditing(true)
+  }
+
+  const cancelEdit = () => {
+    setEditing(false)
+    setError(null)
+  }
+
+  const saveProfile = async (e) => {
+    e.preventDefault()
+    if (!user?.id) return
+    const trimmedName = (name || '').trim()
+    const trimmedEmail = (email || '').trim()
+    if (!trimmedName) {
+      setError('Informe seu nome.')
+      return
+    }
+    if (!trimmedEmail) {
+      setError('Informe seu e-mail.')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      await userService.updateProfile(user.id, { name: trimmedName, email: trimmedEmail })
+      await refreshUser()
+      setEditing(false)
+    } catch (err) {
+      setError(
+        err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Não foi possível salvar. Tente novamente.'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div>
@@ -26,7 +77,49 @@ export function Settings() {
               <p className="text-text-secondary text-sm">{user?.email || 'email@exemplo.com'}</p>
             </div>
           </div>
-          <Button variant="secondary">Editar Perfil</Button>
+          {editing ? (
+            <form onSubmit={saveProfile} className="space-y-4">
+              {error && (
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              )}
+              <div>
+                <label htmlFor="settings-name" className="block text-sm font-medium mb-1">
+                  Nome
+                </label>
+                <input
+                  id="settings-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="settings-email" className="block text-sm font-medium mb-1">
+                  E-mail
+                </label>
+                <input
+                  id="settings-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-lg border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Salvando…' : 'Salvar'}
+                </Button>
+                <Button type="button" variant="secondary" onClick={cancelEdit} disabled={saving}>
+                  Cancelar
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Button variant="secondary" onClick={startEdit}>
+              Editar Perfil
+            </Button>
+          )}
         </div>
         <div className="bg-white dark:bg-card-dark rounded-xl p-6 border border-border-light dark:border-border-dark">
           <h3 className="text-lg font-bold mb-4">Aparência</h3>

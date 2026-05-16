@@ -1,0 +1,22 @@
+# robots.txt — Goofly v2
+# Aplicação predominantemente privada/autenticada. Indexar apenas
+# o landing/auth/discover (RF09 público). Áreas autenticadas (dashboard,
+# trips, memories, documents, settings, pagamento) não devem ser
+# rastreadas: requerem login e qualquer URL crawlada redireciona pro /login.
+
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /register
+Allow: /discover
+
+Disallow: /trips
+Disallow: /trips/
+Disallow: /memories
+Disallow: /documents
+Disallow: /settings
+Disallow: /pagamento
+Disallow: /api/
+Disallow: /api
+
+Sitemap: /sitemap.xml

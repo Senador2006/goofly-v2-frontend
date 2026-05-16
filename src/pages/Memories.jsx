@@ -7,10 +7,11 @@ import { EmptyState } from '../components/common/EmptyState'
 import { memoryService } from '../services/memoryService'
 import { tripService } from '../services/tripService'
 import { formatDate } from '../utils/formatters'
-
-const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&q=80'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { PLACEHOLDER_THUMB } from '../constants/placeholders'
 
 export function Memories() {
+  useDocumentTitle('Memórias')
   const [searchParams] = useSearchParams()
   const tripIdParam = searchParams.get('tripId')
   const [tripId, setTripId] = useState(tripIdParam)
@@ -141,7 +142,7 @@ export function Memories() {
                   </div>
                   <div className="rounded-xl overflow-hidden shadow-sm border border-border-light dark:border-border-dark">
                     <img
-                      src={mem.photo_url || mem.image_url || PLACEHOLDER_IMAGE}
+                      src={mem.photo_url || mem.image_url || PLACEHOLDER_THUMB}
                       alt={mem.caption || 'Memória'}
                       className="w-full h-48 object-cover"
                     />
