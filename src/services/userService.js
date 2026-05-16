@@ -24,14 +24,15 @@ export const userService = {
   completeCheckout: (options = {}) =>
     api
       .post('/users/me/checkout-complete', {
+        tripId: options.tripId,
         paymentApproved: options.paymentApproved === true,
         paymentStatus: options.paymentStatus,
       })
-      .then((res) => normalizeActivationPayload(res.body.data)),
+      .then((res) => res.body.data),
 
-  /** Dev/demo: ativa planejamento sem Mercado Pago (rota só existe fora de produção). */
-  activatePlanningDev: () =>
-    api.post('/users/me/upgrade-planejamento').then((res) => normalizeActivationPayload(res.body.data)),
+  /** Dev/demo: desbloqueia planejamento da viagem (rota só existe fora de produção). */
+  activatePlanningDev: (tripId) =>
+    api.post('/users/me/upgrade-planejamento', { tripId }).then((res) => res.body.data),
 
   updateProfile: (userId, { name, email }) =>
     api.put(`/users/${userId}`, { name, email }).then((res) => res.body.data),

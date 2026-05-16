@@ -573,14 +573,13 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
           <div className="w-full max-w-xl p-4 sm:p-5 rounded-2xl bg-white dark:bg-surface-dark/80 border border-border-light dark:border-border-dark shadow-sm">
             <p className="text-xs sm:text-sm text-text-secondary mb-3 leading-relaxed">
-              Ao finalizar, a IA combina o formulário da viagem com suas curtidas e descartes para montar o roteiro.
+              Ao finalizar, a IA monta o roteiro com base no formulário da viagem
+              {totalLikes > 0 ? ', nas suas curtidas e descartes do TDV' : ''}. O TDV é opcional — você pode
+              gerar o roteiro mesmo sem curtir lugares.
             </p>
-            <Button onClick={onTdvSatisfied} disabled={finalizingTdv || totalLikes < 1} className="w-full rounded-full py-3">
-              {finalizingTdv ? 'Gerando roteiro...' : 'Estou satisfeito — gerar roteiro'}
+            <Button onClick={onTdvSatisfied} disabled={finalizingTdv} className="w-full rounded-full py-3">
+              {finalizingTdv ? 'Gerando roteiro...' : 'Gerar roteiro'}
             </Button>
-            {totalLikes < 1 && (
-              <p className="text-[11px] text-text-secondary mt-2 text-center">Curta pelo menos um lugar antes de concluir.</p>
-            )}
           </div>
         </div>
       </main>

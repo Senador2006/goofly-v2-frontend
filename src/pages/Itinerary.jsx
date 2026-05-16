@@ -9,9 +9,8 @@ import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivity
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
-import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { hasActivePlanningAccess, getTripDayCount } from '../utils/planningAccess'
+import { hasTripPlanningUnlocked, getTripDayCount } from '../utils/planningAccess'
 
 const MODE_ROTEIRO = 'roteiro'
 const MODE_TDV = 'tdv'
@@ -32,7 +31,6 @@ export function Itinerary() {
   const { tripId } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, refreshUser, applyUserUpdate } = useAuth()
   const [trip, setTrip] = useState(null)
   const [itinerary, setItinerary] = useState(null)
   const [selectedDay, setSelectedDay] = useState(1)
@@ -48,7 +46,7 @@ export function Itinerary() {
   const deleteInFlightRef = useRef(false)
 
   const isPlanning = trip?.status === 'planejando'
-  const hasPlanejamentoCompleto = hasActivePlanningAccess(user)
+  const hasPlanejamentoCompleto = hasTripPlanningUnlocked(trip)
 
   const handleDeletePlanning = async () => {
     if (deleteInFlightRef.current) return
@@ -87,8 +85,6 @@ export function Itinerary() {
     refetchTimeoutRef.current = setTimeout(refetchItineraryImmediate, 400)
   }, [tripId, refetchItineraryImmediate])
 
-  const subscriptionKey = `${user?.subscription_type || 'free'}:${user?.subscription_expires_at || ''}`
-
   useEffect(() => {
     if (!tripId) return
     let cancelled = false
@@ -111,7 +107,7 @@ export function Itinerary() {
     return () => {
       cancelled = true
     }
-  }, [tripId, subscriptionKey, refetchItineraryImmediate])
+  }, [tripId, refetchItineraryImmediate])
 
   useEffect(() => {
     if (isPlanning) {
@@ -129,8 +125,9 @@ export function Itinerary() {
     if (searchParams.get('unlocked') !== '1' || !tripId) return
     let cancelled = false
     ;(async () => {
-      await refreshUser()
+      const tripData = await tripService.getTrip(tripId).catch(() => null)
       if (cancelled) return
+      if (tripData) setTrip(tripData)
       await refetchItineraryImmediate()
       if (cancelled) return
       const next = new URLSearchParams(searchParams)
@@ -140,18 +137,15 @@ export function Itinerary() {
     return () => {
       cancelled = true
     }
-  }, [searchParams, setSearchParams, tripId, refreshUser, refetchItineraryImmediate])
+  }, [searchParams, setSearchParams, tripId, refetchItineraryImmediate])
 
   const handleDevUnlock = async () => {
+    if (!tripId) return
     try {
-      const activated = await userService.activatePlanningDev()
-      if (activated?.subscription_type) {
-        applyUserUpdate({
-          subscription_type: activated.subscription_type,
-          subscription_expires_at: activated.subscription_expires_at ?? null,
-        })
+      const activated = await userService.activatePlanningDev(tripId)
+      if (activated?.trip) {
+        setTrip((prev) => (prev ? { ...prev, ...activated.trip } : activated.trip))
       }
-      await refreshUser()
       const data = await refetchItineraryImmediate()
       if (data?.activities?.[0]?.day != null) {
         const d = Number(data.activities[0].day)
@@ -215,8 +209,7 @@ export function Itinerary() {
   const destLabel = firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Viagem'
   const activities = itinerary?.activities || []
   const premiumRestriction = itinerary?._premiumRestriction
-  const serverFullAccess = itinerary?._access?.fullAccess === true
-  const hasFullAccess = hasPlanejamentoCompleto || serverFullAccess
+  const hasFullAccess = itinerary?._access?.fullAccess === true
   const tripDayCount = getTripDayCount(trip)
   const rawDays = [...new Set(activities.map((a) => a.day).filter((d) => d != null && d !== ''))]
   const numericDays = rawDays.every((d) => typeof d === 'number' || /^\d+$/.test(String(d)))
@@ -461,19 +454,23 @@ export function Itinerary() {
               />
             </div>
           ) : null}
-          {mode === MODE_DOCUMENTOS ? (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white dark:bg-card-dark">
-              <DocumentosView
-                tripId={tripId}
-                trip={trip}
-                hasPlanejamentoCompleto={hasPlanejamentoCompleto}
-                onUpgrade={async () => {
-                  await refreshUser()
-                  await refetchItineraryImmediate()
-                }}
-              />
-            </div>
-          ) : null}
+          <div
+            className={`flex-1 flex flex-col min-h-0 overflow-hidden bg-white dark:bg-card-dark ${
+              mode === MODE_DOCUMENTOS ? 'flex' : 'hidden'
+            }`}
+          >
+            <DocumentosView
+              tripId={tripId}
+              trip={trip}
+              hasPlanejamentoCompleto={hasPlanejamentoCompleto}
+              isActive={mode === MODE_DOCUMENTOS}
+              onUpgrade={async () => {
+                const tripData = await tripService.getTrip(tripId)
+                setTrip(tripData)
+                await refetchItineraryImmediate()
+              }}
+            />
+          </div>
           {mode === MODE_ROTEIRO ? (
             <>
               <div className="absolute inset-0 bg-gradient-to-br from-indigo-100/90 to-slate-100/90 dark:from-gray-900 dark:to-gray-950" />

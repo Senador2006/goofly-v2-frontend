@@ -124,6 +124,7 @@ export function Pagamento() {
               try {
                 const data = formData.formData ?? formData
                 const payload = {
+                  tripId: tripId || undefined,
                   token: data.token,
                   payment_method_id: data.payment_method_id,
                   transaction_amount: data.transaction_amount ?? 12.00,
@@ -142,12 +143,15 @@ export function Pagamento() {
                 }
 
                 // O backend já ativa o plano no pagamento aprovado; reforça com checkout-complete.
-                await syncPlanningAccess(
-                  (await userService.completeCheckout({
-                    paymentApproved: true,
-                    paymentStatus: 'approved',
-                  })) || { subscription_type: 'planejamento_completo' }
-                )
+                if (!tripId) {
+                  throw new Error('Volte ao roteiro e use o botão de desbloqueio para abrir o pagamento desta viagem.')
+                }
+
+                await userService.completeCheckout({
+                  tripId,
+                  paymentApproved: true,
+                  paymentStatus: 'approved',
+                })
 
                 if (!isMountedRef.current) return
                 setSuccess(true)
@@ -244,7 +248,7 @@ export function Pagamento() {
           </li>
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />
-            Acesso por 1 ano
+            Válido para este planejamento
           </li>
         </ul>
         <p className="text-2xl font-black text-[#1c1c0d] dark:text-white">
@@ -279,7 +283,10 @@ export function Pagamento() {
             setLoading(true)
             setError(null)
             try {
-              await syncPlanningAccess(await userService.activatePlanningDev())
+              if (!tripId) {
+                throw new Error('Abra o pagamento a partir do roteiro da viagem que deseja desbloquear.')
+              }
+              await userService.activatePlanningDev(tripId)
               setSuccess(true)
               setTimeout(() => {
                 const base = tripId ? `/trips/${tripId}/itinerary` : '/'

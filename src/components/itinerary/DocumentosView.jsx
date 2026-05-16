@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
@@ -11,15 +11,32 @@ import { userService } from '../../services/userService'
  * Exibe checklist e lista de bagagem gerados pelo agente de IA.
  * Disponível apenas para usuários com planejamento completo (pago).
  */
-export function DocumentosView({ tripId, trip, hasPlanejamentoCompleto, onUpgrade }) {
+export function DocumentosView({
+  tripId,
+  trip,
+  hasPlanejamentoCompleto,
+  onUpgrade,
+  isActive = true,
+}) {
   const [checklist, setChecklist] = useState(null)
   const [luggage, setLuggage] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const loadedForTripRef = useRef(null)
 
   useEffect(() => {
-    if (!tripId || !hasPlanejamentoCompleto) return
+    if (loadedForTripRef.current === tripId) return
+    loadedForTripRef.current = null
+    setChecklist(null)
+    setLuggage(null)
+    setError(null)
+  }, [tripId])
 
+  useEffect(() => {
+    if (!tripId || !hasPlanejamentoCompleto || !isActive) return
+    if (loadedForTripRef.current === tripId) return
+
+    let cancelled = false
     const load = async () => {
       setLoading(true)
       setError(null)
@@ -28,20 +45,28 @@ export function DocumentosView({ tripId, trip, hasPlanejamentoCompleto, onUpgrad
           documentService.getChecklist(tripId),
           documentService.getLuggageRecommendations(tripId),
         ])
+        if (cancelled) return
         setChecklist(checklistData)
         setLuggage(luggageData)
+        loadedForTripRef.current = tripId
       } catch (err) {
-        setError(err.response?.data?.error?.message || 'Erro ao carregar documentos')
+        if (!cancelled) {
+          setError(err.response?.data?.error?.message || 'Erro ao carregar documentos')
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     load()
-  }, [tripId, hasPlanejamentoCompleto])
+    return () => {
+      cancelled = true
+    }
+  }, [tripId, hasPlanejamentoCompleto, isActive])
 
   const handleDevUpgrade = async () => {
+    if (!tripId) return
     try {
-      await userService.activatePlanningDev()
+      await userService.activatePlanningDev(tripId)
       await onUpgrade?.()
     } catch (_) {}
   }

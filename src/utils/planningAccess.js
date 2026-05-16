@@ -1,5 +1,10 @@
 const FULL_PLANNING_TYPES = ['planejamento_completo', 'premium']
 
+/** Pagamento desbloqueia o planejamento desta viagem (não todas as viagens do usuário). */
+export function hasTripPlanningUnlocked(trip) {
+  return Boolean(trip?.planning_unlocked_at)
+}
+
 export function hasActivePlanningAccess(user) {
   if (!user) return false
   const type = user.subscription_type || 'free'
