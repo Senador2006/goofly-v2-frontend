@@ -1,12 +1,10 @@
-import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { Icon } from '../common/Icon'
 
-export function Header({ title, subtitle, showSearch = true }) {
+export function Header({ title, subtitle, showSearch = false }) {
   const { user } = useAuth()
   const { isDark, toggleTheme } = useTheme()
-  const [search, setSearch] = useState('')
 
   return (
     <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6 md:mb-10">
@@ -19,21 +17,6 @@ export function Header({ title, subtitle, showSearch = true }) {
         )}
       </div>
       <div className="flex items-center gap-4">
-        {showSearch && (
-          <div className="relative min-w-0 flex-1 md:min-w-80">
-            <Icon
-              name="search"
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary"
-            />
-            <input
-              type="text"
-              placeholder="Buscar destinos, hotéis..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white dark:bg-card-dark border border-border-light dark:border-border-dark rounded-full pl-12 pr-6 py-3 focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-sm"
-            />
-          </div>
-        )}
         <button
           onClick={toggleTheme}
           className="size-12 rounded-full bg-white dark:bg-card-dark flex items-center justify-center shadow-sm hover:bg-surface-light dark:hover:bg-surface-dark transition-colors"

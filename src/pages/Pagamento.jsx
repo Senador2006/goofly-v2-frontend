@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { userService } from '../services/userService'
 import { paymentService } from '../services/paymentService'
 import { createLogger } from '../utils/logger'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 const MERCADO_PAGO_SCRIPT_ID = 'mercado-pago-sdk'
 let mercadoPagoScriptPromise = null
@@ -128,7 +129,10 @@ export function Pagamento() {
                   throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
                 }
 
-                await userService.completeCheckout()
+                await userService.completeCheckout({
+                  paymentApproved: true,
+                  paymentStatus: 'approved',
+                })
                 await refreshUser().catch(() => {})
 
                 if (!isMountedRef.current) return
@@ -190,10 +194,15 @@ export function Pagamento() {
       <h1 className="text-2xl md:text-3xl font-black text-[#1c1c0d] dark:text-white mb-2">
         Desbloqueie seu roteiro
       </h1>
-      <p className="text-text-secondary mb-8">
+      <p className="text-text-secondary mb-4">
         O TDV gratuito pode ser usado em 25% dos dias da sua viagem. Com o Planejamento Completo
         você usa o roteiro em todos os dias e libera documentos.
       </p>
+      {import.meta.env.DEV && (
+        <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2 mb-6">
+          Ambiente de demonstração: use o botão abaixo para simular a ativação sem cobrança real.
+        </p>
+      )}
 
       <div className="bg-background-light dark:bg-[#23220f] border border-border-light dark:border-border-dark rounded-2xl p-6 mb-8">
         <div className="flex items-center gap-3 mb-4">
@@ -244,6 +253,32 @@ export function Pagamento() {
         </Button>
       ) : (
         <div id="paymentBrick_container" />
+      )}
+
+      {import.meta.env.DEV && (
+        <Button
+          variant="secondary"
+          className="w-full mt-4"
+          disabled={loading}
+          onClick={async () => {
+            setLoading(true)
+            setError(null)
+            try {
+              await userService.activatePlanningDev()
+              await refreshUser().catch(() => {})
+              setSuccess(true)
+              setTimeout(() => {
+                navigate(tripId ? `/trips/${tripId}/itinerary` : '/', { replace: true })
+              }, 1500)
+            } catch (err) {
+              setError(err.response?.data?.error?.message || 'Não foi possível ativar a demonstração.')
+            } finally {
+              setLoading(false)
+            }
+          }}
+        >
+          Ativar demonstração (sem cobrança)
+        </Button>
       )}
 
       <button
