@@ -20,18 +20,7 @@ function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
 }
 
-/**
- * Extrai a mensagem mais útil de um erro axios respeitando o contrato
- * documentado em API.md (`{ error: { code, message } }`). Mantém um
- * fallback amigável para 5xx/network/timeout, onde `response` pode estar
- * indefinido (cenário comum com o agente n8n a 180s).
- */
-function getRequestErrorMessage(err, fallback = 'Não foi possível completar a ação') {
-  const data = err?.response?.data
-  return data?.error?.message || data?.message || err?.message || fallback
-}
-
-/** Quando restam poucos cards, pede outro discover em background (servidor já chama o agente até 3× por request). */
+/** Quando restam poucos cards, pede discover em background (servidor: cache ou 1 batch n8n). */
 const PREFETCH_WHEN_REMAINING_AT_MOST = 5
 
 /**
@@ -118,7 +107,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     loadPlaces()
   }, [isActive, tripId, loadPlaces])
 
-  // Antecipa o próximo lote quando o baralho está baixo (o TDV no back já agrega até 3 chamadas ao agente por GET).
+  // Antecipa o próximo lote quando o baralho está baixo (back: cache TDV ou 1 batch sync ao agente).
   useEffect(() => {
     if (!isActive || !tripId || loading) return
     const n = places.length
