@@ -4,9 +4,9 @@ import { Icon } from '../common/Icon'
 
 function formatLocaleDate() {
   return new Date().toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
   })
 }
 
@@ -16,7 +16,7 @@ export function DashboardHeader() {
 
   return (
     <header className="flex items-center justify-between gap-4 mb-8">
-      <p className="text-lg font-medium text-[#1c1c0d] dark:text-white capitalize">
+      <p className="text-lg font-medium text-[#1c1c0d] dark:text-white">
         {formatLocaleDate()}
       </p>
       <div className="flex items-center gap-3">

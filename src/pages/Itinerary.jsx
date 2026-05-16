@@ -32,8 +32,7 @@ export function Itinerary() {
   const deleteInFlightRef = useRef(false)
 
   const isPlanning = trip?.status === 'planejando'
-  const hasPlanejamentoCompleto =
-    (user?.subscription_type === 'planejamento_completo' || user?.subscription_type === 'premium') &&
+  const hasPlanejamentoCompleto = ['planejamento_completo', 'premium'].includes(user?.subscription_type) &&
     (!user?.subscription_expires_at || new Date(user.subscription_expires_at) > new Date())
 
   const handleDeletePlanning = async () => {
@@ -291,49 +290,31 @@ export function Itinerary() {
               </Button>
             </div>
           </div>
-        )}
-      </header>
-
-      <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
-        {showRoteiroSidebar ? (
-          <section className="w-full lg:w-[min(100%,420px)] xl:w-[460px] flex-shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark overflow-hidden min-h-0">
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-              {isPlanning && (
-                <div className="p-4 rounded-2xl bg-primary/[0.12] dark:bg-primary/[0.08] border border-primary/25 text-sm leading-relaxed text-[#1c1c0d] dark:text-white/90">
-                  <span className="font-bold text-primary dark:text-primary block mb-1">Tinder de Viagens</span>
-                  Use o modo <strong>TDV</strong> nas abas acima para escolher lugares; quando estiver satisfeito, finalize para gerar o roteiro.
-                </div>
-              )}
-              {itinerary?._premiumRestriction && (
-                <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/25 text-sm">
-                  <p className="font-bold text-[#1c1c0d] dark:text-white mb-1">Prévia do roteiro</p>
-                  <p className="text-text-secondary mb-3">
-                    {itinerary._premiumRestriction.message} ({itinerary._premiumRestriction.visible} de{' '}
-                    {itinerary._premiumRestriction.total} atividades).
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => navigate(`/pagamento?tripId=${encodeURIComponent(tripId)}`)}
-                  >
-                    Desbloquear completo
-                  </Button>
-                </div>
-              )}
-              {activities
-                .filter((a) => !effectiveSelectedDay || a.day === effectiveSelectedDay)
-                .map((act, idx) => (
-                  <div key={act.id || idx} className="relative pl-7">
-                    <div className="absolute left-0 top-0 bottom-[-24px] w-px border-l-2 border-dashed border-primary/80" />
-                    <div className="absolute left-[-4px] top-1.5 size-2.5 rounded-full bg-primary ring-4 ring-white dark:ring-card-dark" />
-                    <div className="bg-background-light dark:bg-[#23220f] p-4 rounded-2xl border border-border-light dark:border-border-dark shadow-sm">
-                      <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">
-                        {act.startTime || act.start_time || '09:00'} · {act.duration || '1h'}
-                      </span>
-                      <h3 className="font-bold text-base mt-1 text-[#1c1c0d] dark:text-white">{act.name}</h3>
-                      <p className="text-sm text-text-secondary leading-relaxed mt-2">{act.description || act.notes}</p>
-                    </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-8">
+          {activities
+            .filter((a) => !effectiveSelectedDay || a.day === effectiveSelectedDay)
+            .map((act, idx) => (
+              <div key={act.id || idx} className="relative pl-8">
+                <div className="absolute left-0 top-0 bottom-[-32px] w-px border-l-2 border-dashed border-primary" />
+                <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary" />
+                <div className="bg-background-light dark:bg-[#23220f] p-4 rounded-xl shadow-sm border border-border-light dark:border-border-dark">
+                  <div className="flex justify-between items-start mb-2">
+                    {act.image_url && (
+                      <div
+                        className="w-full h-32 rounded-xl bg-cover bg-center mb-3"
+                        style={{ backgroundImage: `url(${act.image_url})` }}
+                      />
+                    )}
+                    <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">
+                      {act.startTime || act.start_time || act.time || '09:00'}
+                      {' · '}
+                      {act.duration
+                        ? act.duration
+                        : act.duration_minutes
+                          ? `${Math.round(act.duration_minutes / 60 * 10) / 10}h`
+                          : '2h'}
+                    </span>
                   </div>
                 ))}
               {activities.length === 0 && (

@@ -69,7 +69,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setCurrentDay(day != null ? day : cd)
       setCurrentIndex(0)
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Erro ao carregar lugares')
+      setError(getRequestErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -178,7 +178,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       try {
         await placeService.cacheSkippedPlaces(tripId, places)
       } catch (err) {
-        setError(err.response?.data?.error?.message || 'Erro ao avançar')
+        setError(getRequestErrorMessage(err, 'Erro ao avançar'))
         return
       }
     }
@@ -221,7 +221,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         setPlaces([])
         setTdvRestriction({ message: msg })
       } else {
-        setError(msg)
+        setError(getRequestErrorMessage(err, 'Erro ao dar like'))
       }
     }
   }, [currentPlace, tripId, currentDay, totalLikes, onItineraryUpdate])
@@ -244,7 +244,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setUndoStack((prev) => [...prev, { type: 'dislike', place: { ...currentPlace } }])
     } catch (err) {
       setSwipeFeedback(null)
-      setError(err.response?.data?.error?.message || 'Erro ao descartar')
+      setError(getRequestErrorMessage(err, 'Erro ao descartar'))
     }
   }, [currentPlace, tripId])
 
@@ -374,8 +374,19 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-[280px] bg-background-light dark:bg-[#1a190b]">
-        <LoadingSpinner />
+      <div className="p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm">
+        <p>{error}</p>
+        <Button
+          variant="secondary"
+          className="mt-3"
+          onClick={() => {
+            autoLoadAttemptedRef.current = true
+            setError(null)
+            loadPlaces(currentDay)
+          }}
+        >
+          Tentar novamente
+        </Button>
       </div>
     )
   }

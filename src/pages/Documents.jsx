@@ -9,6 +9,22 @@ import { documentService } from '../services/documentService'
 import { tripService } from '../services/tripService'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
+function getPreferredTrip(trips = []) {
+  if (!Array.isArray(trips) || trips.length === 0) return null
+  return trips.find((trip) => trip.status === 'planejando') || trips[0]
+}
+
+function getDocumentsErrorMessage(err) {
+  const code = err.response?.data?.error?.code
+  const message = err.response?.data?.error?.message
+
+  if (code === 'USER_NOT_FOUND' || message === 'User not found') {
+    return 'O servidor não encontrou seu usuário para gerar documentos. Como o projeto está rodando sem banco persistente, isso pode acontecer no modo em memória. A viagem ainda aparece na lista, mas o checklist não pode ser gerado até a sessão/usuário ser recriado.'
+  }
+
+  return message || 'Erro ao carregar documentos'
+}
+
 export function Documents() {
   useDocumentTitle('Documentos')
   const [searchParams] = useSearchParams()
@@ -28,7 +44,7 @@ export function Documents() {
         const tripList = Array.isArray(data) ? data : []
         setTrips(tripList)
         if (!tripIdParam && tripList.length > 0) {
-          setTripId(tripList[0].id)
+          setTripId(getPreferredTrip(tripList)?.id || null)
         }
         if (tripList.length === 0) setLoading(false)
       } catch (_) {
@@ -57,7 +73,7 @@ export function Documents() {
         setChecklist(checklistData)
         setLuggage(luggageData)
       } catch (err) {
-        setError(err.response?.data?.error?.message || 'Erro ao carregar documentos')
+        setError(getDocumentsErrorMessage(err))
       } finally {
         setLoading(false)
       }
@@ -84,7 +100,7 @@ export function Documents() {
     )
   }
 
-  const selectedTrip = trips.find((t) => t.id === tripId) || trips[0]
+  const selectedTrip = trips.find((t) => t.id === tripId) || getPreferredTrip(trips)
   const firstDest = selectedTrip?.destinations?.[0]
   const docs = checklist?.checklist || []
   const categories = luggage?.categories || []

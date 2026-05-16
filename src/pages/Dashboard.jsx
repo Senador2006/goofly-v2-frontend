@@ -74,7 +74,7 @@ export function Dashboard() {
   const recentTrips = overview?.recent_trips || []
   const daysUntil = overview?.days_until_trip ?? nextTrip?.days_until
   const firstDest = nextTrip ? { city: nextTrip.first_destination, country: nextTrip.country } : null
-  const dateRange = nextTrip?.arrival_date ? formatDate(nextTrip.arrival_date) : '24 Nov - 02 Dez'
+  const dateRange = nextTrip?.arrival_date ? formatDate(nextTrip.arrival_date) : '24/11/24 - 02/12/24'
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-2rem)]">
