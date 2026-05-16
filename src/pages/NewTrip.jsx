@@ -4,6 +4,7 @@ import { Header } from '../components/layout/Header'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
 import { tripService } from '../services/tripService'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 // Constantes do PRE_TRIP_FORM.md
 const INTERESTS = [
@@ -87,6 +88,7 @@ function generateId() {
 }
 
 export function NewTrip() {
+  useDocumentTitle('Nova viagem')
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)

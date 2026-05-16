@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { placeService } from '../../services/placeService'
+import { PLACEHOLDER_THUMB } from '../../constants/placeholders'
 
-const PLACEHOLDER_IMAGE = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600&q=80'
 const FAVORITES_KEY = 'goofly_recommendation_favorites'
 
 const INTERESTS = [
@@ -259,7 +259,7 @@ export function RecommendationsFree({ isAuthenticated }) {
                 >
                   <div
                     className="aspect-[4/3] bg-cover bg-center"
-                    style={{ backgroundImage: `url(${rec.imageUrl || PLACEHOLDER_IMAGE})` }}
+                    style={{ backgroundImage: `url(${rec.imageUrl || PLACEHOLDER_THUMB})` }}
                   />
                   <div className="p-4">
                     <div className="flex justify-between items-start gap-2 mb-2">
@@ -306,7 +306,7 @@ export function RecommendationsFree({ isAuthenticated }) {
               >
                 <div
                   className="w-24 shrink-0 aspect-square bg-cover bg-center"
-                  style={{ backgroundImage: `url(${fav.imageUrl || PLACEHOLDER_IMAGE})` }}
+                  style={{ backgroundImage: `url(${fav.imageUrl || PLACEHOLDER_THUMB})` }}
                 />
                 <div className="p-4 flex-1 min-w-0">
                   <div className="flex justify-between items-start gap-2">

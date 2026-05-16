@@ -2,10 +2,10 @@ import { useCallback, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { TurnstileWidget } from '../components/auth/TurnstileWidget'
 import { Button } from '../components/common/Button'
-import { Icon } from '../components/common/Icon'
-import { useAuth } from '../context/AuthContext'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export function Register() {
+  useDocumentTitle('Criar conta')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

@@ -7,8 +7,18 @@ const baseURL = useDirect
   ? (import.meta.env.VITE_API_SERVICES_URL || 'http://localhost:3001')
   : gatewayBaseURL
 
-const createApiClient = (clientBaseURL) => axios.create({
-  baseURL: clientBaseURL,
+// Timeouts por classe de operação (ms).
+// Sem timeout no axios o cliente espera infinitamente em conexões mortas
+// (TCP RST nunca chega) — request fica pendurado e o usuário vê spinner eterno.
+// Default = 30s cobre 99% dos requests; chamadas que envolvem agentes IA
+// (gateway → services → n8n) precisam de mais — usar `api.aiClient` ou
+// passar `timeout` no config do request específico.
+const DEFAULT_TIMEOUT_MS = 30_000
+export const AI_TIMEOUT_MS = 180_000
+
+const api = axios.create({
+  baseURL,
+  timeout: DEFAULT_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
