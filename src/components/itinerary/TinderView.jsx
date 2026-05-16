@@ -5,16 +5,8 @@ import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
 import { EmptyState } from '../common/EmptyState'
 import { placeService } from '../../services/placeService'
-import { PLACEHOLDER_COVER } from '../../constants/placeholders'
-
-function getDisplayImageUrl(value) {
-  if (value == null) return PLACEHOLDER_COVER
-  const s = typeof value === 'string' ? value.trim() : String(value)
-  const urlMatch = s.match(/https?:\/\/[^\s)]+/i)
-  if (urlMatch) return urlMatch[0].replace(/[)\],]+$/, '')
-  if (/^https?:\/\//i.test(s)) return s
-  return value || PLACEHOLDER_COVER
-}
+import { getPlaceCoverImageUrl } from '../../utils/placeImages'
+import { PlaceCardGallery } from './PlaceCardGallery'
 
 function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
@@ -432,33 +424,28 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           {currentPlace ? (
             <>
               <div className="relative w-full flex justify-center items-center" style={{ minHeight: 'min(58vh, 440px)' }}>
-                {places[currentIndex + 1] && (
-                  <div
-                    className="absolute w-[94%] max-w-xl aspect-[3/4] rounded-3xl overflow-hidden shadow-lg border border-border-light dark:border-border-dark bg-card-dark transition-transform duration-300"
-                    style={{ transform: 'scale(0.94)', opacity: 0.55 }}
-                  >
+              {places[currentIndex + 1] && (
+                <div
+                  className="absolute w-[94%] max-w-xl aspect-[3/4] rounded-3xl overflow-hidden shadow-lg border border-border-light dark:border-border-dark bg-card-dark transition-transform duration-300"
+                  style={{ transform: 'scale(0.94)', opacity: 0.55 }}
+                >
                     <div
                       className="absolute inset-0 bg-cover bg-center"
                       style={{
-                        backgroundImage: `url(${getDisplayImageUrl(places[currentIndex + 1].image_url || places[currentIndex + 1].imageUrl)})`,
+                        backgroundImage: `url(${getPlaceCoverImageUrl(places[currentIndex + 1])})`,
                       }}
                     />
                   </div>
                 )}
-                <div
-                  className={`relative w-full max-w-xl aspect-[3/4] sm:aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-black/5 dark:ring-white/10 transition-transform duration-300 group ${
-                    swipeFeedback === 'like' ? 'scale-[1.02] ring-4 ring-primary' : ''
-                  } ${swipeFeedback === 'dislike' ? 'scale-[0.98] opacity-85' : ''}`}
-                >
-                  <div
-                    className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
-                    style={{
-                      backgroundImage: `url(${getDisplayImageUrl(currentPlace.image_url || currentPlace.imageUrl)})`,
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent" />
-                  <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-7 text-white">
-                    <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1">
+              <div
+                className={`relative w-full max-w-xl aspect-[3/4] sm:aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-black/5 dark:ring-white/10 transition-transform duration-300 group ${
+                  swipeFeedback === 'like' ? 'scale-[1.02] ring-4 ring-primary' : ''
+                } ${swipeFeedback === 'dislike' ? 'scale-[0.98] opacity-85' : ''}`}
+              >
+                <PlaceCardGallery place={currentPlace} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none z-[10]" />
+                <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-7 text-white z-[18] pointer-events-none">
+                  <div className="flex gap-2 mb-2 overflow-x-auto no-scrollbar pb-1">
                       {(currentPlace.tags || currentPlace.categories || []).filter(Boolean).map((tag) => {
                         const label = typeof tag === 'string' ? tag : tag?.name || tag?.label || String(tag)
                         return (
@@ -508,7 +495,9 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                   <Icon name="favorite" className="text-3xl sm:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
                 </button>
               </div>
-              <p className="text-[11px] text-text-secondary -mt-2">Teclado: ← descartar · → curtir</p>
+              <p className="text-[11px] text-text-secondary -mt-2 text-center max-w-sm">
+                Toque nas laterais da foto ou arraste para ver mais imagens · Teclado: ← descartar · → curtir
+              </p>
             </>
           ) : tdvRestriction ? (
             <div className="text-center max-w-md px-2 py-4 w-full">
