@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import api from '../services/api'
+import api, { gatewayApi } from '../services/api'
 
 const AuthContext = createContext()
 
@@ -51,8 +51,8 @@ export function AuthProvider({ children }) {
     return data
   }
 
-  const register = async (name, email, password) => {
-    const { data } = await api.post('/auth/register', { name, email, password })
+  const register = async (name, email, password, captchaToken) => {
+    const { data } = await gatewayApi.post('/auth/register', { name, email, password, captchaToken })
     const payload = data.data || data
     const token = payload.token
     const userData = payload.user || payload

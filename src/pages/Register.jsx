@@ -1,34 +1,59 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import { Icon } from '../components/common/Icon'
+import { TurnstileWidget } from '../components/auth/TurnstileWidget'
 import { Button } from '../components/common/Button'
+import { Icon } from '../components/common/Icon'
+import { useAuth } from '../context/AuthContext'
 
 export function Register() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaResetNonce, setCaptchaResetNonce] = useState(0)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { register } = useAuth()
   const navigate = useNavigate()
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || ''
+
+  const handleCaptchaTokenChange = useCallback((token) => {
+    setCaptchaToken(token)
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    if (password.length < 8) {
-      setError('A senha deve ter no mínimo 8 caracteres.')
+
+    if (!turnstileSiteKey) {
+      setError('Captcha nao configurado neste ambiente. Defina VITE_TURNSTILE_SITE_KEY.')
       return
     }
+
+    if (password.length < 8) {
+      setError('A senha deve ter no minimo 8 caracteres.')
+      return
+    }
+
+    if (!captchaToken) {
+      setError('Confirme a verificacao de seguranca antes de continuar.')
+      return
+    }
+
     setLoading(true)
+
     try {
-      await register(name, email, password)
+      await register(name, email, password, captchaToken)
       navigate('/')
     } catch (err) {
+      setCaptchaToken('')
+      setCaptchaResetNonce((value) => value + 1)
+
       const errData = err.response?.data?.error
       const message = typeof errData === 'object' && errData?.message
         ? errData.message
         : err.response?.data?.errors?.[0]?.msg || 'Erro ao criar conta. Tente novamente.'
+
       setError(message)
     } finally {
       setLoading(false)
@@ -78,7 +103,7 @@ export function Register() {
               />
             </div>
             <div>
-              <label className="block text-sm font-bold mb-2 text-text-secondary">Senha (mín. 8 caracteres)</label>
+              <label className="block text-sm font-bold mb-2 text-text-secondary">Senha (min. 8 caracteres)</label>
               <input
                 type="password"
                 value={password}
@@ -86,15 +111,23 @@ export function Register() {
                 required
                 minLength={8}
                 className="w-full bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
-                placeholder="••••••••"
+                placeholder="********"
               />
             </div>
-            <Button type="submit" className="w-full justify-center" disabled={loading}>
+            <div>
+              <label className="block text-sm font-bold mb-2 text-text-secondary">Verificacao de seguranca</label>
+              <TurnstileWidget
+                siteKey={turnstileSiteKey}
+                onTokenChange={handleCaptchaTokenChange}
+                resetNonce={captchaResetNonce}
+              />
+            </div>
+            <Button type="submit" className="w-full justify-center" disabled={loading || !captchaToken}>
               {loading ? 'Criando conta...' : 'Cadastrar'}
             </Button>
           </form>
           <p className="mt-6 text-center text-sm text-text-secondary">
-            Já tem conta?{' '}
+            Ja tem conta?{' '}
             <Link to="/login" className="text-primary font-bold hover:underline">
               Entrar
             </Link>
