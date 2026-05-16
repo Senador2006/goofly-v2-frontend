@@ -20,7 +20,6 @@ export default {
     trips: 'Minhas viagens',
     discover: 'Descobrir',
     memories: 'Memórias',
-    documents: 'Documentos',
     settings: 'Configurações'
   },
 

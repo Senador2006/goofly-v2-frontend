@@ -7,7 +7,6 @@ const navItems = [
   { to: '/discover', icon: 'explore', label: 'Descobrir' },
   { to: '/trips', icon: 'luggage', label: 'Minhas Viagens' },
   { to: '/memories', icon: 'photo_library', label: 'Memórias' },
-  { to: '/documents', icon: 'folder_shared', label: 'Documentos' },
 ]
 
 export function Sidebar() {

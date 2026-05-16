@@ -6,7 +6,6 @@ const navItems = [
   { to: '/trips', icon: 'luggage', label: 'Viagens' },
   { to: '/discover', icon: 'explore', label: 'Descobrir' },
   { to: '/memories', icon: 'photo_library', label: 'Memórias' },
-  { to: '/documents', icon: 'folder_shared', label: 'Docs' },
 ]
 
 export function MobileNav() {
