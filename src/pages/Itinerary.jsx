@@ -1,22 +1,38 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
 import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { TinderView } from '../components/itinerary/TinderView'
 import { DocumentosView } from '../components/itinerary/DocumentosView'
+import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivityCard'
+import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { tripService } from '../services/tripService'
+import { userService } from '../services/userService'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { hasActivePlanningAccess, getTripDayCount } from '../utils/planningAccess'
 
 const MODE_ROTEIRO = 'roteiro'
 const MODE_TDV = 'tdv'
 const MODE_DOCUMENTOS = 'documentos'
 
+function activityMatchesDay(act, selectedDay) {
+  if (selectedDay == null || selectedDay === '') return true
+  const raw = act.day
+  if (raw == null || raw === '') return true
+  if (String(raw) === String(selectedDay)) return true
+  const dayNum = Number(raw)
+  const selNum = Number(selectedDay)
+  if (Number.isFinite(dayNum) && Number.isFinite(selNum) && dayNum === selNum) return true
+  return false
+}
+
 export function Itinerary() {
   const { tripId } = useParams()
   const navigate = useNavigate()
-  const { user, refreshUser } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { user, refreshUser, applyUserUpdate } = useAuth()
   const [trip, setTrip] = useState(null)
   const [itinerary, setItinerary] = useState(null)
   const [selectedDay, setSelectedDay] = useState(1)
@@ -32,8 +48,7 @@ export function Itinerary() {
   const deleteInFlightRef = useRef(false)
 
   const isPlanning = trip?.status === 'planejando'
-  const hasPlanejamentoCompleto = ['planejamento_completo', 'premium'].includes(user?.subscription_type) &&
-    (!user?.subscription_expires_at || new Date(user.subscription_expires_at) > new Date())
+  const hasPlanejamentoCompleto = hasActivePlanningAccess(user)
 
   const handleDeletePlanning = async () => {
     if (deleteInFlightRef.current) return
@@ -51,37 +66,19 @@ export function Itinerary() {
     }
   }
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setError(null)
-        const [tripData, itineraryData] = await Promise.all([
-          tripService.getTrip(tripId),
-          tripService.getItinerary(tripId),
-        ])
-        setTrip(tripData)
-        setItinerary(itineraryData)
-      } catch (err) {
-        setError(err.response?.data?.error?.message || 'Erro ao carregar roteiro')
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [tripId])
-
   const refetchTimeoutRef = useRef(null)
   const refetchItineraryImmediate = useCallback(async () => {
-    if (!tripId) return
+    if (!tripId) return null
     if (refetchTimeoutRef.current) {
       clearTimeout(refetchTimeoutRef.current)
       refetchTimeoutRef.current = null
     }
     try {
-      const itineraryData = await tripService.getItinerary(tripId)
+      const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
       setItinerary(itineraryData)
+      return itineraryData
     } catch {
-      // silencioso
+      return null
     }
   }, [tripId])
   const refetchItinerary = useCallback(() => {
@@ -89,6 +86,32 @@ export function Itinerary() {
     if (refetchTimeoutRef.current) clearTimeout(refetchTimeoutRef.current)
     refetchTimeoutRef.current = setTimeout(refetchItineraryImmediate, 400)
   }, [tripId, refetchItineraryImmediate])
+
+  const subscriptionKey = `${user?.subscription_type || 'free'}:${user?.subscription_expires_at || ''}`
+
+  useEffect(() => {
+    if (!tripId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        setError(null)
+        setLoading(true)
+        const tripData = await tripService.getTrip(tripId)
+        if (cancelled) return
+        setTrip(tripData)
+        await refetchItineraryImmediate()
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.response?.data?.error?.message || 'Erro ao carregar roteiro')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [tripId, subscriptionKey, refetchItineraryImmediate])
 
   useEffect(() => {
     if (isPlanning) {
@@ -102,6 +125,43 @@ export function Itinerary() {
     }
   }, [isPlanning, mode])
 
+  useEffect(() => {
+    if (searchParams.get('unlocked') !== '1' || !tripId) return
+    let cancelled = false
+    ;(async () => {
+      await refreshUser()
+      if (cancelled) return
+      await refetchItineraryImmediate()
+      if (cancelled) return
+      const next = new URLSearchParams(searchParams)
+      next.delete('unlocked')
+      setSearchParams(next, { replace: true })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, setSearchParams, tripId, refreshUser, refetchItineraryImmediate])
+
+  const handleDevUnlock = async () => {
+    try {
+      const activated = await userService.activatePlanningDev()
+      if (activated?.subscription_type) {
+        applyUserUpdate({
+          subscription_type: activated.subscription_type,
+          subscription_expires_at: activated.subscription_expires_at ?? null,
+        })
+      }
+      await refreshUser()
+      const data = await refetchItineraryImmediate()
+      if (data?.activities?.[0]?.day != null) {
+        const d = Number(data.activities[0].day)
+        setSelectedDay(Number.isFinite(d) && d >= 1 ? d : data.activities[0].day)
+      }
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Não foi possível ativar o plano de demonstração.')
+    }
+  }
+
   const handleFinalizeTdv = useCallback(async () => {
     if (!tripId) return
     setFinalizingTdv(true)
@@ -109,7 +169,13 @@ export function Itinerary() {
     try {
       const result = await tripService.finalizeTdvPlanning(tripId)
       if (result?.trip) setTrip(result.trip)
-      if (result?.itinerary) setItinerary(result.itinerary)
+      const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
+      setItinerary(itineraryData)
+      const firstDay = itineraryData?.activities?.[0]?.day
+      if (firstDay != null && firstDay !== '') {
+        const asNum = Number(firstDay)
+        setSelectedDay(Number.isFinite(asNum) && asNum >= 1 ? asNum : firstDay)
+      }
       setMode(MODE_ROTEIRO)
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Não foi possível finalizar o TDV')
@@ -117,6 +183,17 @@ export function Itinerary() {
       setFinalizingTdv(false)
     }
   }, [tripId])
+
+  useEffect(() => {
+    const acts = itinerary?.activities || []
+    if (!acts.length) return
+    const matches = acts.filter((a) => activityMatchesDay(a, selectedDay))
+    if (matches.length > 0) return
+    const first = acts.find((a) => a.day != null && a.day !== '')
+    if (!first) return
+    const d = Number(first.day)
+    setSelectedDay(Number.isFinite(d) && d >= 1 ? d : first.day)
+  }, [itinerary, selectedDay])
 
   if (loading) return <LoadingSpinner />
   if (error || !trip) {
@@ -137,12 +214,17 @@ export function Itinerary() {
   const firstDest = trip.destinations?.[0]
   const destLabel = firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Viagem'
   const activities = itinerary?.activities || []
+  const premiumRestriction = itinerary?._premiumRestriction
+  const serverFullAccess = itinerary?._access?.fullAccess === true
+  const hasFullAccess = hasPlanejamentoCompleto || serverFullAccess
+  const tripDayCount = getTripDayCount(trip)
   const rawDays = [...new Set(activities.map((a) => a.day).filter((d) => d != null && d !== ''))]
   const numericDays = rawDays.every((d) => typeof d === 'number' || /^\d+$/.test(String(d)))
     ? rawDays.map((d) => (typeof d === 'number' ? d : parseInt(d, 10))).sort((a, b) => a - b)
     : rawDays.sort()
-  const days = numericDays.length > 0 ? numericDays : [1]
+  const days = numericDays.length > 0 ? numericDays : Array.from({ length: tripDayCount }, (_, i) => i + 1)
   const effectiveSelectedDay = days.includes(selectedDay) ? selectedDay : (days[0] ?? 1)
+  const dayActivities = activities.filter((a) => activityMatchesDay(a, effectiveSelectedDay))
 
   const showRoteiroSidebar = mode === MODE_ROTEIRO
 
@@ -235,10 +317,33 @@ export function Itinerary() {
             <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-[#1c1c0d] dark:text-white leading-tight">
               Criador de Roteiros
             </h1>
-            <p className="text-xs sm:text-sm text-text-secondary mt-0.5">Rota otimizada por IA · {destLabel}</p>
+            <p className="text-xs sm:text-sm text-text-secondary mt-0.5">
+              Rota otimizada por IA · {destLabel}
+              {!isPlanning && activities.length > 0 ? (
+                <span className="text-text-secondary/80">
+                  {' '}
+                  · {activities.length} {activities.length === 1 ? 'parada' : 'paradas'}
+                  {premiumRestriction?.total ? ` (${premiumRestriction.visible}/${premiumRestriction.total} visíveis)` : ''}
+                </span>
+              ) : null}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             {modeTabs}
+            {hasFullAccess && !isPlanning ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-green-700 dark:text-green-400 bg-green-500/15 px-2 py-0.5 rounded-full shrink-0">
+                <Icon name="verified" className="text-sm" />
+                Plano completo
+              </span>
+            ) : null}
+            {!isPlanning && !hasFullAccess && activities.length > 0 ? (
+              <Link to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}>
+                <Button size="sm" className="rounded-xl shrink-0">
+                  <Icon name="workspace_premium" />
+                  <span className="hidden sm:inline">Roteiro completo</span>
+                </Button>
+              </Link>
+            ) : null}
             {isPlanning && (
               <Button
                 variant="secondary"
@@ -296,42 +401,34 @@ export function Itinerary() {
       <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
         {showRoteiroSidebar ? (
           <section className="w-full lg:w-1/2 xl:w-2/5 flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark">
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
-              {activities
-                .filter((a) => !effectiveSelectedDay || a.day === effectiveSelectedDay)
-                .map((act, idx) => (
-                  <div key={act.id || idx} className="relative pl-8">
-                    <div className="absolute left-0 top-0 bottom-[-32px] w-px border-l-2 border-dashed border-primary" />
-                    <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary" />
-                    <div className="bg-background-light dark:bg-[#23220f] p-4 rounded-xl shadow-sm border border-border-light dark:border-border-dark">
-                      <div className="flex justify-between items-start mb-2">
-                        {act.image_url && (
-                          <div
-                            className="w-full h-32 rounded-xl bg-cover bg-center mb-3"
-                            style={{ backgroundImage: `url(${act.image_url})` }}
-                          />
-                        )}
-                        <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">
-                          {act.startTime || act.start_time || act.time || '09:00'}
-                          {' · '}
-                          {act.duration
-                            ? act.duration
-                            : act.duration_minutes
-                              ? `${Math.round(act.duration_minutes / 60 * 10) / 10}h`
-                              : '2h'}
-                        </span>
-                      </div>
-                      <h3 className="text-sm font-bold text-[#1c1c0d] dark:text-white leading-tight">
-                        {act.title || act.name || act.placeName || `Atividade ${idx + 1}`}
-                      </h3>
-                      {(act.description || act.notes) && (
-                        <p className="text-xs text-text-secondary mt-1.5 leading-relaxed line-clamp-3">
-                          {act.description || act.notes}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              {!hasFullAccess && premiumRestriction ? (
+                <ItineraryPremiumBanner
+                  tripId={tripId}
+                  restriction={premiumRestriction}
+                  showDevUnlock={import.meta.env.DEV}
+                  onDevUnlock={handleDevUnlock}
+                />
+              ) : null}
+              {dayActivities.length > 0 ? (
+                <div className="space-y-0">
+                  {dayActivities.map((act, idx) => (
+                    <ItineraryActivityCard
+                      key={act.id || `${effectiveSelectedDay}-${idx}`}
+                      act={act}
+                      index={idx}
+                      isLast={idx === dayActivities.length - 1}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              {dayActivities.length === 0 && activities.length > 0 ? (
+                <div className="text-center py-10 px-4 text-text-secondary rounded-2xl border border-dashed border-border-light dark:border-border-dark mb-4">
+                  <Icon name="event_busy" className="text-4xl mb-3 opacity-40 mx-auto text-primary" />
+                  <p className="text-sm font-medium text-[#1c1c0d] dark:text-white">Nenhuma parada neste dia</p>
+                  <p className="text-xs sm:text-sm mt-2">Troque o dia acima ou desbloqueie o roteiro completo.</p>
+                </div>
+              ) : null}
               {activities.length === 0 && (
                 <div className="text-center py-10 px-4 text-text-secondary rounded-2xl border border-dashed border-border-light dark:border-border-dark">
                   <Icon name="route" className="text-4xl mb-3 opacity-40 mx-auto text-primary" />
@@ -366,7 +463,15 @@ export function Itinerary() {
           ) : null}
           {mode === MODE_DOCUMENTOS ? (
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white dark:bg-card-dark">
-              <DocumentosView tripId={tripId} trip={trip} hasPlanejamentoCompleto={hasPlanejamentoCompleto} onUpgrade={refreshUser} />
+              <DocumentosView
+                tripId={tripId}
+                trip={trip}
+                hasPlanejamentoCompleto={hasPlanejamentoCompleto}
+                onUpgrade={async () => {
+                  await refreshUser()
+                  await refetchItineraryImmediate()
+                }}
+              />
             </div>
           ) : null}
           {mode === MODE_ROTEIRO ? (

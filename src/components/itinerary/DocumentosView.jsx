@@ -4,7 +4,7 @@ import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
 import { documentService } from '../../services/documentService'
-import api from '../../services/api'
+import { userService } from '../../services/userService'
 
 /**
  * Assistente de Documentos na área de planejamento.
@@ -41,7 +41,7 @@ export function DocumentosView({ tripId, trip, hasPlanejamentoCompleto, onUpgrad
 
   const handleDevUpgrade = async () => {
     try {
-      await api.post('/users/me/upgrade-planejamento')
+      await userService.activatePlanningDev()
       await onUpgrade?.()
     } catch (_) {}
   }

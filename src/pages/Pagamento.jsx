@@ -54,7 +54,19 @@ export function Pagamento() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tripId = searchParams.get('tripId')
-  const { user, refreshUser } = useAuth()
+  const { user, refreshUser, applyUserUpdate } = useAuth()
+
+  const syncPlanningAccess = async (activationPayload) => {
+    const patch = activationPayload?.user || activationPayload
+    if (patch?.subscription_type) {
+      applyUserUpdate({
+        subscription_type: patch.subscription_type,
+        subscription_expires_at: patch.subscription_expires_at ?? null,
+      })
+    }
+    const fresh = await refreshUser().catch(() => null)
+    return fresh || patch
+  }
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -129,17 +141,20 @@ export function Pagamento() {
                   throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
                 }
 
-                await userService.completeCheckout({
-                  paymentApproved: true,
-                  paymentStatus: 'approved',
-                })
-                await refreshUser().catch(() => {})
+                // O backend já ativa o plano no pagamento aprovado; reforça com checkout-complete.
+                await syncPlanningAccess(
+                  (await userService.completeCheckout({
+                    paymentApproved: true,
+                    paymentStatus: 'approved',
+                  })) || { subscription_type: 'planejamento_completo' }
+                )
 
                 if (!isMountedRef.current) return
                 setSuccess(true)
                 setTimeout(() => {
-                  navigate(tripId ? `/trips/${tripId}/itinerary` : '/', { replace: true })
-                }, 2000)
+                  const base = tripId ? `/trips/${tripId}/itinerary` : '/'
+                  navigate(`${base}${tripId ? '?unlocked=1' : ''}`, { replace: true })
+                }, 1200)
               } catch (err) {
                 if (!isMountedRef.current) return
                 setError(err.response?.data?.error?.message || err.message || 'Erro ao processar o pagamento.')
@@ -264,11 +279,11 @@ export function Pagamento() {
             setLoading(true)
             setError(null)
             try {
-              await userService.activatePlanningDev()
-              await refreshUser().catch(() => {})
+              await syncPlanningAccess(await userService.activatePlanningDev())
               setSuccess(true)
               setTimeout(() => {
-                navigate(tripId ? `/trips/${tripId}/itinerary` : '/', { replace: true })
+                const base = tripId ? `/trips/${tripId}/itinerary` : '/'
+                navigate(`${base}${tripId ? '?unlocked=1' : ''}`, { replace: true })
               }, 1500)
             } catch (err) {
               setError(err.response?.data?.error?.message || 'Não foi possível ativar a demonstração.')
