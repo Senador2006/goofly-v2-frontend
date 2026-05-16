@@ -1,11 +1,15 @@
 import api from './api'
 
+/**
+ * Endpoints legacy (`/users/me/checkout-complete`, `/users/me/upgrade-planejamento`)
+ * devolvem `{ message, ... }` sem chave `data`. O normalizador do `api.js`
+ * mapeia o objeto inteiro para `body.data`, então `res.body.data` aqui é
+ * sempre o payload utilizável.
+ */
 export const userService = {
-  /** Simulação de conclusão de pagamento (não cobra). Libera planejamento completo + documentos. */
   completeCheckout: () =>
-    api.post('/users/me/checkout-complete').then((res) => res.data),
+    api.post('/users/me/checkout-complete').then((res) => res.body.data),
 
-  /** Atualiza nome e e-mail do usuário autenticado (PUT /users/:id no gateway). */
   updateProfile: (userId, { name, email }) =>
-    api.put(`/users/${userId}`, { name, email }).then((res) => res.data.data || res.data),
+    api.put(`/users/${userId}`, { name, email }).then((res) => res.body.data),
 }

@@ -290,31 +290,46 @@ export function Itinerary() {
               </Button>
             </div>
           </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
-          {activities
-            .filter((a) => !effectiveSelectedDay || a.day === effectiveSelectedDay)
-            .map((act, idx) => (
-              <div key={act.id || idx} className="relative pl-8">
-                <div className="absolute left-0 top-0 bottom-[-32px] w-px border-l-2 border-dashed border-primary" />
-                <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary" />
-                <div className="bg-background-light dark:bg-[#23220f] p-4 rounded-xl shadow-sm border border-border-light dark:border-border-dark">
-                  <div className="flex justify-between items-start mb-2">
-                    {act.image_url && (
-                      <div
-                        className="w-full h-32 rounded-xl bg-cover bg-center mb-3"
-                        style={{ backgroundImage: `url(${act.image_url})` }}
-                      />
-                    )}
-                    <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">
-                      {act.startTime || act.start_time || act.time || '09:00'}
-                      {' · '}
-                      {act.duration
-                        ? act.duration
-                        : act.duration_minutes
-                          ? `${Math.round(act.duration_minutes / 60 * 10) / 10}h`
-                          : '2h'}
-                    </span>
+        )}
+      </header>
+
+      <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
+        {showRoteiroSidebar ? (
+          <section className="w-full lg:w-1/2 xl:w-2/5 flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark">
+            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              {activities
+                .filter((a) => !effectiveSelectedDay || a.day === effectiveSelectedDay)
+                .map((act, idx) => (
+                  <div key={act.id || idx} className="relative pl-8">
+                    <div className="absolute left-0 top-0 bottom-[-32px] w-px border-l-2 border-dashed border-primary" />
+                    <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary" />
+                    <div className="bg-background-light dark:bg-[#23220f] p-4 rounded-xl shadow-sm border border-border-light dark:border-border-dark">
+                      <div className="flex justify-between items-start mb-2">
+                        {act.image_url && (
+                          <div
+                            className="w-full h-32 rounded-xl bg-cover bg-center mb-3"
+                            style={{ backgroundImage: `url(${act.image_url})` }}
+                          />
+                        )}
+                        <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">
+                          {act.startTime || act.start_time || act.time || '09:00'}
+                          {' · '}
+                          {act.duration
+                            ? act.duration
+                            : act.duration_minutes
+                              ? `${Math.round(act.duration_minutes / 60 * 10) / 10}h`
+                              : '2h'}
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-bold text-[#1c1c0d] dark:text-white leading-tight">
+                        {act.title || act.name || act.placeName || `Atividade ${idx + 1}`}
+                      </h3>
+                      {(act.description || act.notes) && (
+                        <p className="text-xs text-text-secondary mt-1.5 leading-relaxed line-clamp-3">
+                          {act.description || act.notes}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 ))}
               {activities.length === 0 && (

@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Leaflet — RF08.3.
+ * Estilos base do Leaflet são importados em `main.jsx` (PostCSS exige
+ * que `@import` esteja antes de qualquer outra diretiva; misturar com
+ * `@tailwind` quebra o build do Vite). Aqui ficam só as overrides do
+ * tema escuro, aplicadas via filtro CSS sobre os tiles OSM para evitar
+ * dependência de provedores pagos (Mapbox/Stadia) só por dark mode. */
+.dark .leaflet-container .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.95) saturate(0.85);
+}
+.dark .leaflet-container {
+  background: #1a190a;
+}
+
 body {
   font-family: 'Plus Jakarta Sans', sans-serif;
   margin: 0;

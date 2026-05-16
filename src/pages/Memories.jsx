@@ -9,6 +9,7 @@ import { tripService } from '../services/tripService'
 import { formatDate } from '../utils/formatters'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { PLACEHOLDER_THUMB } from '../constants/placeholders'
+import { MemoryMap } from '../components/memories/MemoryMap'
 
 export function Memories() {
   useDocumentTitle('Memórias')
@@ -106,21 +107,17 @@ export function Memories() {
               )
             })}
           </div>
-          <div className="flex-1 min-h-[300px] rounded-xl overflow-hidden shadow-2xl border-4 border-border-light dark:border-border-dark relative bg-[#2d2c14] dark:bg-[#1a190a]">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-4xl font-black text-white/10">Mapa Mundi</span>
-            </div>
-            {(memoryMap?.points || []).slice(0, 5).map((p, i) => (
-              <div
-                key={p.id || i}
-                className="absolute size-3 bg-primary rounded-full shadow-primary"
-                style={{
-                  left: `${15 + i * 20}%`,
-                  top: '40%',
-                }}
-              />
-            ))}
-          </div>
+          <MemoryMap
+            points={memoryMap?.points || []}
+            className="flex-1 min-h-[300px]"
+            ariaLabel="Mapa Mundi com pontos das suas memórias"
+          />
+          {memoryMap?.points && memoryMap.points.length > 0 && (
+            <p className="mt-2 text-[11px] text-text-secondary">
+              {memoryMap.points.length} memória{memoryMap.points.length === 1 ? '' : 's'} localizada
+              {memoryMap.points.length === 1 ? '' : 's'} · tiles &copy; OpenStreetMap
+            </p>
+          )}
         </div>
 
         <aside className="w-full lg:w-[380px] xl:w-[420px] flex-shrink-0 bg-white dark:bg-card-dark border-l border-border-light dark:border-border-dark flex flex-col overflow-hidden">

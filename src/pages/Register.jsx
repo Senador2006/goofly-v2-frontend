@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { Icon } from '../components/common/Icon'
 import { TurnstileWidget } from '../components/auth/TurnstileWidget'
 import { Button } from '../components/common/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
