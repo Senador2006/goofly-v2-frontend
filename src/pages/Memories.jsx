@@ -99,7 +99,7 @@ export function Memories() {
                   key={t.id}
                   onClick={() => handleTripChange(t.id)}
                   className={`flex items-center gap-2 rounded-full px-4 text-sm font-medium whitespace-nowrap ${
-                    tripId === t.id ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'
+                    tripId === t.id ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'
                   }`}
                 >
                   {firstDest ? `${firstDest.city}` : `Viagem ${t.id}`}
@@ -143,7 +143,7 @@ export function Memories() {
                       alt={mem.caption || 'Memória'}
                       className="w-full h-48 object-cover"
                     />
-                    <div className="p-4 bg-background-light dark:bg-[#23220f]">
+                    <div className="p-4 bg-background-light dark:bg-background-dark">
                       <p className="text-xs text-text-secondary leading-relaxed">{mem.caption || mem.location}</p>
                     </div>
                   </div>

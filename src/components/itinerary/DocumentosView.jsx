@@ -60,7 +60,7 @@ export function DocumentosView({ tripId, trip, hasPlanejamentoCompleto, onUpgrad
           </p>
           <Link
             to={`/pagamento?tripId=${encodeURIComponent(tripId || '')}`}
-            className="w-full rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-[#1c1c0d] hover:opacity-90 hover:shadow-primary px-8 py-4 text-base"
+            className="w-full rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-foreground hover:opacity-90 hover:shadow-primary px-8 py-4 text-base"
           >
             <Icon name="workspace_premium" />
             Adquirir Planejamento Completo
@@ -157,7 +157,7 @@ export function DocumentosView({ tripId, trip, hasPlanejamentoCompleto, onUpgrad
                           />
                           <span className="text-sm font-medium">{item.name}</span>
                           {item.essential && (
-                            <span className="ml-auto text-[10px] font-bold px-2 py-0.5 bg-primary/20 text-black rounded-full uppercase">
+                            <span className="ml-auto text-[10px] font-bold px-2 py-0.5 bg-primary/20 text-foreground rounded-full uppercase">
                               IA
                             </span>
                           )}

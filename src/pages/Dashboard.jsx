@@ -82,24 +82,21 @@ export function Dashboard() {
 
       {/* Hero - Call to Action */}
       <div className="bg-primary rounded-2xl p-8 md:p-10 mb-8">
-        <h1 className="text-3xl md:text-4xl font-black text-[#1c1c0d] mb-3">
+        <h1 className="text-3xl md:text-4xl font-black text-foreground mb-3">
           Para onde agora?
         </h1>
-        <p className="text-[#1c1c0d]/80 text-base md:text-lg max-w-xl mb-6">
+        <p className="text-foreground/80 text-base md:text-lg max-w-xl mb-6">
           Sua próxima grande aventura está a poucos cliques. Deixe-nos ajudar a planejar a fuga perfeita.
         </p>
         <div className="flex flex-wrap gap-4">
           <Link to="/trips/new">
-            <Button
-              variant="secondary"
-              className="bg-[#1c1c0d] text-white hover:bg-[#1c1c0d]/90 hover:text-white"
-            >
+            <Button variant="inverse">
               <Icon name="add" />
               Começar a Planejar
             </Button>
           </Link>
           <Link to="/discover">
-            <Button className="bg-white/90 text-[#1c1c0d] hover:bg-white border-2 border-[#1c1c0d]/20">
+            <Button variant="hero-light">
               Explorar Destinos
             </Button>
           </Link>
@@ -111,7 +108,7 @@ export function Dashboard() {
         {/* Upcoming Trip Card */}
         <div className="bg-white dark:bg-card-dark rounded-2xl p-6 border border-border-light dark:border-border-dark">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-[#1c1c0d] dark:text-white">Próxima Viagem</h2>
+            <h2 className="text-lg font-bold text-foreground dark:text-white">Próxima Viagem</h2>
             <Link
               to="/trips"
               className="text-sm font-bold text-primary hover:underline"
@@ -129,7 +126,7 @@ export function Dashboard() {
                 <p className="text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">
                   EM {daysUntil ?? 12} DIAS
                 </p>
-                <h3 className="text-xl font-bold text-[#1c1c0d] dark:text-white truncate">
+                <h3 className="text-xl font-bold text-foreground dark:text-white truncate">
                   {firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Tokyo, Japan'}
                 </h3>
                 <p className="text-sm text-text-secondary mt-1">{dateRange}</p>
@@ -141,7 +138,7 @@ export function Dashboard() {
                   </div>
                   <Link
                     to={`/trips/${nextTrip.id}`}
-                    className="ml-auto text-sm font-semibold text-[#1c1c0d] dark:text-white flex items-center gap-1 hover:text-primary"
+                    className="ml-auto text-sm font-semibold text-foreground dark:text-white flex items-center gap-1 hover:text-primary"
                   >
                     Gerenciar
                     <Icon name="arrow_forward" className="text-sm" />
@@ -163,7 +160,7 @@ export function Dashboard() {
         {/* Recent Memories Card */}
         <div className="bg-white dark:bg-card-dark rounded-2xl p-6 border border-border-light dark:border-border-dark">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-[#1c1c0d] dark:text-white">Memórias Recentes</h2>
+            <h2 className="text-lg font-bold text-foreground dark:text-white">Memórias Recentes</h2>
             <Link
               to="/memories"
               className="text-sm font-bold text-primary hover:underline"

@@ -195,7 +195,7 @@ export function RecommendationsFree({ isAuthenticated }) {
                   onClick={() => toggleInterest(slug)}
                   className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                     interests.includes(slug)
-                      ? 'bg-primary text-[#1c1c0d]'
+                      ? 'bg-primary text-foreground'
                       : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
                   }`}
                 >

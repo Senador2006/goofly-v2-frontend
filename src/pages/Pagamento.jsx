@@ -177,7 +177,7 @@ export function Pagamento() {
         <div className="rounded-full bg-primary/20 p-4 mb-6">
           <Icon name="check_circle" className="text-5xl text-primary" />
         </div>
-        <h1 className="text-2xl font-bold text-[#1c1c0d] dark:text-white mb-2">Tudo certo!</h1>
+        <h1 className="text-2xl font-bold text-foreground dark:text-white mb-2">Tudo certo!</h1>
         <p className="text-text-secondary text-center max-w-sm mb-6">
           Roteiro integral, TDV em todos os dias, documentos e recomendações da viagem liberados. Redirecionando...
         </p>
@@ -187,7 +187,7 @@ export function Pagamento() {
 
   return (
     <div className="max-w-lg mx-auto p-6">
-      <h1 className="text-2xl md:text-3xl font-black text-[#1c1c0d] dark:text-white mb-2">
+      <h1 className="text-2xl md:text-3xl font-black text-foreground dark:text-white mb-2">
         Desbloqueie seu roteiro
       </h1>
       <p className="text-text-secondary mb-8">
@@ -195,13 +195,13 @@ export function Pagamento() {
         você usa o roteiro em todos os dias e libera documentos.
       </p>
 
-      <div className="bg-background-light dark:bg-[#23220f] border border-border-light dark:border-border-dark rounded-2xl p-6 mb-8">
+      <div className="bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-2xl p-6 mb-8">
         <div className="flex items-center gap-3 mb-4">
           <div className="rounded-full bg-primary/20 p-2">
             <Icon name="route" className="text-2xl text-primary" />
           </div>
           <div>
-            <h2 className="font-bold text-[#1c1c0d] dark:text-white">Planejamento Completo</h2>
+            <h2 className="font-bold text-foreground dark:text-white">Planejamento Completo</h2>
             <p className="text-sm text-text-secondary">Sua viagem, sem limite</p>
           </div>
         </div>
@@ -223,7 +223,7 @@ export function Pagamento() {
             Acesso por 1 ano
           </li>
         </ul>
-        <p className="text-2xl font-black text-[#1c1c0d] dark:text-white">
+        <p className="text-2xl font-black text-foreground dark:text-white">
           $12.00 <span className="text-sm font-normal text-text-secondary">preço único</span>
         </p>
       </div>
@@ -249,7 +249,7 @@ export function Pagamento() {
       <button
         type="button"
         onClick={() => navigate(-1)}
-        className="w-full mt-4 py-3 text-sm text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white transition-colors"
+        className="w-full mt-4 py-3 text-sm text-text-secondary hover:text-foreground dark:hover:text-white transition-colors"
       >
         Voltar
       </button>

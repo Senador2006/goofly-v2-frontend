@@ -326,7 +326,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const choicesPanel = (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl mx-auto">
       <div className="p-3 sm:p-4 rounded-2xl bg-primary/[0.08] dark:bg-primary/[0.06] border border-primary/20">
-        <h5 className="font-bold text-xs sm:text-sm mb-1 flex items-center gap-2 text-[#1c1c0d] dark:text-white">
+        <h5 className="font-bold text-xs sm:text-sm mb-1 flex items-center gap-2 text-foreground dark:text-white">
           <Icon name="favorite" className="text-base text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
           Curtidas
         </h5>
@@ -338,7 +338,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
             {likedPlaces.map((place, idx) => (
               <li
                 key={`${place.placeId}-${idx}`}
-                className="text-xs text-[#1c1c0d] dark:text-white flex items-start gap-2"
+                className="text-xs text-foreground dark:text-white flex items-start gap-2"
               >
                 <Icon name="check_circle" className="text-primary text-sm shrink-0 mt-0.5" />
                 <span className="line-clamp-2">{place.name}</span>
@@ -348,7 +348,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         )}
       </div>
       <div className="p-3 sm:p-4 rounded-2xl bg-red-500/[0.07] border border-red-500/20">
-        <h5 className="font-bold text-xs sm:text-sm mb-1 flex items-center gap-2 text-[#1c1c0d] dark:text-white">
+        <h5 className="font-bold text-xs sm:text-sm mb-1 flex items-center gap-2 text-foreground dark:text-white">
           <Icon name="close" className="text-base text-red-500 dark:text-red-400" />
           Descartados
         </h5>
@@ -360,7 +360,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
             {dislikedPlaces.map((place, idx) => (
               <li
                 key={`${place.placeId}-${idx}`}
-                className="text-xs text-[#1c1c0d] dark:text-white/90 flex items-start gap-2"
+                className="text-xs text-foreground dark:text-white/90 flex items-start gap-2"
               >
                 <Icon name="not_interested" className="text-red-500/80 text-sm shrink-0 mt-0.5" />
                 <span className="line-clamp-2">{place.name}</span>
@@ -374,7 +374,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6 bg-background-light dark:bg-[#1a190b]" role="status" aria-live="polite">
+      <div className="flex-1 flex items-center justify-center p-6 bg-background-light dark:bg-card-dark" role="status" aria-live="polite">
         <LoadingSpinner />
       </div>
     )
@@ -382,7 +382,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   if (error) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background-light dark:bg-[#1a190b]">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background-light dark:bg-card-dark">
         <div className="max-w-md w-full p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-2xl text-sm text-center" role="alert">
           {error}
         </div>
@@ -407,7 +407,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 max-w-3xl mx-auto">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Tinder de Viagens</p>
-            <p className="text-lg sm:text-xl font-bold text-[#1c1c0d] dark:text-white truncate">{destTitle}</p>
+            <p className="text-lg sm:text-xl font-bold text-foreground dark:text-white truncate">{destTitle}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark shadow-sm">
@@ -502,7 +502,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                 <button
                   type="button"
                   onClick={handleLike}
-                  className="size-16 sm:size-[4.25rem] rounded-full bg-primary flex items-center justify-center text-[#1c1c0d] shadow-primary hover:scale-105 active:scale-95 transition-all"
+                  className="size-16 sm:size-[4.25rem] rounded-full bg-primary flex items-center justify-center text-foreground shadow-primary hover:scale-105 active:scale-95 transition-all"
                   aria-label="Curtir"
                 >
                   <Icon name="favorite" className="text-3xl sm:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
@@ -515,7 +515,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
               <div className="size-14 rounded-full bg-primary/15 flex items-center justify-center mx-auto mb-3">
                 <Icon name="lock" className="text-2xl text-primary" />
               </div>
-              <h3 className="text-lg font-bold text-[#1c1c0d] dark:text-white mb-2">Limite do plano gratuito</h3>
+              <h3 className="text-lg font-bold text-foreground dark:text-white mb-2">Limite do plano gratuito</h3>
               <p className="text-text-secondary text-sm mb-5 leading-relaxed">{tdvRestriction.message}</p>
               <Button
                 type="button"

@@ -16,7 +16,7 @@ export function DashboardHeader() {
 
   return (
     <header className="flex items-center justify-between gap-4 mb-8">
-      <p className="text-lg font-medium text-[#1c1c0d] dark:text-white">
+      <p className="text-lg font-medium text-foreground dark:text-white">
         {formatLocaleDate()}
       </p>
       <div className="flex items-center gap-3">

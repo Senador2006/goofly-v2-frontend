@@ -154,7 +154,7 @@ export function Itinerary() {
             type="button"
             disabled
             className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold opacity-45 cursor-not-allowed ${
-              mode === MODE_ROTEIRO ? 'bg-primary text-black shadow-sm' : 'text-text-secondary'
+              mode === MODE_ROTEIRO ? 'bg-primary text-foreground shadow-sm' : 'text-text-secondary'
             }`}
           >
             Roteiro
@@ -164,8 +164,8 @@ export function Itinerary() {
             onClick={() => setMode(MODE_TDV)}
             className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
               mode === MODE_TDV
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
+                ? 'bg-primary text-foreground shadow-md'
+                : 'text-text-secondary hover:text-foreground dark:hover:text-white'
             }`}
           >
             TDV
@@ -175,8 +175,8 @@ export function Itinerary() {
             onClick={() => setMode(MODE_DOCUMENTOS)}
             className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all ${
               mode === MODE_DOCUMENTOS
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
+                ? 'bg-primary text-foreground shadow-md'
+                : 'text-text-secondary hover:text-foreground dark:hover:text-white'
             }`}
           >
             <Icon name="folder_shared" className="text-sm" />
@@ -195,8 +195,8 @@ export function Itinerary() {
             }}
             className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
               mode === MODE_ROTEIRO
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
+                ? 'bg-primary text-foreground shadow-md'
+                : 'text-text-secondary hover:text-foreground dark:hover:text-white'
             }`}
           >
             Roteiro
@@ -206,8 +206,8 @@ export function Itinerary() {
             onClick={() => setMode(MODE_DOCUMENTOS)}
             className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all ${
               mode === MODE_DOCUMENTOS
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
+                ? 'bg-primary text-foreground shadow-md'
+                : 'text-text-secondary hover:text-foreground dark:hover:text-white'
             }`}
           >
             <Icon name="folder_shared" className="text-sm" />
@@ -228,11 +228,11 @@ export function Itinerary() {
           <Icon name="chevron_right" className="text-[10px] shrink-0" />
           <span>Roteiros</span>
           <Icon name="chevron_right" className="text-[10px] shrink-0" />
-          <span className="text-[#1c1c0d] dark:text-white truncate">{destLabel}</span>
+          <span className="text-foreground dark:text-white truncate">{destLabel}</span>
         </div>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-[#1c1c0d] dark:text-white leading-tight">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-foreground dark:text-white leading-tight">
               Criador de Roteiros
             </h1>
             <p className="text-xs sm:text-sm text-text-secondary mt-0.5">Rota otimizada por IA · {destLabel}</p>
@@ -261,8 +261,8 @@ export function Itinerary() {
                 onClick={() => setSelectedDay(day)}
                 className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                   effectiveSelectedDay === day
-                    ? 'bg-primary text-black shadow-sm'
-                    : 'bg-surface-light dark:bg-white/[0.08] text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
+                    ? 'bg-primary text-foreground shadow-sm'
+                    : 'bg-surface-light dark:bg-white/[0.08] text-text-secondary hover:text-foreground dark:hover:text-white'
                 }`}
               >
                 Dia {dayIndex + 1}
@@ -303,7 +303,7 @@ export function Itinerary() {
                   <div key={act.id || idx} className="relative pl-8">
                     <div className="absolute left-0 top-0 bottom-[-32px] w-px border-l-2 border-dashed border-primary" />
                     <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary" />
-                    <div className="bg-background-light dark:bg-[#23220f] p-4 rounded-xl shadow-sm border border-border-light dark:border-border-dark">
+                    <div className="bg-background-light dark:bg-background-dark p-4 rounded-xl shadow-sm border border-border-light dark:border-border-dark">
                       <div className="flex justify-between items-start mb-2">
                         {act.image_url && (
                           <div
@@ -321,7 +321,7 @@ export function Itinerary() {
                               : '2h'}
                         </span>
                       </div>
-                      <h3 className="text-sm font-bold text-[#1c1c0d] dark:text-white leading-tight">
+                      <h3 className="text-sm font-bold text-foreground dark:text-white leading-tight">
                         {act.title || act.name || act.placeName || `Atividade ${idx + 1}`}
                       </h3>
                       {(act.description || act.notes) && (
@@ -335,7 +335,7 @@ export function Itinerary() {
               {activities.length === 0 && (
                 <div className="text-center py-10 px-4 text-text-secondary rounded-2xl border border-dashed border-border-light dark:border-border-dark">
                   <Icon name="route" className="text-4xl mb-3 opacity-40 mx-auto text-primary" />
-                  <p className="text-sm font-medium text-[#1c1c0d] dark:text-white">Nenhuma atividade ainda</p>
+                  <p className="text-sm font-medium text-foreground dark:text-white">Nenhuma atividade ainda</p>
                   <p className="text-xs sm:text-sm mt-2 max-w-xs mx-auto">
                     {isPlanning
                       ? 'No TDV, curta lugares e finalize para montar o roteiro com a IA.'
@@ -391,7 +391,7 @@ export function Itinerary() {
               <div className="absolute inset-0 flex items-center justify-center p-6">
                 <div className="text-center max-w-sm rounded-2xl bg-white/80 dark:bg-card-dark/80 backdrop-blur px-6 py-8 border border-border-light dark:border-border-dark shadow-lg">
                   <Icon name="map" className="text-4xl text-primary mb-3 mx-auto opacity-80" />
-                  <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Mapa</p>
+                  <p className="text-sm font-bold text-foreground dark:text-white">Mapa</p>
                   <p className="text-xs text-text-secondary mt-1">Integração em breve — use a lista ao lado para o roteiro.</p>
                 </div>
               </div>
@@ -406,21 +406,21 @@ export function Itinerary() {
             <button
               type="button"
               disabled
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs opacity-45 ${mode === MODE_ROTEIRO ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
+              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs opacity-45 ${mode === MODE_ROTEIRO ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
             >
               Roteiro
             </button>
             <button
               type="button"
               onClick={() => setMode(MODE_TDV)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs ${mode === MODE_TDV ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
+              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs ${mode === MODE_TDV ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
             >
               TDV
             </button>
             <button
               type="button"
               onClick={() => setMode(MODE_DOCUMENTOS)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 ${mode === MODE_DOCUMENTOS ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
+              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 ${mode === MODE_DOCUMENTOS ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
             >
               <Icon name="folder_shared" className="text-sm" />
               Docs
@@ -434,14 +434,14 @@ export function Itinerary() {
                 setMode(MODE_ROTEIRO)
                 refetchItineraryImmediate()
               }}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs ${mode === MODE_ROTEIRO ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
+              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs ${mode === MODE_ROTEIRO ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
             >
               Roteiro
             </button>
             <button
               type="button"
               onClick={() => setMode(MODE_DOCUMENTOS)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 ${mode === MODE_DOCUMENTOS ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
+              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 ${mode === MODE_DOCUMENTOS ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
             >
               <Icon name="folder_shared" className="text-sm" />
               Docs

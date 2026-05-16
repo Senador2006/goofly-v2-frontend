@@ -7,8 +7,8 @@
     </linearGradient>
   </defs>
   <rect width="800" height="450" fill="url(#bg)"/>
-  <circle cx="620" cy="110" r="48" fill="#f9f506" opacity="0.15"/>
-  <path d="M80 320 Q200 260 360 300 T640 280 L640 450 L80 450 Z" fill="#f9f506" opacity="0.08"/>
-  <text x="400" y="215" text-anchor="middle" fill="#f9f506" font-family="system-ui,sans-serif" font-size="26" font-weight="700">Goofly</text>
+  <circle cx="620" cy="110" r="48" fill="#FEC641" opacity="0.15"/>
+  <path d="M80 320 Q200 260 360 300 T640 280 L640 450 L80 450 Z" fill="#FEC641" opacity="0.08"/>
+  <text x="400" y="215" text-anchor="middle" fill="#FEC641" font-family="system-ui,sans-serif" font-size="26" font-weight="700">Goofly</text>
   <text x="400" y="252" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="14">Adicione fotos da sua viagem</text>
 </svg>

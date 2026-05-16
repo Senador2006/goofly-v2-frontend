@@ -16,7 +16,7 @@ export function Sidebar() {
     <aside className="w-64 flex flex-col bg-white dark:bg-card-dark border-r border-border-light dark:border-border-dark p-6 h-full hidden lg:flex">
       <div className="flex items-center gap-3 mb-10">
         <div className="bg-primary size-10 rounded-full flex items-center justify-center">
-          <Icon name="flight_takeoff" className="text-black font-bold" />
+          <Icon name="flight_takeoff" className="text-foreground font-bold" />
         </div>
         <h1 className="text-xl font-extrabold tracking-tight">Goofly</h1>
       </div>
@@ -28,8 +28,8 @@ export function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
                 isActive
-                  ? 'bg-primary/20 text-[#1c1c0d] dark:text-white font-semibold'
-                  : 'text-[#1c1c0d]/70 dark:text-white/70 hover:bg-surface-light dark:hover:bg-surface-dark'
+                  ? 'bg-primary/20 text-foreground dark:text-white font-semibold'
+                  : 'text-foreground/70 dark:text-white/70 hover:bg-surface-light dark:hover:bg-surface-dark'
               }`
             }
           >
@@ -41,7 +41,7 @@ export function Sidebar() {
       <div className="pt-6 border-t border-border-light dark:border-border-dark space-y-4">
         <NavLink
           to="/settings"
-          className="flex items-center gap-3 px-4 py-2 rounded-xl text-[#1c1c0d]/70 dark:text-white/70 hover:bg-surface-light dark:hover:bg-surface-dark"
+          className="flex items-center gap-3 px-4 py-2 rounded-xl text-foreground/70 dark:text-white/70 hover:bg-surface-light dark:hover:bg-surface-dark"
         >
           <Icon name="settings" />
           <span className="text-sm font-medium">Configurações</span>
@@ -51,7 +51,7 @@ export function Sidebar() {
             {user?.avatar ? (
               <img src={user.avatar} alt="" className="w-full h-full object-cover" />
             ) : (
-              <span className="text-[#1c1c0d] font-bold text-sm">
+              <span className="text-foreground font-bold text-sm">
                 {(user?.name || 'U')[0]}
               </span>
             )}
