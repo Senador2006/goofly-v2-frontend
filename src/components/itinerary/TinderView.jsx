@@ -20,6 +20,17 @@ function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
 }
 
+/**
+ * Extrai a mensagem mais útil de um erro axios respeitando o contrato
+ * documentado em API.md (`{ error: { code, message } }`). Mantém um
+ * fallback amigável para 5xx/network/timeout, onde `response` pode estar
+ * indefinido (cenário comum com o agente n8n a 180s).
+ */
+function getRequestErrorMessage(err, fallback = 'Não foi possível completar a ação') {
+  const data = err?.response?.data
+  return data?.error?.message || data?.message || err?.message || fallback
+}
+
 /** Quando restam poucos cards, pede outro discover em background (servidor já chama o agente até 3× por request). */
 const PREFETCH_WHEN_REMAINING_AT_MOST = 5
 
@@ -374,19 +385,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   if (loading) {
     return (
-      <div className="p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm">
-        <p>{error}</p>
-        <Button
-          variant="secondary"
-          className="mt-3"
-          onClick={() => {
-            autoLoadAttemptedRef.current = true
-            setError(null)
-            loadPlaces(currentDay)
-          }}
-        >
-          Tentar novamente
-        </Button>
+      <div className="flex-1 flex items-center justify-center p-6 bg-background-light dark:bg-[#1a190b]" role="status" aria-live="polite">
+        <LoadingSpinner />
       </div>
     )
   }
@@ -394,10 +394,17 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   if (error) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background-light dark:bg-[#1a190b]">
-        <div className="max-w-md w-full p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-2xl text-sm text-center">
+        <div className="max-w-md w-full p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-2xl text-sm text-center" role="alert">
           {error}
         </div>
-        <Button variant="secondary" className="mt-4 rounded-full" onClick={() => loadPlaces(currentDay)}>
+        <Button
+          variant="secondary"
+          className="mt-4 rounded-full"
+          onClick={() => {
+            setError(null)
+            loadPlaces(currentDay)
+          }}
+        >
           Tentar de novo
         </Button>
       </div>
