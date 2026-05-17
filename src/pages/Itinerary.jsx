@@ -9,7 +9,10 @@ import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivity
 import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
-import { ItineraryDayMap } from '../components/itinerary/ItineraryDayMap'
+import {
+  ItineraryDayMap,
+  clearItineraryRouteCache,
+} from '../components/itinerary/ItineraryDayMap'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -179,6 +182,7 @@ export function Itinerary() {
     }
     try {
       const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
+      clearItineraryRouteCache(tripId)
       setItinerary(itineraryData)
       return itineraryData
     } catch {
@@ -264,6 +268,7 @@ export function Itinerary() {
       const result = await tripService.finalizeTdvPlanning(tripId)
       if (result?.trip) setTrip(result.trip)
       const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
+      clearItineraryRouteCache(tripId)
       setItinerary(itineraryData)
       const firstDay = itineraryData?.activities?.[0]?.day
       if (firstDay != null && firstDay !== '') {
@@ -755,6 +760,7 @@ export function Itinerary() {
                 tripId={tripId}
                 day={effectiveSelectedDay}
                 activities={dayActivities}
+                disabled={isSelectedDayPremiumLockedUi}
                 className="absolute inset-0 h-full w-full"
                 ariaLabel={`Mapa do roteiro — dia ${effectiveSelectedDay}`}
               />

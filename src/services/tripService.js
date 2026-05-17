@@ -27,7 +27,8 @@ export const tripService = {
   getItineraryRoute: (tripId, { day = 1, profile = 'foot-walking' } = {}) =>
     api
       .get(`/trips/${tripId}/itinerary/route`, {
-        params: { day, profile },
+        params: { day, profile, _t: Date.now() },
+        headers: { 'Cache-Control': 'no-cache' },
       })
       .then((res) => res.body.data),
 }
