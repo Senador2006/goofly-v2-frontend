@@ -17,7 +17,7 @@ test('TinderView: scroll na página inteira (não painel interno no histórico)'
 })
 
 test('TinderView: card maior e finalize antes do histórico', () => {
-  assert.match(tinderViewSource, /max-h-\[min\(56dvh,400px\)\]/)
+  assert.match(tinderViewSource, /min\(calc\(100dvh-15rem\),380px\)/)
   assert.match(tinderViewSource, /finalizePanel/)
   const belowFoldBlock = tinderViewSource.slice(
     tinderViewSource.indexOf('const belowFoldContent'),

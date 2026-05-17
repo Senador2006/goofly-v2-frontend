@@ -434,8 +434,9 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     )
   }
 
+  // Reserva ~15rem para header app + faixa TDV + dica + botões; teto em px evita cartão gigante em monitores altos.
   const cardSurface =
-    'w-[min(100%,22.5rem)] sm:w-full lg:w-full mx-auto aspect-[3/4] max-h-[min(56dvh,400px)] sm:max-h-[min(54dvh,420px)] lg:max-h-[min(62dvh,460px)] rounded-2xl sm:rounded-3xl'
+    'w-[min(100%,24rem)] sm:w-full lg:w-full mx-auto lg:mx-0 aspect-[3/4] max-h-[min(56dvh,400px)] sm:max-h-[min(53dvh,420px)] md:max-h-[min(50dvh,400px)] lg:max-h-[min(calc(100dvh-15rem),380px)] xl:max-h-[min(calc(100dvh-15rem),400px)] 2xl:max-h-[min(calc(100dvh-15rem),420px)] rounded-2xl sm:rounded-3xl'
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain bg-gradient-to-b from-background-light to-white dark:from-card-dark dark:to-background-dark">
@@ -469,11 +470,11 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       </div>
 
       <div className="flex flex-1 min-h-0 flex-col pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-6">
-        <div className="mx-auto w-full max-w-lg px-4 pt-5 sm:px-6 sm:pt-5 lg:max-w-6xl xl:max-w-[72rem] lg:pt-6">
+        <div className="mx-auto w-full max-w-lg px-3 pt-4 sm:px-5 sm:pt-4 lg:max-w-[90rem] xl:max-w-[96rem] 2xl:max-w-[110rem] lg:px-6 xl:px-8 lg:pt-4">
           {currentPlace ? (
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:items-start lg:gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-10">
-              <div className="flex min-w-0 flex-col gap-5 lg:max-w-md lg:justify-self-center xl:max-w-lg">
-                <div className="relative isolate mx-auto mt-1 flex w-full max-w-[min(100%,23rem)] justify-center pb-10 sm:max-w-none sm:pb-12 lg:mx-0 lg:max-w-none lg:pb-10">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,16rem)] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(15rem,18rem)] xl:gap-8 2xl:gap-10">
+              <div className="flex min-w-0 w-full flex-col gap-3 sm:gap-4 lg:gap-4">
+                <div className="relative isolate mx-auto mt-1 flex w-full max-w-[min(100%,24rem)] justify-center pb-8 sm:max-w-none sm:pb-10 lg:mx-0 lg:w-full lg:pb-6">
                   {places[currentIndex + 1] && (
                     <div
                       className={`pointer-events-none absolute left-1/2 top-0 z-0 ${cardSurface} -translate-x-1/2 origin-top overflow-hidden shadow-lg border border-border-light dark:border-border-dark bg-card-dark scale-[0.92] opacity-55`}
@@ -496,7 +497,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                   >
                     <PlaceCardGallery place={currentPlace} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none z-[10]" />
-                    <div className="absolute bottom-0 left-0 right-0 px-4 sm:px-5 pt-12 pb-3.5 sm:pt-14 sm:pb-4 text-white z-[18] pointer-events-none">
+                    <div className="absolute bottom-0 left-0 right-0 px-4 sm:px-5 pt-10 pb-3 sm:pt-12 sm:pb-4 text-white z-[18] pointer-events-none">
                       <div className="flex gap-1.5 mb-1.5 overflow-x-auto no-scrollbar">
                         {(currentPlace.tags || currentPlace.categories || []).filter(Boolean).map((tag) => {
                           const label = typeof tag === 'string' ? tag : tag?.name || tag?.label || String(tag)
@@ -522,14 +523,14 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                               : currentPlace.city || currentPlace.country || 'Destino')}
                         </span>
                       </div>
-                      <p className="text-[11px] sm:text-sm text-white/90 leading-relaxed line-clamp-3">
+                      <p className="text-[11px] sm:text-sm text-white/90 leading-relaxed line-clamp-2 lg:line-clamp-3">
                         {currentPlace.description || currentPlace.aiReasoning || 'Descubra este lugar.'}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <p className="mx-auto max-w-[min(100%,23rem)] shrink-0 px-4 text-center text-[10px] leading-relaxed text-text-secondary sm:max-w-none sm:text-[11px] lg:px-0">
+                <p className="mx-auto max-w-[min(100%,24rem)] shrink-0 px-4 text-center text-[10px] leading-relaxed text-text-secondary sm:max-w-none sm:text-[11px] lg:px-0">
                   {t('tdv.photo_hint')}
                 </p>
 
