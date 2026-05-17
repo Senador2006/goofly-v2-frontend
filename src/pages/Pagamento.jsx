@@ -251,7 +251,7 @@ export function Pagamento() {
         </div>
         <h1 className="text-2xl font-bold text-foreground dark:text-white mb-2">Tudo certo!</h1>
         <p className="text-text-secondary text-center max-w-sm mb-6">
-          Roteiro integral, TDV em todos os dias, documentos e recomendações da viagem liberados. Redirecionando...
+          Roteiro integral, documentos inteligentes e recomendações da viagem liberados. Redirecionando...
         </p>
       </div>
     )
@@ -263,8 +263,9 @@ export function Pagamento() {
         Desbloqueie seu roteiro
       </h1>
       <p className="text-text-secondary mb-4">
-        O TDV gratuito pode ser usado em 25% dos dias da sua viagem. Com o Planejamento Completo
-        você usa o roteiro em todos os dias e libera documentos.
+        O Planejamento Completo desbloqueia 100% do roteiro otimizado, checklist de documentos com IA e
+        recomendações por viagem. O Tinder de Viagens permanece disponível para todos na fase de
+        planejamento.
       </p>
       {import.meta.env.DEV && (
         <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2 mb-6">
@@ -291,11 +292,7 @@ export function Pagamento() {
         <ul className="space-y-2 text-sm text-text-secondary mb-6">
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />
-            Roteiro completo (100% das atividades)
-          </li>
-          <li className="flex items-center gap-2">
-            <Icon name="check" className="text-primary shrink-0" />
-            TDV em todos os dias do planejamento
+            Roteiro otimizado completo — todas as paradas e dias
           </li>
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />

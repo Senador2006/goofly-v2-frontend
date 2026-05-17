@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '../common/Icon'
 import { getPlaceImageUrls } from '../../utils/placeImages'
 import { PLACEHOLDER_COVER } from '../../constants/placeholders'
@@ -20,9 +21,11 @@ function ImageLightbox({ url, onClose }) {
     }
   }, [onClose])
 
-  return (
+  // Portal em document.body: o card TDV usa z-index baixo; sem isso o fixed ficaria
+  // preso ao contexto de empilhamento do card e o cabeçalho da página cortaria a foto.
+  return createPortal(
     <div
-      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Foto ampliada"
@@ -46,7 +49,8 @@ function ImageLightbox({ url, onClose }) {
         onClick={(e) => e.stopPropagation()}
         draggable={false}
       />
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -190,11 +194,11 @@ export function PlaceCardGallery({ place, className = '' }) {
               const isPlaceholder = url === PLACEHOLDER_COVER
               const isActive = i === safeIndex
               return (
-                <div className="relative min-w-full w-full h-full flex-shrink-0 overflow-hidden" key={`${url}-${i}`}>
+                <div className="relative min-h-full min-w-full w-full flex-shrink-0 overflow-hidden" key={`${url}-${i}`}>
                   <img
                     src={url}
                     alt=""
-                    className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out motion-reduce:transition-none ${
+                    className={`absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out motion-reduce:transition-none ${
                       isActive ? 'group-hover:scale-105' : ''
                     } ${isPlaceholder ? 'opacity-90' : ''}`}
                     onError={isPlaceholder ? undefined : () => onImgError(url)}
@@ -205,20 +209,17 @@ export function PlaceCardGallery({ place, className = '' }) {
             })}
           </div>
         ) : (
-          <SingleImage
-            src={workingImages[0]}
-            onError={() => onImgError(workingImages[0])}
-          />
+          <SingleImage src={workingImages[0]} onError={() => onImgError(workingImages[0])} />
         )}
       </div>
 
-      <div className="absolute inset-0 z-[30] pointer-events-none">
-        {hasMultiple && (
+      <div className="pointer-events-none absolute inset-0 z-[30]">
+        {hasMultiple ? (
           <>
             <button
               type="button"
               onClick={goPrev}
-              className="pointer-events-auto absolute left-2 top-1/2 -translate-y-1/2 size-10 sm:size-11 rounded-full bg-black/45 text-white flex items-center justify-center backdrop-blur-sm hover:bg-black/60 active:scale-95 transition-all border border-white/20"
+              className="pointer-events-auto absolute left-2 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white backdrop-blur-sm transition-all hover:bg-black/60 active:scale-95 sm:size-11"
               aria-label="Foto anterior"
             >
               <Icon name="chevron_left" className="text-2xl" />
@@ -226,7 +227,7 @@ export function PlaceCardGallery({ place, className = '' }) {
             <button
               type="button"
               onClick={goNext}
-              className="pointer-events-auto absolute right-2 top-1/2 -translate-y-1/2 size-10 sm:size-11 rounded-full bg-black/45 text-white flex items-center justify-center backdrop-blur-sm hover:bg-black/60 active:scale-95 transition-all border border-white/20"
+              className="pointer-events-auto absolute right-2 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white backdrop-blur-sm transition-all hover:bg-black/60 active:scale-95 sm:size-11"
               aria-label="Próxima foto"
             >
               <Icon name="chevron_right" className="text-2xl" />
@@ -234,22 +235,22 @@ export function PlaceCardGallery({ place, className = '' }) {
 
             <button
               type="button"
-              className="pointer-events-auto absolute left-0 top-0 bottom-0 w-[28%] cursor-pointer border-0 bg-transparent p-0"
+              className="pointer-events-auto absolute bottom-0 left-0 top-0 w-[28%] cursor-pointer border-0 bg-transparent p-0"
               aria-label="Foto anterior"
               onClick={goPrev}
             />
             <button
               type="button"
-              className="pointer-events-auto absolute right-0 top-0 bottom-0 w-[28%] cursor-pointer border-0 bg-transparent p-0"
+              className="pointer-events-auto absolute bottom-0 right-0 top-0 w-[28%] cursor-pointer border-0 bg-transparent p-0"
               aria-label="Próxima foto"
               onClick={goNext}
             />
           </>
-        )}
+        ) : null}
 
         <button
           type="button"
-          className="pointer-events-auto absolute left-[28%] right-[28%] top-0 bottom-0 cursor-zoom-in border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60"
+          className="pointer-events-auto absolute bottom-0 left-[28%] right-[28%] top-0 cursor-zoom-in border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60"
           aria-label="Ver foto em tamanho maior"
           onPointerDown={onMiddlePointerDown}
           onPointerUp={onMiddlePointerUp}
@@ -259,14 +260,14 @@ export function PlaceCardGallery({ place, className = '' }) {
           onKeyDown={onMiddleKeyDown}
         />
 
-        {hasMultiple && (
+        {hasMultiple ? (
           <p
-            className="pointer-events-none absolute top-3 right-3 m-0 px-2.5 py-1 rounded-full bg-black/50 text-white text-[10px] sm:text-xs font-bold backdrop-blur-sm tabular-nums transition-opacity duration-300"
+            className="pointer-events-none absolute right-3 top-3 m-0 rounded-full bg-black/50 px-2.5 py-1 text-[10px] font-bold tabular-nums text-white backdrop-blur-sm transition-opacity duration-300 sm:text-xs"
             aria-live="polite"
           >
             {safeIndex + 1} / {workingImages.length}
           </p>
-        )}
+        ) : null}
       </div>
 
       {lightboxUrl ? <ImageLightbox url={lightboxUrl} onClose={closeLightbox} /> : null}
@@ -280,7 +281,7 @@ function SingleImage({ src, onError }) {
     <img
       src={src}
       alt=""
-      className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 motion-reduce:transition-none ${
+      className={`absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out motion-reduce:transition-none group-hover:scale-105 ${
         isPlaceholder ? 'opacity-90' : ''
       }`}
       onError={isPlaceholder ? undefined : onError}
