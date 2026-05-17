@@ -1,5 +1,9 @@
 import { useCallback, useId, useState } from 'react'
 import { Icon } from '../common/Icon'
+import {
+  googleMapsPlaceUrl,
+  resolveActivityCoordinates,
+} from '../../utils/activityCoordinates'
 
 function minutesBetweenStarts(startStr, endStr) {
   if (!startStr || !endStr) return null
@@ -246,6 +250,7 @@ function CardBody({
   panelId,
 }) {
   const hasTicketBox = ticket.required || !!ticket.hint || ticket.links.length > 0
+  const mapCoords = resolveActivityCoordinates(act)
   return (
     <>
       <button
@@ -311,6 +316,27 @@ function CardBody({
                   : 'Sugestão da IA para este horário do roteiro.'}
               </p>
             )}
+            {mapCoords ? (
+              <div className="mt-4">
+                <a
+                  href={googleMapsPlaceUrl(mapCoords)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline group"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Icon
+                    name="map"
+                    className="text-sm shrink-0 opacity-80 group-hover:opacity-100"
+                    aria-hidden
+                  />
+                  Ver no Google Maps
+                </a>
+                <p className="mt-1 font-mono text-[10px] text-text-secondary/85">
+                  {mapCoords.latitude.toFixed(6)}, {mapCoords.longitude.toFixed(6)}
+                </p>
+              </div>
+            ) : null}
             {hasTicketBox ? (
               <div className="mt-4 rounded-xl bg-primary/8 dark:bg-primary/15 border border-primary/25 px-3 py-2.5">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-primary mb-1.5 flex items-center gap-1">

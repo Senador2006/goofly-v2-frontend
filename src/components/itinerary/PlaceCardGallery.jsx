@@ -6,6 +6,50 @@ import { PLACEHOLDER_COVER } from '../../constants/placeholders'
 const SWIPE_THRESHOLD_PX = 48
 const SLIDE_MS = 420
 
+function ImageLightbox({ url, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Foto ampliada"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        className="absolute right-4 top-4 z-[1] flex size-11 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-md transition-colors hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+        aria-label="Fechar foto"
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
+      >
+        <Icon name="close" className="text-2xl" />
+      </button>
+      <img
+        src={url}
+        alt=""
+        className="max-h-[min(92vh,1200px)] max-w-full object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        draggable={false}
+      />
+    </div>
+  )
+}
+
 /**
  * Galeria do card TDV (abordagem C): setas + toque nas laterais + arraste na imagem.
  * Teclado ← → do TinderView permanece para curtir/descartar o lugar.
@@ -16,13 +60,16 @@ export function PlaceCardGallery({ place, className = '' }) {
   const images = useMemo(() => getPlaceImageUrls(place), [place])
   const [index, setIndex] = useState(0)
   const [failed, setFailed] = useState(() => new Set())
+  const [lightboxUrl, setLightboxUrl] = useState(null)
   const touchStartX = useRef(null)
+  const middlePointerStartRef = useRef(null)
 
   const placeKey = place?.id ?? place?.placeId ?? place?.place_id ?? place?.name
 
   useEffect(() => {
     setIndex(0)
     setFailed(new Set())
+    setLightboxUrl(null)
   }, [placeKey])
 
   const workingImages = useMemo(() => {
@@ -59,6 +106,52 @@ export function PlaceCardGallery({ place, className = '' }) {
     })
     setIndex(0)
   }, [])
+
+  const closeLightbox = useCallback(() => setLightboxUrl(null), [])
+
+  const openLightboxFromMiddle = useCallback(
+    (e) => {
+      e?.stopPropagation?.()
+      setLightboxUrl(workingImages[safeIndex])
+    },
+    [workingImages, safeIndex]
+  )
+
+  const onMiddlePointerDown = (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    middlePointerStartRef.current = { x: e.clientX, y: e.clientY }
+  }
+
+  const onMiddlePointerUp = (e) => {
+    const start = middlePointerStartRef.current
+    middlePointerStartRef.current = null
+    if (!start) return
+
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+
+    if (hasMultiple && adx >= SWIPE_THRESHOLD_PX && adx >= ady) {
+      e.stopPropagation()
+      e.preventDefault()
+      if (dx < 0) goNext(e)
+      else goPrev(e)
+      return
+    }
+
+    if (adx < SWIPE_THRESHOLD_PX && ady < SWIPE_THRESHOLD_PX) {
+      e.stopPropagation()
+      openLightboxFromMiddle(e)
+    }
+  }
+
+  const onMiddleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      openLightboxFromMiddle(e)
+    }
+  }
 
   const onTouchStart = (e) => {
     if (!hasMultiple || e.touches.length !== 1) return
@@ -119,46 +212,64 @@ export function PlaceCardGallery({ place, className = '' }) {
         )}
       </div>
 
-      {hasMultiple && (
-        <div className="absolute inset-0 z-[30] pointer-events-none">
-          <button
-            type="button"
-            onClick={goPrev}
-            className="pointer-events-auto absolute left-2 top-1/2 -translate-y-1/2 size-10 sm:size-11 rounded-full bg-black/45 text-white flex items-center justify-center backdrop-blur-sm hover:bg-black/60 active:scale-95 transition-all border border-white/20"
-            aria-label="Foto anterior"
-          >
-            <Icon name="chevron_left" className="text-2xl" />
-          </button>
-          <button
-            type="button"
-            onClick={goNext}
-            className="pointer-events-auto absolute right-2 top-1/2 -translate-y-1/2 size-10 sm:size-11 rounded-full bg-black/45 text-white flex items-center justify-center backdrop-blur-sm hover:bg-black/60 active:scale-95 transition-all border border-white/20"
-            aria-label="Próxima foto"
-          >
-            <Icon name="chevron_right" className="text-2xl" />
-          </button>
+      <div className="absolute inset-0 z-[30] pointer-events-none">
+        {hasMultiple && (
+          <>
+            <button
+              type="button"
+              onClick={goPrev}
+              className="pointer-events-auto absolute left-2 top-1/2 -translate-y-1/2 size-10 sm:size-11 rounded-full bg-black/45 text-white flex items-center justify-center backdrop-blur-sm hover:bg-black/60 active:scale-95 transition-all border border-white/20"
+              aria-label="Foto anterior"
+            >
+              <Icon name="chevron_left" className="text-2xl" />
+            </button>
+            <button
+              type="button"
+              onClick={goNext}
+              className="pointer-events-auto absolute right-2 top-1/2 -translate-y-1/2 size-10 sm:size-11 rounded-full bg-black/45 text-white flex items-center justify-center backdrop-blur-sm hover:bg-black/60 active:scale-95 transition-all border border-white/20"
+              aria-label="Próxima foto"
+            >
+              <Icon name="chevron_right" className="text-2xl" />
+            </button>
 
-          <button
-            type="button"
-            className="pointer-events-auto absolute left-0 top-0 bottom-0 w-[28%] cursor-pointer border-0 bg-transparent p-0"
-            aria-label="Foto anterior"
-            onClick={goPrev}
-          />
-          <button
-            type="button"
-            className="pointer-events-auto absolute right-0 top-0 bottom-0 w-[28%] cursor-pointer border-0 bg-transparent p-0"
-            aria-label="Próxima foto"
-            onClick={goNext}
-          />
+            <button
+              type="button"
+              className="pointer-events-auto absolute left-0 top-0 bottom-0 w-[28%] cursor-pointer border-0 bg-transparent p-0"
+              aria-label="Foto anterior"
+              onClick={goPrev}
+            />
+            <button
+              type="button"
+              className="pointer-events-auto absolute right-0 top-0 bottom-0 w-[28%] cursor-pointer border-0 bg-transparent p-0"
+              aria-label="Próxima foto"
+              onClick={goNext}
+            />
+          </>
+        )}
 
+        <button
+          type="button"
+          className="pointer-events-auto absolute left-[28%] right-[28%] top-0 bottom-0 cursor-zoom-in border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60"
+          aria-label="Ver foto em tamanho maior"
+          onPointerDown={onMiddlePointerDown}
+          onPointerUp={onMiddlePointerUp}
+          onPointerCancel={() => {
+            middlePointerStartRef.current = null
+          }}
+          onKeyDown={onMiddleKeyDown}
+        />
+
+        {hasMultiple && (
           <p
-            className="absolute top-3 right-3 m-0 px-2.5 py-1 rounded-full bg-black/50 text-white text-[10px] sm:text-xs font-bold backdrop-blur-sm tabular-nums transition-opacity duration-300"
+            className="pointer-events-none absolute top-3 right-3 m-0 px-2.5 py-1 rounded-full bg-black/50 text-white text-[10px] sm:text-xs font-bold backdrop-blur-sm tabular-nums transition-opacity duration-300"
             aria-live="polite"
           >
             {safeIndex + 1} / {workingImages.length}
           </p>
-        </div>
-      )}
+        )}
+      </div>
+
+      {lightboxUrl ? <ImageLightbox url={lightboxUrl} onClose={closeLightbox} /> : null}
     </>
   )
 }
