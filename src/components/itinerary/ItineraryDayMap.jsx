@@ -30,6 +30,15 @@ function FitBoundsToPoints({ coords }) {
   return null
 }
 
+function MapInvalidateSize({ watch }) {
+  const map = useMap()
+  useEffect(() => {
+    const t = setTimeout(() => map.invalidateSize(), 100)
+    return () => clearTimeout(t)
+  }, [map, watch])
+  return null
+}
+
 function getNumberedIcon(order, isHighlighted) {
   const ring = isHighlighted
     ? '0 0 0 5px rgba(254,198,65,0.9)'
@@ -186,6 +195,7 @@ export function ItineraryDayMap({
           </Marker>
         ))}
         <FitBoundsToPoints coords={allCoords} />
+        <MapInvalidateSize watch={`${tripId}-${day}-${markers.length}`} />
       </MapContainer>
 
       {loading ? (

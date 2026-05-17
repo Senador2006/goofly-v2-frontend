@@ -9,6 +9,7 @@ import { getPlaceCoverImageUrl } from '../../utils/placeImages'
 import { getRequestErrorMessage } from '../../utils/errors'
 import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
+import { readLatLng } from '../../utils/coordinates'
 
 function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
@@ -227,12 +228,16 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
     try {
+      const latLng = readLatLng(currentPlace)
       const placeData = {
         name: currentPlace.name,
         description: currentPlace.description || currentPlace.aiReasoning,
         location:
           currentPlace.location ||
           (currentPlace.city && currentPlace.country ? `${currentPlace.city}, ${currentPlace.country}` : undefined),
+        ...(latLng
+          ? { coordinates: { latitude: latLng[0], longitude: latLng[1] } }
+          : {}),
       }
       const res = await placeService.like(tripId, placeId, currentDay, placeData)
       setTotalLikes(typeof res?.likesUsedTotal === 'number' ? res.likesUsedTotal : totalLikes + 1)
