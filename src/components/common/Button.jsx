@@ -23,9 +23,9 @@ export function Button({ children, variant = 'primary', size = 'md', className =
   }
   return (
     <button
+      {...props}
       type={type}
       className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}
-      {...props}
     >
       {children}
     </button>

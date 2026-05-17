@@ -244,14 +244,18 @@ export function NewTrip() {
     return null
   }
 
-  const handleNext = () => {
-    const err = validateStep(step)
+  const advanceStepAfterValidation = (fromStep) => {
+    const err = validateStep(fromStep)
     if (err) {
       setError(err)
       return
     }
     setError(null)
-    if (step < 4) setStep(step + 1)
+    if (fromStep < 4) setStep(fromStep + 1)
+  }
+
+  const handleNextClick = () => {
+    advanceStepAfterValidation(step)
   }
 
   const handleBack = () => {
@@ -318,13 +322,16 @@ export function NewTrip() {
     }
   }
 
-  /** Enter em campos ou submit implícito só avança até o passo 4; criar viagem só no último passo. */
+  /**
+   * Enter implicitamente só avança etapas 1→3 (Próximo). No passo 4 não faz requisição.
+   * POST /trips apenas no clique do botão "Criar viagem".
+   */
   const handleFormSubmit = (e) => {
     e.preventDefault()
-    if (step < 4) {
-      handleNext()
-      return
-    }
+    if (step < 4) advanceStepAfterValidation(step)
+  }
+
+  const handleCreateTripClick = () => {
     void runCreateTrip()
   }
 
@@ -705,11 +712,11 @@ export function NewTrip() {
               Voltar
             </Button>
             {step < 4 ? (
-              <Button type="button" onClick={handleNext}>
+              <Button type="button" onClick={handleNextClick}>
                 Próximo
               </Button>
             ) : (
-              <Button type="submit" disabled={loading}>
+              <Button type="button" disabled={loading} onClick={handleCreateTripClick}>
                 {loading ? 'Criando...' : 'Criar Viagem'}
               </Button>
             )}

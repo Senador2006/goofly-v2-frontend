@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
+import { GooflyLogo } from '../components/branding/GooflyLogo'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export function Login() {
@@ -35,14 +35,11 @@ export function Login() {
   return (
     <div className="min-h-screen bg-background-light dark:bg-background-dark flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="flex items-center justify-center gap-3 mb-10">
-          <div className="bg-primary size-14 rounded-full flex items-center justify-center">
-            <Icon name="flight_takeoff" className="text-foreground text-2xl font-bold" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-extrabold">Goofly v2</h1>
-            <p className="text-xs text-text-secondary uppercase tracking-widest">Travel Planner</p>
-          </div>
+        <div className="flex flex-col items-start gap-3 mb-10 w-full -ml-3">
+          <GooflyLogo heightClass="h-16 sm:h-20" className="max-w-[min(100%,22rem)] -translate-x-2" />
+          <p className="text-xs text-text-secondary uppercase tracking-widest text-left">
+            Travel Planner
+          </p>
         </div>
         <div className="bg-white dark:bg-card-dark rounded-2xl p-8 shadow-lg border border-border-light dark:border-border-dark">
           <h2 className="text-2xl font-black mb-6">Entrar</h2>

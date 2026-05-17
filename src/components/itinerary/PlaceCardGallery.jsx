@@ -7,19 +7,55 @@ import { PLACEHOLDER_COVER } from '../../constants/placeholders'
 const SWIPE_THRESHOLD_PX = 48
 const SLIDE_MS = 420
 
-function ImageLightbox({ url, onClose }) {
+function ImageLightbox({ urls, index, onClose, onPrev, onNext }) {
+  const touchStartX = useRef(null)
+  const hasMultiple = urls.length > 1
+  const safeIdx = Math.min(Math.max(0, index), urls.length - 1)
+  const url = urls[safeIdx] ?? urls[0]
+
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (!hasMultiple) return
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        e.stopPropagation()
+        onPrev(e)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        e.stopPropagation()
+        onNext(e)
+      }
     }
-    window.addEventListener('keydown', onKey)
+    // Capture: senão o TinderView recebe ← → e interpreta como curtir/descartar.
+    window.addEventListener('keydown', onKey, true)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onKey, true)
       document.body.style.overflow = prevOverflow
     }
-  }, [onClose])
+  }, [onClose, onPrev, onNext, hasMultiple])
+
+  const onTouchStart = (e) => {
+    if (!hasMultiple || e.touches.length !== 1) return
+    touchStartX.current = e.touches[0].clientX
+  }
+
+  const onTouchEnd = (e) => {
+    if (touchStartX.current == null || !hasMultiple) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if (Math.abs(dx) < SWIPE_THRESHOLD_PX) return
+    e.stopPropagation()
+    if (dx < 0) onNext(e)
+    else onPrev(e)
+  }
 
   // Portal em document.body: o card TDV usa z-index baixo; sem isso o fixed ficaria
   // preso ao contexto de empilhamento do card e o cabeçalho da página cortaria a foto.
@@ -28,7 +64,7 @@ function ImageLightbox({ url, onClose }) {
       className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="Foto ampliada"
+      aria-label={hasMultiple ? 'Fotos ampliadas — use as setas para navegar' : 'Foto ampliada'}
       onClick={onClose}
     >
       <button
@@ -42,13 +78,56 @@ function ImageLightbox({ url, onClose }) {
       >
         <Icon name="close" className="text-2xl" />
       </button>
-      <img
-        src={url}
-        alt=""
-        className="max-h-[min(92vh,1200px)] max-w-full object-contain shadow-2xl"
+
+      <div
+        className="relative flex max-h-[min(92vh,1200px)] max-w-full items-center justify-center"
         onClick={(e) => e.stopPropagation()}
-        draggable={false}
-      />
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={() => {
+          touchStartX.current = null
+        }}
+      >
+        {hasMultiple ? (
+          <>
+            <button
+              type="button"
+              className="absolute left-0 top-1/2 z-[1] flex size-12 -translate-x-1 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/50 text-white backdrop-blur-md transition-colors hover:bg-black/65 active:scale-95 sm:left-1 sm:size-14"
+              aria-label="Foto anterior"
+              onClick={(e) => {
+                e.stopPropagation()
+                onPrev(e)
+              }}
+            >
+              <Icon name="chevron_left" className="text-3xl" />
+            </button>
+            <button
+              type="button"
+              className="absolute right-0 top-1/2 z-[1] flex size-12 translate-x-1 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/50 text-white backdrop-blur-md transition-colors hover:bg-black/65 active:scale-95 sm:right-1 sm:size-14"
+              aria-label="Próxima foto"
+              onClick={(e) => {
+                e.stopPropagation()
+                onNext(e)
+              }}
+            >
+              <Icon name="chevron_right" className="text-3xl" />
+            </button>
+            <p
+              className="pointer-events-none absolute right-2 top-2 z-[1] m-0 rounded-full bg-black/55 px-3 py-1.5 text-xs font-bold tabular-nums text-white backdrop-blur-sm"
+              aria-live="polite"
+            >
+              {safeIdx + 1} / {urls.length}
+            </p>
+          </>
+        ) : null}
+
+        <img
+          src={url}
+          alt=""
+          className="max-h-[min(92vh,1200px)] max-w-full object-contain shadow-2xl"
+          draggable={false}
+        />
+      </div>
     </div>,
     document.body
   )
@@ -64,7 +143,7 @@ export function PlaceCardGallery({ place, className = '' }) {
   const images = useMemo(() => getPlaceImageUrls(place), [place])
   const [index, setIndex] = useState(0)
   const [failed, setFailed] = useState(() => new Set())
-  const [lightboxUrl, setLightboxUrl] = useState(null)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const touchStartX = useRef(null)
   const middlePointerStartRef = useRef(null)
 
@@ -73,7 +152,7 @@ export function PlaceCardGallery({ place, className = '' }) {
   useEffect(() => {
     setIndex(0)
     setFailed(new Set())
-    setLightboxUrl(null)
+    setLightboxOpen(false)
   }, [placeKey])
 
   const workingImages = useMemo(() => {
@@ -111,15 +190,12 @@ export function PlaceCardGallery({ place, className = '' }) {
     setIndex(0)
   }, [])
 
-  const closeLightbox = useCallback(() => setLightboxUrl(null), [])
+  const closeLightbox = useCallback(() => setLightboxOpen(false), [])
 
-  const openLightboxFromMiddle = useCallback(
-    (e) => {
-      e?.stopPropagation?.()
-      setLightboxUrl(workingImages[safeIndex])
-    },
-    [workingImages, safeIndex]
-  )
+  const openLightboxFromMiddle = useCallback((e) => {
+    e?.stopPropagation?.()
+    setLightboxOpen(true)
+  }, [])
 
   const onMiddlePointerDown = (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
@@ -270,7 +346,15 @@ export function PlaceCardGallery({ place, className = '' }) {
         ) : null}
       </div>
 
-      {lightboxUrl ? <ImageLightbox url={lightboxUrl} onClose={closeLightbox} /> : null}
+      {lightboxOpen ? (
+        <ImageLightbox
+          urls={workingImages}
+          index={safeIndex}
+          onClose={closeLightbox}
+          onPrev={goPrev}
+          onNext={goNext}
+        />
+      ) : null}
     </>
   )
 }

@@ -1,6 +1,7 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Icon } from '../common/Icon'
+import { GooflyLogo } from '../branding/GooflyLogo'
 
 const navItems = [
   { to: '/', icon: 'dashboard', label: 'Dashboard' },
@@ -14,12 +15,9 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 flex flex-col bg-white dark:bg-card-dark border-r border-border-light dark:border-border-dark p-6 h-full hidden lg:flex">
-      <div className="flex items-center gap-3 mb-10">
-        <div className="bg-primary size-10 rounded-full flex items-center justify-center">
-          <Icon name="flight_takeoff" className="text-foreground font-bold" />
-        </div>
-        <h1 className="text-xl font-extrabold tracking-tight">Goofly</h1>
-      </div>
+      <Link to="/" className="flex items-center justify-start self-start mb-10 shrink-0 -ml-3">
+        <GooflyLogo heightClass="h-14 md:h-16" className="max-w-[min(100%,17rem)]" />
+      </Link>
       <nav className="flex flex-col gap-1 flex-grow">
         {navItems.map(({ to, icon, label }) => (
           <NavLink
