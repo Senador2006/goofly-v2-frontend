@@ -120,7 +120,7 @@ export function PlaceCardGallery({ place, className = '' }) {
       </div>
 
       {hasMultiple && (
-        <div className="absolute inset-0 z-[20] pointer-events-none">
+        <div className="absolute inset-0 z-[30] pointer-events-none">
           <button
             type="button"
             onClick={goPrev}

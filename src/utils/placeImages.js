@@ -1,4 +1,4 @@
-import { PLACEHOLDER_COVER } from '../constants/placeholders'
+import { PLACEHOLDER_COVER } from '../constants/placeholders.js'
 
 function isHttpUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value.trim())

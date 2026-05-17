@@ -5,6 +5,7 @@ import { Button } from '../components/common/Button'
 import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { TinderView } from '../components/itinerary/TinderView'
 import { DocumentosView } from '../components/itinerary/DocumentosView'
+import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
 import { tripService } from '../services/tripService'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -145,6 +146,7 @@ export function Itinerary() {
   const effectiveSelectedDay = days.includes(selectedDay) ? selectedDay : (days[0] ?? 1)
 
   const showRoteiroSidebar = mode === MODE_ROTEIRO
+  const isTdvMode = isPlanning && mode === MODE_TDV
 
   const modeTabs = (
     <div className="flex gap-1.5 sm:gap-2 flex-wrap p-1 rounded-2xl bg-surface-light dark:bg-white/[0.06] w-fit max-w-full">
@@ -222,20 +224,38 @@ export function Itinerary() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8 min-h-0 bg-background-light/50 dark:bg-background-dark/30">
       {/* Cabeçalho único — evita três colunas competindo por atenção */}
-      <header className="flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 py-3 sm:py-4">
-        <div className="flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+      <header
+        className={`flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 ${
+          isTdvMode ? 'py-2 sm:py-2.5' : 'py-3 sm:py-4'
+        }`}
+      >
+        <div
+          className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary overflow-x-auto no-scrollbar ${
+            isTdvMode ? 'mb-1.5' : 'mb-2 sm:mb-3'
+          }`}
+        >
           <span>Início</span>
           <Icon name="chevron_right" className="text-[10px] shrink-0" />
           <span>Roteiros</span>
           <Icon name="chevron_right" className="text-[10px] shrink-0" />
           <span className="text-foreground dark:text-white truncate">{destLabel}</span>
         </div>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${isTdvMode ? 'gap-2' : 'gap-3'}`}>
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-foreground dark:text-white leading-tight">
+            <h1
+              className={`font-black tracking-tight text-foreground dark:text-white leading-tight ${
+                isTdvMode ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl lg:text-3xl'
+              }`}
+            >
               Criador de Roteiros
             </h1>
-            <p className="text-xs sm:text-sm text-text-secondary mt-0.5">Rota otimizada por IA · {destLabel}</p>
+            <p
+              className={`text-text-secondary mt-0.5 truncate ${
+                isTdvMode ? 'text-[11px] sm:text-xs' : 'text-xs sm:text-sm'
+              }`}
+            >
+              Rota otimizada por IA · {destLabel}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             {modeTabs}
@@ -270,28 +290,15 @@ export function Itinerary() {
             ))}
           </div>
         )}
-        {showDeleteConfirm && (
-          <div className="mt-3 p-3 sm:p-4 rounded-xl bg-red-500/10 border border-red-500/20">
-            <p className="text-sm text-text-secondary mb-3">
-              Tem certeza que deseja apagar este planejamento? Esta ação não pode ser desfeita.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleDeletePlanning}
-                disabled={deleting}
-                className="bg-red-600 hover:bg-red-700 text-white rounded-xl"
-              >
-                {deleting ? 'Apagando...' : 'Sim, apagar'}
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setShowDeleteConfirm(false)} disabled={deleting} className="rounded-xl">
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        )}
       </header>
+
+      <DeletePlanningOverlay
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDeletePlanning}
+        deleting={deleting}
+        tripLabel={destLabel}
+      />
 
       <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
         {showRoteiroSidebar ? (
@@ -398,56 +405,6 @@ export function Itinerary() {
             </>
           ) : null}
         </section>
-      </div>
-
-      <div className="lg:hidden flex-shrink-0 sticky bottom-0 left-0 right-0 p-3 bg-white/95 dark:bg-card-dark/95 backdrop-blur-lg border-t border-border-light dark:border-border-dark flex gap-1.5 z-40 overflow-x-auto no-scrollbar">
-        {isPlanning ? (
-          <>
-            <button
-              type="button"
-              disabled
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs opacity-45 ${mode === MODE_ROTEIRO ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              Roteiro
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode(MODE_TDV)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs ${mode === MODE_TDV ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              TDV
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode(MODE_DOCUMENTOS)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 ${mode === MODE_DOCUMENTOS ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              <Icon name="folder_shared" className="text-sm" />
-              Docs
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                setMode(MODE_ROTEIRO)
-                refetchItineraryImmediate()
-              }}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs ${mode === MODE_ROTEIRO ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              Roteiro
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode(MODE_DOCUMENTOS)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 ${mode === MODE_DOCUMENTOS ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              <Icon name="folder_shared" className="text-sm" />
-              Docs
-            </button>
-          </>
-        )}
       </div>
     </div>
   )

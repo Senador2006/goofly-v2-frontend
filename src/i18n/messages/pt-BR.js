@@ -63,6 +63,14 @@ export default {
   tdv: {
     title: 'Tinder de Viagens',
     day_label: 'Dia {{day}}',
+    likes_one: '{{count}} curtida',
+    likes_other: '{{count}} curtidas',
+    free_badge: 'Grátis: {{maxDays}}/{{tripDays}} dias',
+    history_section: 'Histórico e finalizar',
+    photo_hint: 'Fotos: toque nas laterais · Teclado: ← descartar · → curtir',
+    finalize_cta: 'Estou satisfeito — gerar roteiro',
+    finalize_generating: 'Gerando roteiro...',
+    finalize_hint: 'Curta pelo menos um lugar antes de concluir.',
     free_limit:
       'No plano gratuito o TDV cobre {{maxDays}} de {{tripDays}} dia(s) desta viagem.',
     already_liked: 'Este lugar já recebeu seu like',

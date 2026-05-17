@@ -8,13 +8,7 @@ import { dashboardService } from '../services/dashboardService'
 import { memoryService } from '../services/memoryService'
 import { formatDate } from '../utils/formatters'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import {
-  PLACEHOLDER_COVER,
-  PLACEHOLDER_MEMORY_A,
-  PLACEHOLDER_MEMORY_B,
-} from '../constants/placeholders'
-
-const MEMORY_IMAGES = [PLACEHOLDER_MEMORY_A, PLACEHOLDER_MEMORY_B]
+import { PLACEHOLDER_COVER } from '../constants/placeholders'
 
 export function Dashboard() {
   useDocumentTitle('Dashboard')
@@ -46,11 +40,7 @@ export function Dashboard() {
             }
           } catch (_) {}
         }
-        const fallbackMemories = [
-          { photo_url: MEMORY_IMAGES[0], tripLabel: "Sydney '23" },
-          { photo_url: MEMORY_IMAGES[1], tripLabel: "London '23" },
-        ]
-        setRecentMemories(memoriesByTrip.length > 0 ? memoriesByTrip : fallbackMemories)
+        setRecentMemories(memoriesByTrip)
       } catch (err) {
         setError(err.response?.data?.error?.message || 'Erro ao carregar dashboard')
       } finally {
@@ -130,18 +120,16 @@ export function Dashboard() {
                   {firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Tokyo, Japan'}
                 </h3>
                 <p className="text-sm text-text-secondary mt-1">{dateRange}</p>
-                <div className="flex items-center gap-2 mt-4">
+                <div className="flex items-center justify-between gap-3 mt-4 flex-wrap">
                   <div className="flex -space-x-2">
                     <div className="size-8 rounded-full bg-surface-light dark:bg-surface-dark border-2 border-white dark:border-card-dark flex items-center justify-center text-xs font-bold">
                       +2
                     </div>
                   </div>
-                  <Link
-                    to={`/trips/${nextTrip.id}`}
-                    className="ml-auto text-sm font-semibold text-foreground dark:text-white flex items-center gap-1 hover:text-primary"
-                  >
-                    Gerenciar
-                    <Icon name="arrow_forward" className="text-sm" />
+                  <Link to={`/trips/${nextTrip.id}/itinerary`} className="ml-auto shrink-0">
+                    <Button variant="primary" size="sm">
+                      Ver viagem
+                    </Button>
                   </Link>
                 </div>
               </div>
@@ -168,14 +156,18 @@ export function Dashboard() {
               EXPLORAR ÁREA
             </Link>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div
+            className={`grid gap-4 ${
+              recentMemories.length > 0 ? 'grid-cols-3' : 'grid-cols-1 max-w-[140px]'
+            }`}
+          >
             {recentMemories.slice(0, 2).map((mem, i) => (
               <Link
-                key={i}
+                key={mem.id ?? i}
                 to="/memories"
                 className="aspect-square rounded-xl bg-center bg-cover overflow-hidden group"
                 style={{
-                  backgroundImage: `url(${mem.photo_url || mem.image_url || MEMORY_IMAGES[i]})`,
+                  backgroundImage: `url(${mem.photo_url || mem.image_url})`,
                 }}
               >
                 <div className="w-full h-full bg-black/30 group-hover:bg-black/20 transition-all flex items-end p-3">
