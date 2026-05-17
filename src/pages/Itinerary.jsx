@@ -8,6 +8,7 @@ import { DocumentosView } from '../components/itinerary/DocumentosView'
 import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivityCard'
 import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
+import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
 import { ItineraryDayMap } from '../components/itinerary/ItineraryDayMap'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
@@ -579,27 +580,6 @@ export function Itinerary() {
             })}
           </div>
         )}
-        {showDeleteConfirm && (
-          <div className="mt-3 p-3 sm:p-4 rounded-xl bg-red-500/10 border border-red-500/20">
-            <p className="text-sm text-text-secondary mb-3">
-              Tem certeza que deseja apagar este planejamento? Esta ação não pode ser desfeita.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleDeletePlanning}
-                disabled={deleting}
-                className="bg-red-600 hover:bg-red-700 text-white rounded-xl"
-              >
-                {deleting ? 'Apagando...' : 'Sim, apagar'}
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setShowDeleteConfirm(false)} disabled={deleting} className="rounded-xl">
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        )}
       </header>
 
       <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
@@ -759,55 +739,13 @@ export function Itinerary() {
         </section>
       </div>
 
-      <div className="lg:hidden flex-shrink-0 sticky bottom-0 left-0 right-0 p-3 bg-white/95 dark:bg-card-dark/95 backdrop-blur-lg border-t border-border-light dark:border-border-dark flex gap-1.5 z-40 overflow-x-auto no-scrollbar">
-        {isPlanning ? (
-          <>
-            <button
-              type="button"
-              disabled
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs opacity-45 ${mode === MODE_ROTEIRO ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              Roteiro
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode(MODE_TDV)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs ${mode === MODE_TDV ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              TDV
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode(MODE_DOCUMENTOS)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 ${mode === MODE_DOCUMENTOS ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              <Icon name="folder_shared" className="text-sm" />
-              Docs
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                setMode(MODE_ROTEIRO)
-                refetchItineraryImmediate()
-              }}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs ${mode === MODE_ROTEIRO ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              Roteiro
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode(MODE_DOCUMENTOS)}
-              className={`flex-1 min-w-[72px] py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 ${mode === MODE_DOCUMENTOS ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'}`}
-            >
-              <Icon name="folder_shared" className="text-sm" />
-              Docs
-            </button>
-          </>
-        )}
-      </div>
+      <DeletePlanningOverlay
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDeletePlanning}
+        deleting={deleting}
+        tripLabel={destLabel}
+      />
     </div>
   )
 }

@@ -17,7 +17,7 @@ test('TinderView: scroll na página inteira (não painel interno no histórico)'
 })
 
 test('TinderView: card maior e finalize antes do histórico', () => {
-  assert.match(tinderViewSource, /max-h-\[min\(48dvh,320px\)\]/)
+  assert.match(tinderViewSource, /min\(calc\(100dvh-15rem\),380px\)/)
   assert.match(tinderViewSource, /finalizePanel/)
   const belowFoldBlock = tinderViewSource.slice(
     tinderViewSource.indexOf('const belowFoldContent'),
@@ -26,7 +26,8 @@ test('TinderView: card maior e finalize antes do histórico', () => {
   assert.match(belowFoldBlock, /\{finalizePanel\}[\s\S]*\{choicesPanel\}/)
 })
 
-test('TinderView: espaço entre botões e bloco de finalizar', () => {
-  assert.match(tinderViewSource, /mt-8 sm:mt-6/)
+test('TinderView: separação entre bloco do card e finalizar/histórico', () => {
+  assert.match(tinderViewSource, /gap-10/)
+  assert.match(tinderViewSource, /border-t border-border-light/)
   assert.doesNotMatch(tinderViewSource, /-mt-2/)
 })
