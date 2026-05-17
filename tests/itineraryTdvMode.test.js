@@ -9,8 +9,11 @@ const itinerarySource = readFileSync(
   'utf8'
 )
 
-test('Itinerary define isTdvMode para cabeçalho compacto', () => {
-  assert.match(itinerarySource, /const isTdvMode = isPlanning && mode === MODE_TDV/)
-  assert.match(itinerarySource, /isTdvMode \? 'py-2/)
-  assert.match(itinerarySource, /isTdvMode \? 'text-lg/)
+test('Itinerary: planejamento com TDV e confirmação de apagar fora do header', () => {
+  assert.match(itinerarySource, /MODE_TDV/)
+  assert.match(itinerarySource, /<DeletePlanningOverlay/)
+  assert.doesNotMatch(
+    itinerarySource.slice(itinerarySource.indexOf('<header'), itinerarySource.indexOf('</header>') + '</header>'.length),
+    /\{showDeleteConfirm &&/
+  )
 })

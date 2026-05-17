@@ -18,7 +18,8 @@ function getPlaceId(p) {
 const PREFETCH_WHEN_REMAINING_AT_MOST = 5
 
 /**
- * TDV — uma coluna principal: card em destaque, resumo e histórico abaixo (sem terceira barra lateral).
+ * TDV — mobile: pilha única (card · ações · finalizar/listas).
+ * lg+: cartão à esquerda, painel finalizar + curtidas/descartes na lateral direita (sticky).
  */
 export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSatisfied, finalizingTdv = false }) {
   const t = useT()
@@ -319,7 +320,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const destTitle = firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Sua viagem'
 
   const choicesPanel = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl mx-auto">
+    <div className="grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2 lg:mx-0 lg:max-w-none lg:grid-cols-1 lg:gap-2">
       <div className="p-2.5 sm:p-3 rounded-xl bg-primary/[0.08] dark:bg-primary/[0.06] border border-primary/20">
         <h5 className="font-bold text-xs mb-0.5 flex items-center gap-1.5 text-foreground dark:text-white">
           <Icon name="favorite" className="text-sm text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
@@ -366,7 +367,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   )
 
   const finalizePanel = (
-    <div className="w-full max-w-xl mx-auto p-3 sm:p-4 rounded-2xl bg-white dark:bg-surface-dark/90 border border-border-light dark:border-border-dark shadow-sm">
+    <div className="relative z-[1] w-full max-w-xl lg:mx-0 lg:max-w-none mx-auto p-3 sm:p-4 rounded-2xl bg-white dark:bg-surface-dark/90 border border-border-light dark:border-border-dark shadow-sm">
       <p className="text-[11px] sm:text-xs text-text-secondary mb-2 leading-relaxed">
         Ao finalizar, a IA combina o formulário da viagem com suas curtidas e descartes para montar o roteiro.
       </p>
@@ -383,7 +384,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     <>
       {finalizePanel}
       {(undoStack.length > 0 || undoLoading || undoNotice) && (
-        <div className="w-full max-w-xl mx-auto flex flex-col items-center gap-1">
+        <div className="w-full max-w-xl lg:mx-0 lg:max-w-none mx-auto flex flex-col items-center gap-1 lg:items-stretch">
           <Button
             type="button"
             variant="outline"
@@ -433,8 +434,11 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     )
   }
 
+  const cardSurface =
+    'w-[min(100%,22.5rem)] sm:w-full lg:w-full mx-auto aspect-[3/4] max-h-[min(56dvh,400px)] sm:max-h-[min(54dvh,420px)] lg:max-h-[min(62dvh,460px)] rounded-2xl sm:rounded-3xl'
+
   return (
-    <div className="flex flex-1 flex-col min-h-0 overflow-y-auto overflow-x-hidden bg-gradient-to-b from-background-light to-white dark:from-card-dark dark:to-background-dark">
+    <div className="flex flex-1 flex-col min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain bg-gradient-to-b from-background-light to-white dark:from-card-dark dark:to-background-dark">
       <div className="flex-shrink-0 px-3 sm:px-4 py-2 border-b border-border-light/70 dark:border-border-dark/70 bg-white/50 dark:bg-card-dark/30">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 max-w-3xl mx-auto w-full">
           <div className="min-w-0">
@@ -464,162 +468,134 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         </div>
       </div>
 
-      <div className="flex flex-col min-h-[calc(100%-2.75rem)]">
-      <section className="flex-1 flex flex-col justify-center px-4 sm:px-6 pt-2 pb-1 min-h-0">
-        <div className="w-full max-w-lg sm:max-w-xl mx-auto flex flex-col items-center gap-2.5">
+      <div className="flex flex-1 min-h-0 flex-col pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-6">
+        <div className="mx-auto w-full max-w-lg px-4 pt-5 sm:px-6 sm:pt-5 lg:max-w-6xl xl:max-w-[72rem] lg:pt-6">
           {currentPlace ? (
-            <>
-              <div className="relative w-full flex justify-center items-end">
-              {places[currentIndex + 1] && (
-                <div
-                  className="absolute w-[94%] aspect-[3/4] max-h-[min(48dvh,320px)] sm:max-h-[min(52dvh,360px)] rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg border border-border-light dark:border-border-dark bg-card-dark"
-                  style={{ transform: 'scale(0.94)', opacity: 0.55 }}
-                >
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:items-start lg:gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-10">
+              <div className="flex min-w-0 flex-col gap-5 lg:max-w-md lg:justify-self-center xl:max-w-lg">
+                <div className="relative isolate mx-auto mt-1 flex w-full max-w-[min(100%,23rem)] justify-center pb-10 sm:max-w-none sm:pb-12 lg:mx-0 lg:max-w-none lg:pb-10">
+                  {places[currentIndex + 1] && (
                     <div
-                      className="absolute inset-0 bg-cover bg-center"
-                      style={{
-                        backgroundImage: `url(${getPlaceCoverImageUrl(places[currentIndex + 1])})`,
-                      }}
-                    />
-                  </div>
-                )}
-              <div
-                className={`relative w-full aspect-[3/4] max-h-[min(48dvh,320px)] sm:max-h-[min(52dvh,360px)] rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-black/5 dark:ring-white/10 transition-transform duration-300 group ${
-                  swipeFeedback === 'like' ? 'scale-[1.02] ring-4 ring-primary' : ''
-                } ${swipeFeedback === 'dislike' ? 'scale-[0.98] opacity-85' : ''}`}
-              >
-                <PlaceCardGallery place={currentPlace} />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none z-[10]" />
-                <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5 text-white z-[18] pointer-events-none">
-                  <div className="flex gap-1.5 mb-1.5 overflow-x-auto no-scrollbar">
-                      {(currentPlace.tags || currentPlace.categories || []).filter(Boolean).map((tag) => {
-                        const label = typeof tag === 'string' ? tag : tag?.name || tag?.label || String(tag)
-                        return (
-                          <span
-                            key={label}
-                            className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold uppercase tracking-wider whitespace-nowrap"
-                          >
-                            {label}
-                          </span>
-                        )
-                      })}
+                      className={`pointer-events-none absolute left-1/2 top-0 z-0 ${cardSurface} -translate-x-1/2 origin-top overflow-hidden shadow-lg border border-border-light dark:border-border-dark bg-card-dark scale-[0.92] opacity-55`}
+                      aria-hidden
+                    >
+                      <div
+                        className="absolute inset-0 bg-cover bg-center"
+                        style={{
+                          backgroundImage: `url(${getPlaceCoverImageUrl(places[currentIndex + 1])})`,
+                        }}
+                      />
                     </div>
-                    <h2 className="text-xl sm:text-2xl font-extrabold mb-1 leading-tight drop-shadow-md line-clamp-2">
-                      {currentPlace.name}
-                    </h2>
-                    <div className="flex items-center gap-1.5 text-white/90 mb-1">
-                      <Icon name="location_on" className="text-sm shrink-0" />
-                      <span className="text-xs font-medium truncate">
-                        {currentPlace.location ||
-                          (currentPlace.city && currentPlace.country
-                            ? `${currentPlace.city}, ${currentPlace.country}`
-                            : currentPlace.city || currentPlace.country || 'Destino')}
-                      </span>
+                  )}
+                  <div
+                    className={`relative z-[1] ${cardSurface} overflow-hidden shadow-2xl border border-white/10 ring-1 ring-black/5 dark:ring-white/10 transition-[transform,opacity] duration-300 group bg-card-dark motion-reduce:transition-none ${
+                      swipeFeedback === 'like'
+                        ? 'ring-4 ring-primary sm:translate-y-px motion-reduce:translate-y-0'
+                        : ''
+                    } ${swipeFeedback === 'dislike' ? 'opacity-[0.92] sm:translate-y-0.5 motion-reduce:translate-y-0' : ''}`}
+                  >
+                    <PlaceCardGallery place={currentPlace} />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none z-[10]" />
+                    <div className="absolute bottom-0 left-0 right-0 px-4 sm:px-5 pt-12 pb-3.5 sm:pt-14 sm:pb-4 text-white z-[18] pointer-events-none">
+                      <div className="flex gap-1.5 mb-1.5 overflow-x-auto no-scrollbar">
+                        {(currentPlace.tags || currentPlace.categories || []).filter(Boolean).map((tag) => {
+                          const label = typeof tag === 'string' ? tag : tag?.name || tag?.label || String(tag)
+                          return (
+                            <span
+                              key={label}
+                              className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold uppercase tracking-wider whitespace-nowrap"
+                            >
+                              {label}
+                            </span>
+                          )
+                        })}
+                      </div>
+                      <h2 className="text-lg sm:text-2xl font-extrabold mb-1.5 leading-snug drop-shadow-md line-clamp-3">
+                        {currentPlace.name}
+                      </h2>
+                      <div className="flex min-w-0 items-center gap-1.5 text-white/90 mb-1">
+                        <Icon name="location_on" className="text-sm shrink-0" />
+                        <span className="text-xs font-medium truncate">
+                          {currentPlace.location ||
+                            (currentPlace.city && currentPlace.country
+                              ? `${currentPlace.city}, ${currentPlace.country}`
+                              : currentPlace.city || currentPlace.country || 'Destino')}
+                        </span>
+                      </div>
+                      <p className="text-[11px] sm:text-sm text-white/90 leading-relaxed line-clamp-3">
+                        {currentPlace.description || currentPlace.aiReasoning || 'Descubra este lugar.'}
+                      </p>
                     </div>
-                    <p className="text-xs sm:text-sm text-white/90 leading-snug line-clamp-2">
-                      {currentPlace.description || currentPlace.aiReasoning || 'Descubra este lugar.'}
-                    </p>
                   </div>
+                </div>
+
+                <p className="mx-auto max-w-[min(100%,23rem)] shrink-0 px-4 text-center text-[10px] leading-relaxed text-text-secondary sm:max-w-none sm:text-[11px] lg:px-0">
+                  {t('tdv.photo_hint')}
+                </p>
+
+                <div className="relative z-[30] isolate mx-auto flex w-full max-w-[18rem] shrink-0 justify-between gap-6 px-6 pt-0.5 sm:max-w-none sm:justify-center sm:gap-[4.75rem] sm:px-16 lg:px-4">
+                  <button
+                    type="button"
+                    onClick={handleDislike}
+                    className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-full border border-border-light bg-white text-text-secondary shadow-lg ring-1 ring-border-light/90 active:scale-95 motion-safe:transition-[transform,colors] hover:text-red-500 dark:border-border-dark dark:bg-card-dark dark:ring-white/15 hover:shadow-xl sm:size-14"
+                    aria-label="Descartar"
+                  >
+                    <Icon name="close" className="text-2xl sm:text-3xl" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLike}
+                    className="flex size-[3.625rem] shrink-0 items-center justify-center rounded-full bg-primary text-foreground shadow-primary ring-2 ring-primary/30 active:scale-95 motion-safe:transition-transform sm:size-16"
+                    aria-label="Curtir"
+                  >
+                    <Icon name="favorite" className="text-3xl sm:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-center gap-7 sm:gap-9">
-                <button
-                  type="button"
-                  onClick={handleDislike}
-                  className="size-12 sm:size-14 rounded-full bg-white dark:bg-card-dark flex items-center justify-center text-text-secondary hover:text-red-500 hover:shadow-xl hover:scale-105 active:scale-95 transition-all border-2 border-border-light dark:border-border-dark"
-                  aria-label="Descartar"
-                >
-                  <Icon name="close" className="text-2xl sm:text-3xl" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLike}
-                  className="size-14 sm:size-16 rounded-full bg-primary flex items-center justify-center text-foreground shadow-primary hover:scale-105 active:scale-95 transition-all"
-                  aria-label="Curtir"
-                >
-                  <Icon name="favorite" className="text-3xl sm:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
-                </button>
-              </div>
-              <p className="text-[10px] sm:text-[11px] text-text-secondary text-center max-w-sm leading-snug">
-                {t('tdv.photo_hint')}
-              </p>
-            </>
+              <aside className="flex min-w-0 flex-col gap-3 border-t border-border-light/60 pt-5 dark:border-border-dark/55 lg:sticky lg:top-3 lg:max-h-[calc(100dvh-7.5rem)] lg:overflow-y-auto lg:border-t-0 lg:pt-0 lg:gap-4">
+                {belowFoldContent}
+              </aside>
+            </div>
           ) : tdvRestriction ? (
-            <div className="text-center max-w-md px-2 py-4 w-full">
-              <div className="size-12 rounded-full bg-primary/15 flex items-center justify-center mx-auto mb-2">
-                <Icon name="lock" className="text-xl text-primary" />
-              </div>
-              <h3 className="text-base font-bold text-foreground dark:text-white mb-1">Limite do plano gratuito</h3>
-              <p className="text-text-secondary text-sm mb-4 leading-relaxed">{tdvRestriction.message}</p>
-              <Button
-                type="button"
-                className="rounded-full"
-                onClick={() => navigate(`/pagamento?tripId=${encodeURIComponent(tripId)}`)}
-              >
-                <Icon name="workspace_premium" />
-                Planejamento Completo
-              </Button>
+          <div className="text-center max-w-md px-2 py-4 mx-auto w-full">
+            <div className="size-12 rounded-full bg-primary/15 flex items-center justify-center mx-auto mb-2">
+              <Icon name="lock" className="text-xl text-primary" />
             </div>
-          ) : (
-            <div className="w-full py-2">
-              <EmptyState
-                icon="explore"
-                title="Sem mais lugares agora"
-                description="Avance o dia ou recarregue. Quando quiser, finalize para gerar o roteiro."
-                action={
-                  <div className="flex gap-2 flex-wrap justify-center">
-                    <Button onClick={handleNextDay} className="rounded-full">
-                      Próximo dia
-                    </Button>
-                    <Button variant="outline" onClick={() => loadPlaces(currentDay)} className="rounded-full">
-                      Recarregar
-                    </Button>
-                  </div>
-                }
-              />
-            </div>
-          )}
-
-          {(undoStack.length > 0 || undoLoading || undoNotice) && (
-            <div className="w-full max-w-xl flex flex-col items-center gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={undoStack.length === 0 || undoLoading}
-                className="rounded-full"
-                onClick={handleUndo}
-                aria-label="Desfazer última ação no TDV"
-              >
-                <Icon name="undo" className="text-lg" />
-                {undoLoading ? 'Desfazendo...' : 'Desfazer última ação'}
-              </Button>
-              {undoNotice && (
-                <p className="text-[11px] text-red-500 dark:text-red-400 text-center px-2">{undoNotice}</p>
-              )}
-            </div>
-          )}
-
-          {choicesPanel}
-
-          <div className="w-full max-w-xl p-4 sm:p-5 rounded-2xl bg-white dark:bg-surface-dark/80 border border-border-light dark:border-border-dark shadow-sm">
-            <p className="text-xs sm:text-sm text-text-secondary mb-3 leading-relaxed">
-              Ao finalizar, a IA monta o roteiro com base no formulário da viagem
-              {totalLikes > 0 ? ', nas suas curtidas e descartes do TDV' : ''}. O TDV é opcional — você pode
-              gerar o roteiro mesmo sem curtir lugares.
-            </p>
-            <Button onClick={onTdvSatisfied} disabled={finalizingTdv} className="w-full rounded-full py-3">
-              {finalizingTdv ? 'Gerando roteiro...' : 'Gerar roteiro'}
+            <h3 className="text-base font-bold text-foreground dark:text-white mb-1">Limite do plano gratuito</h3>
+            <p className="text-text-secondary text-sm mb-4 leading-relaxed">{tdvRestriction.message}</p>
+            <Button
+              type="button"
+              className="rounded-full"
+              onClick={() => navigate(`/pagamento?tripId=${encodeURIComponent(tripId)}`)}
+            >
+              <Icon name="workspace_premium" />
+              Planejamento Completo
             </Button>
           </div>
+        ) : (
+          <div className="w-full py-4">
+            <EmptyState
+              icon="explore"
+              title="Sem mais lugares agora"
+              description="Avance o dia ou recarregue. Quando quiser, finalize para gerar o roteiro."
+              action={
+                <div className="flex gap-2 flex-wrap justify-center">
+                  <Button onClick={handleNextDay} className="rounded-full">
+                    Próximo dia
+                  </Button>
+                  <Button variant="outline" onClick={() => loadPlaces(currentDay)} className="rounded-full">
+                    Recarregar
+                  </Button>
+                </div>
+              }
+            />
+            <div className="flex flex-col gap-4 mt-8 pt-4 border-t border-border-light/50 dark:border-border-dark/60">
+              {belowFoldContent}
+            </div>
+          </div>
+        )}
         </div>
-      </section>
-
-      </div>
-
-      <div className="px-4 sm:px-6 pb-6 mt-8 sm:mt-6 pt-1">
-        <div className="w-full max-w-lg sm:max-w-xl mx-auto flex flex-col gap-2.5">{belowFoldContent}</div>
       </div>
     </div>
   )

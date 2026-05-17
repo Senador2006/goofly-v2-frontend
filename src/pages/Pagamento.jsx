@@ -5,6 +5,7 @@ import { Button } from '../components/common/Button'
 import { useAuth } from '../context/AuthContext'
 import { userService } from '../services/userService'
 import { paymentService } from '../services/paymentService'
+import { tripService } from '../services/tripService'
 import { createLogger } from '../utils/logger'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
@@ -49,6 +50,10 @@ function isApprovedPayment(result) {
   return ['approved', 'paid'].includes(status)
 }
 
+function formatBRL(value) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value))
+}
+
 export function Pagamento() {
   useDocumentTitle('Planejamento Completo')
   const navigate = useNavigate()
@@ -71,8 +76,46 @@ export function Pagamento() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   const [showBrick, setShowBrick] = useState(false)
+  const [priceLoading, setPriceLoading] = useState(Boolean(tripId))
+  const [priceQuote, setPriceQuote] = useState(null)
   const brickControllerRef = useRef(null)
   const isMountedRef = useRef(false)
+
+  const planningAmount =
+    priceQuote?.amountBrl != null ? Number(priceQuote.amountBrl) : null
+
+  useEffect(() => {
+    if (!tripId) {
+      setPriceLoading(false)
+      setPriceQuote(null)
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      setPriceLoading(true)
+      try {
+        const quote = await tripService.getPlanningPrice(tripId)
+        if (!cancelled && isMountedRef.current) {
+          setPriceQuote(quote)
+        }
+      } catch (err) {
+        logger.error('Cotação de preço:', err)
+        if (!cancelled && isMountedRef.current) {
+          setError(
+            err.response?.data?.error?.message ||
+              'Não foi possível calcular o preço desta viagem. Confira seu login e volte pelo roteiro.'
+          )
+        }
+      } finally {
+        if (!cancelled && isMountedRef.current) setPriceLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [tripId])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -94,6 +137,10 @@ export function Pagamento() {
           throw new Error('A chave pública do Mercado Pago não está configurada.')
         }
 
+        if (planningAmount == null || Number.isNaN(planningAmount)) {
+          throw new Error('Preço não disponível. Recarregue a página.')
+        }
+
         if (brickControllerRef.current?.unmount) {
           await brickControllerRef.current.unmount()
           brickControllerRef.current = null
@@ -104,9 +151,10 @@ export function Pagamento() {
 
         const mp = new MercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY)
         const bricksBuilder = mp.bricks()
+        const amountForBrick = Number(planningAmount.toFixed(2))
         brickControllerRef.current = await bricksBuilder.create('payment', 'paymentBrick_container', {
           initialization: {
-            amount: 12.00,
+            amount: amountForBrick,
           },
           customization: {
             paymentMethods: {
@@ -127,7 +175,8 @@ export function Pagamento() {
                   tripId: tripId || undefined,
                   token: data.token,
                   payment_method_id: data.payment_method_id,
-                  transaction_amount: data.transaction_amount ?? 12.00,
+                  transaction_amount:
+                    data.transaction_amount != null ? data.transaction_amount : amountForBrick,
                   payer: {
                     email: data.payer?.email || user?.email,
                     identification: {
@@ -192,7 +241,7 @@ export function Pagamento() {
       }
       brickControllerRef.current = null
     }
-  }, [showBrick, navigate, refreshUser, tripId, user?.email])
+  }, [showBrick, navigate, refreshUser, tripId, user?.email, planningAmount])
 
   if (success) {
     return (
@@ -223,6 +272,12 @@ export function Pagamento() {
         </p>
       )}
 
+      {!tripId && (
+        <div className="mb-6 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-800 dark:text-amber-200">
+          Abra esta página pelo roteiro da viagem (botão de desbloquear) para vincular o pagamento ao preço nacional ou internacional correto.
+        </div>
+      )}
+
       <div className="bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-2xl p-6 mb-8">
         <div className="flex items-center gap-3 mb-4">
           <div className="rounded-full bg-primary/20 p-2">
@@ -251,9 +306,27 @@ export function Pagamento() {
             Válido para este planejamento
           </li>
         </ul>
-        <p className="text-2xl font-black text-foreground dark:text-white">
-          $12.00 <span className="text-sm font-normal text-text-secondary">preço único</span>
-        </p>
+        {priceLoading && tripId ? (
+          <p className="text-sm text-text-secondary">Calculando valor da viagem...</p>
+        ) : planningAmount != null ? (
+          <>
+            <p className="text-2xl font-black text-foreground dark:text-white">
+              {formatBRL(planningAmount)}{' '}
+              <span className="text-sm font-normal text-text-secondary">
+                {priceQuote?.tier === 'domestic'
+                  ? 'viagem nacional'
+                  : priceQuote?.tier === 'international'
+                    ? 'viagem internacional'
+                    : 'preço vigente'}
+              </span>
+            </p>
+            <p className="text-xs text-text-secondary mt-2">
+              Nacional: apenas destinos no Brasil · Internacional: destino em outro país ou país não informado
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-text-secondary">Valor indisponível — recarregue ou volte pelo roteiro da viagem.</p>
+        )}
       </div>
 
       {error && (
@@ -266,7 +339,7 @@ export function Pagamento() {
         <Button
           className="w-full rounded-full py-4 font-bold"
           onClick={() => setShowBrick(true)}
-          disabled={loading}
+          disabled={loading || priceLoading || !tripId || planningAmount == null}
         >
           Pagar agora
         </Button>
