@@ -10,6 +10,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
+    "@googlemaps/js-api-loader": "^2.0.2",
     "axios": "^1.6.2",
     "leaflet": "^1.9.4",
     "react": "^18.2.0",

@@ -17,7 +17,7 @@ export function ItineraryPremiumBanner({ tripId, restriction, onDevUnlock, showD
         </li>
         <li className="flex items-center gap-2">
           <Icon name="check" className="text-primary text-sm shrink-0" />
-          TDV sem limite de dias + documentos com IA
+          TDV em todos os dias + documentos de viagem inteligentes
         </li>
       </ul>
       <Link to={`/pagamento?tripId=${encodeURIComponent(tripId || '')}`} className="block">

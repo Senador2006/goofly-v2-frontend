@@ -22,5 +22,5 @@ export const tripService = {
   finalizeTdvPlanning: (tripId) =>
     api
       .post(`/trips/${tripId}/finalize-tdv`, {}, { timeout: AI_TIMEOUT_MS })
-      .then((res) => res.body.data),
+      .then((res) => res.body?.data ?? res.data?.data ?? res.data),
 }

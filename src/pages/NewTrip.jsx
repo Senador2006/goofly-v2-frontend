@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { Header } from '../components/layout/Header'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
+import { GooglePlaceAutocompleteField } from '../components/planning/GooglePlaceAutocompleteField'
 import { tripService } from '../services/tripService'
+import { hasGoogleMapsApiKey } from '../services/googleMapsPlacesLoader'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 // Constantes do PRE_TRIP_FORM.md
@@ -342,16 +344,42 @@ export function NewTrip() {
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-semibold mb-2">Cidade *</label>
-                      <input
-                        type="text"
-                        value={dest.city}
-                        onChange={(e) => updateDestination(i, { city: e.target.value })}
-                        placeholder="Ex: Paris"
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                      />
-                    </div>
+                    <label className="block">
+                      <span className="block text-sm font-semibold mb-2 text-[#1c1c0d] dark:text-white">
+                        Cidade *
+                      </span>
+                      {hasGoogleMapsApiKey() ? (
+                        <>
+                          <GooglePlaceAutocompleteField
+                            key={`ac-${dest.id}`}
+                            id={`planning-city-ac-${dest.id}`}
+                            placeholder="Ex.: Paris, Tóquio, Porto…"
+                            disabled={loading}
+                            onResolved={(patch) =>
+                              updateDestination(i, {
+                                ...(patch.city != null ? { city: patch.city } : {}),
+                                ...(patch.country != null ? { country: patch.country } : {}),
+                                ...(patch.coordinates ? { coordinates: patch.coordinates } : {}),
+                              })
+                            }
+                          />
+                          <p className="mt-2 text-[11px] text-text-secondary/90 leading-snug flex items-start gap-1.5">
+                            <Icon name="travel_explore" className="text-sm shrink-0 mt-px opacity-80" aria-hidden />
+                            Pesquise e escolha uma sugestão do Google Places — atualizamos o país e as coordenadas quando
+                            disponíveis.
+                          </p>
+                        </>
+                      ) : (
+                        <input
+                          type="text"
+                          id={`planning-city-${dest.id}`}
+                          value={dest.city}
+                          onChange={(e) => updateDestination(i, { city: e.target.value })}
+                          placeholder="Ex: Paris"
+                          className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                        />
+                      )}
+                    </label>
                     <div>
                       <label className="block text-sm font-semibold mb-2">País *</label>
                       <input
