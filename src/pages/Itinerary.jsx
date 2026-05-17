@@ -216,12 +216,6 @@ export function Itinerary() {
   }, [tripId, refetchItineraryImmediate])
 
   useEffect(() => {
-    if (isPlanning) {
-      setMode(MODE_TDV)
-    }
-  }, [isPlanning])
-
-  useEffect(() => {
     if (!isPlanning && mode === MODE_TDV) {
       setMode(MODE_ROTEIRO)
     }
@@ -388,9 +382,11 @@ export function Itinerary() {
         <>
           <button
             type="button"
-            disabled
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold opacity-45 cursor-not-allowed ${
-              mode === MODE_ROTEIRO ? 'bg-primary text-black shadow-sm' : 'text-text-secondary'
+            onClick={() => setMode(MODE_ROTEIRO)}
+            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              mode === MODE_ROTEIRO
+                ? 'bg-primary text-black shadow-md'
+                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
             }`}
           >
             Roteiro
@@ -593,6 +589,23 @@ export function Itinerary() {
             aria-label="Paradas do dia"
           >
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              {isPlanning ? (
+                <div className="mb-5 rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/[0.08] to-transparent dark:from-primary/15 p-4 sm:p-5">
+                  <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Concluir planejamento</p>
+                  <p className="text-xs sm:text-sm text-text-secondary mt-1.5 leading-relaxed">
+                    Gere o roteiro com a IA a partir do formulário da viagem. O TDV (aba ao lado) é opcional para
+                    indicar lugares que prefere.
+                  </p>
+                  <Button
+                    className="mt-4 w-full sm:w-auto rounded-full font-bold"
+                    onClick={handleFinalizeTdv}
+                    disabled={finalizingTdv}
+                  >
+                    <Icon name="auto_awesome" />
+                    {finalizingTdv ? 'Gerando roteiro…' : 'Gerar roteiro e ativar viagem'}
+                  </Button>
+                </div>
+              ) : null}
               {!hasFullAccess && premiumRestriction ? (
                 <ItineraryPremiumBanner
                   tripId={tripId}
@@ -691,7 +704,7 @@ export function Itinerary() {
                   <p className="text-sm font-medium text-[#1c1c0d] dark:text-white">Nenhuma atividade ainda</p>
                   <p className="text-xs sm:text-sm mt-2 max-w-xs mx-auto">
                     {isPlanning
-                      ? 'No TDV, curta lugares e finalize para montar o roteiro com a IA.'
+                      ? 'Use o botão acima para gerar o roteiro, ou abra a aba TDV se quiser escolher lugares antes.'
                       : 'Explore Descobrir ou crie outro planejamento.'}
                   </p>
                 </div>

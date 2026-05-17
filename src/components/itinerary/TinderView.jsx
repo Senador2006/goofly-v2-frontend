@@ -1,11 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
 import { EmptyState } from '../common/EmptyState'
 import { placeService } from '../../services/placeService'
-import { getPlaceCoverImageUrl } from '../../utils/placeImages'
+import { getPlaceCoverImageUrl, getPlaceVideoUrls } from '../../utils/placeImages'
 import { getRequestErrorMessage } from '../../utils/errors'
 import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
@@ -13,6 +12,20 @@ import { readLatLng } from '../../utils/coordinates'
 
 function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
+}
+
+function videoLinkLabel(url) {
+  try {
+    const u = new URL(url)
+    const host = u.hostname.replace(/^www\./, '')
+    if (host.includes('instagram.com')) return 'Instagram'
+    if (host.includes('youtube.com') || host.includes('youtu.be')) return 'YouTube'
+    if (host.includes('tiktok.com')) return 'TikTok'
+    if (host.includes('vimeo.com')) return 'Vimeo'
+    return host
+  } catch {
+    return 'Link'
+  }
 }
 
 /** Só antecipa próximo lote quando restam poucas cartas (evita conflito com o 1º fetch da sessão). */
@@ -24,7 +37,6 @@ const PREFETCH_WHEN_REMAINING_AT_MOST = 3
  */
 export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSatisfied, finalizingTdv = false }) {
   const t = useT()
-  const navigate = useNavigate()
   const [places, setPlaces] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [currentDay, setCurrentDay] = useState(1)
@@ -34,7 +46,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [swipeFeedback, setSwipeFeedback] = useState(null)
-  const [tdvRestriction, setTdvRestriction] = useState(null)
   /** Pilha LIFO: desfazer só a última curtida/descarte (espelha o servidor). */
   const [undoStack, setUndoStack] = useState([])
   const [undoLoading, setUndoLoading] = useState(false)
@@ -53,6 +64,10 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const prefetchAbortRef = useRef(null)
 
   const currentPlace = places[currentIndex]
+  const placeVideoLinks = useMemo(
+    () => (currentPlace ? getPlaceVideoUrls(currentPlace) : []),
+    [currentPlace]
+  )
 
   const loadPlaces = useCallback(async (day) => {
     if (!tripId) {
@@ -73,7 +88,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       const list = Array.isArray(p) ? p : []
       sessionDeckBaselineRef.current = list.length
       consumedSinceSessionRef.current = false
-      setTdvRestriction(res.tdvRestriction ?? null)
       setPlaces(list)
       setUndoStack([])
       setTotalLikes(res.totalLikes ?? 0)
@@ -105,7 +119,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setLikedPlaces([])
       setDislikedPlaces([])
       setTotalLikes(0)
-      setTdvRestriction(null)
       setError(null)
       setUndoStack([])
       sessionDeckBaselineRef.current = 0
@@ -158,8 +171,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         if (cancelled || prefetchGen !== prefetchGenRef.current) return
         const incoming = Array.isArray(res.places) ? res.places : []
         if (incoming.length === 0) {
-          if (res.tdvRestriction) setTdvRestriction(res.tdvRestriction)
-          else prefetchReturnedEmptyRef.current = true
+          prefetchReturnedEmptyRef.current = true
           return
         }
         let wouldAdd = 0
@@ -187,7 +199,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           }
           return out
         })
-        setTdvRestriction(res.tdvRestriction ?? null)
         if (typeof res.totalLikes === 'number') setTotalLikes(res.totalLikes)
       } catch {
         // silencioso (abort ou rede): utilizador ainda tem cartas no baralho
@@ -250,15 +261,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       onItineraryUpdate?.()
     } catch (err) {
       setSwipeFeedback(null)
-      const code = err.response?.data?.error?.code
-      const msg = err.response?.data?.error?.message || err.message || 'Erro ao dar like'
-      if (code === 'TDV_DAY_LIMIT') {
-        setError(null)
-        setPlaces([])
-        setTdvRestriction({ message: msg })
-      } else {
-        setError(getRequestErrorMessage(err, 'Erro ao dar like'))
-      }
+      setError(getRequestErrorMessage(err, 'Erro ao dar like'))
     }
   }, [currentPlace, tripId, currentDay, totalLikes, onItineraryUpdate])
 
@@ -412,9 +415,10 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const finalizePanel = (
     <div className="relative z-[1] w-full max-w-xl lg:mx-0 lg:max-w-none mx-auto p-3 sm:p-4 rounded-2xl bg-white dark:bg-surface-dark/90 border border-border-light dark:border-border-dark shadow-sm">
       <p className="text-[11px] sm:text-xs text-text-secondary mb-2 leading-relaxed">
-        Ao finalizar, a IA combina o formulário da viagem com suas curtidas e descartes para montar o roteiro.
+        Ao finalizar, a IA usa o formulário da viagem e, se houver, suas curtidas e descartes. Sem curtidas, o roteiro
+        vem só do planejamento.
       </p>
-      <Button onClick={onTdvSatisfied} disabled={finalizingTdv || totalLikes < 1} className="w-full rounded-full py-2.5 sm:py-3">
+      <Button onClick={onTdvSatisfied} disabled={finalizingTdv} className="w-full rounded-full py-2.5 sm:py-3">
         {finalizingTdv ? t('tdv.finalize_generating') : t('tdv.finalize_cta')}
       </Button>
       {totalLikes < 1 && (
@@ -500,14 +504,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                 ? t('tdv.likes_one', { count: totalLikes })
                 : t('tdv.likes_other', { count: totalLikes })}
             </span>
-            {tdvRestriction?.maxDays != null && tdvRestriction?.tripDays != null && (
-              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/25">
-                {t('tdv.free_badge', {
-                  maxDays: tdvRestriction.maxDays,
-                  tripDays: tdvRestriction.tripDays,
-                })}
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -540,7 +536,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                   >
                     <PlaceCardGallery place={currentPlace} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none z-[10]" />
-                    <div className="absolute bottom-0 left-0 right-0 px-4 sm:px-5 pt-10 pb-3 sm:pt-12 sm:pb-4 text-white z-[18] pointer-events-none">
+                    {/* z acima da faixa de zoom da galeria (z-30), senão o toque médio captura o clique dos links de vídeo */}
+                    <div className="absolute bottom-0 left-0 right-0 z-[40] px-4 pb-3 pt-10 text-white pointer-events-none sm:px-5 sm:pb-4 sm:pt-12">
                       <div className="flex gap-1.5 mb-1.5 overflow-x-auto no-scrollbar">
                         {(currentPlace.tags || currentPlace.categories || []).filter(Boolean).map((tag) => {
                           const label = typeof tag === 'string' ? tag : tag?.name || tag?.label || String(tag)
@@ -569,6 +566,32 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                       <p className="text-[11px] sm:text-sm text-white/90 leading-relaxed line-clamp-2 lg:line-clamp-3">
                         {currentPlace.description || currentPlace.aiReasoning || 'Descubra este lugar.'}
                       </p>
+                      {placeVideoLinks.length > 0 ? (
+                        <div className="mt-2.5 pointer-events-auto border-t border-white/15 pt-2.5 text-left">
+                          <p className="m-0 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-white/75">
+                            {t('tdv.video_links_heading')}
+                          </p>
+                          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                            {placeVideoLinks.map((href, i) => (
+                              <li key={`${href}-${i}`} className="min-w-0">
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex max-w-full items-center gap-1 text-[11px] font-medium text-white underline decoration-white/50 underline-offset-2 transition-colors hover:text-white hover:decoration-white"
+                                  aria-label={t('tdv.video_link_aria', { n: i + 1 })}
+                                >
+                                  <Icon name="videocam" className="shrink-0 text-sm text-white/90" />
+                                  <span className="min-w-0 truncate">
+                                    {t('tdv.video_link_label', { n: i + 1, source: videoLinkLabel(href) })}
+                                  </span>
+                                  <Icon name="open_in_new" className="shrink-0 text-xs text-white/70" aria-hidden />
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -601,23 +624,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                 {belowFoldContent}
               </aside>
             </div>
-          ) : tdvRestriction ? (
-          <div className="text-center max-w-md px-2 py-4 mx-auto w-full">
-            <div className="size-12 rounded-full bg-primary/15 flex items-center justify-center mx-auto mb-2">
-              <Icon name="lock" className="text-xl text-primary" />
-            </div>
-            <h3 className="text-base font-bold text-foreground dark:text-white mb-1">Limite do plano gratuito</h3>
-            <p className="text-text-secondary text-sm mb-4 leading-relaxed">{tdvRestriction.message}</p>
-            <Button
-              type="button"
-              className="rounded-full"
-              onClick={() => navigate(`/pagamento?tripId=${encodeURIComponent(tripId)}`)}
-            >
-              <Icon name="workspace_premium" />
-              Planejamento Completo
-            </Button>
-          </div>
-        ) : (
+          ) : (
           <div className="w-full py-4">
             <EmptyState
               icon="explore"
