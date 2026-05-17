@@ -8,15 +8,22 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#f9f506',
-        'background-light': '#f8f8f5',
-        'background-dark': '#23220f',
-        'card-dark': '#1a190b',
-        'surface-light': '#f4f4e6',
-        'surface-dark': '#2d2c14',
-        'border-light': '#e9e8ce',
-        'border-dark': '#3a391a',
-        'text-secondary': '#9e9d47',
+        primary: '#FEC641',
+        foreground: '#111111',
+        'background-light': '#F5F5F5',
+        'background-dark': '#111111',
+        'card-dark': '#161616',
+        'surface-light': '#FFFFFF',
+        'surface-dark': '#1A1A1A',
+        'border-light': '#E5E5E5',
+        'border-dark': '#2A2A2A',
+        'text-secondary': '#6B6B6B',
+        goofy: {
+          yellow: '#FEC641',
+          gray: '#F5F5F5',
+          white: '#FFFFFF',
+          black: '#111111',
+        },
       },
       fontFamily: {
         display: ['Plus Jakarta Sans', 'sans-serif'],
@@ -28,7 +35,7 @@ export default {
         full: '9999px',
       },
       boxShadow: {
-        primary: '0 10px 30px rgba(249, 245, 6, 0.4)',
+        primary: '0 10px 30px rgba(254, 198, 65, 0.4)',
       },
     },
   },

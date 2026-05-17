@@ -92,7 +92,7 @@ export function TripList() {
             key={f}
             to={f === 'all' ? '/trips' : `/trips?status=${f}`}
             className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap ${
-              filterParam === f ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'
+              filterParam === f ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'
             }`}
           >
             {f === 'all' ? 'Todas' : STATUS_LABELS[f]}

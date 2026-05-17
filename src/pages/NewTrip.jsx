@@ -312,7 +312,7 @@ export function NewTrip() {
               type="button"
               onClick={() => setStep(s.id)}
               className={`px-4 py-2 rounded-full text-sm font-bold ${
-                step === s.id ? 'bg-primary text-black' : 'bg-surface-light dark:bg-surface-dark'
+                step === s.id ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'
               }`}
             >
               {s.label}
@@ -490,7 +490,7 @@ export function NewTrip() {
                       onClick={() => toggleMulti('interests', slug)}
                       className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                         formData.interests.includes(slug)
-                          ? 'bg-primary text-[#1c1c0d]'
+                          ? 'bg-primary text-foreground'
                           : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
                       }`}
                     >
@@ -521,7 +521,7 @@ export function NewTrip() {
                       onClick={() => updateField('itineraryStyle', value)}
                       className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                         formData.itineraryStyle === value
-                          ? 'bg-primary text-[#1c1c0d]'
+                          ? 'bg-primary text-foreground'
                           : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
                       }`}
                     >
@@ -602,7 +602,7 @@ export function NewTrip() {
                       onClick={() => toggleMulti('prioritizePreferences', slug)}
                       className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                         formData.prioritizePreferences.includes(slug)
-                          ? 'bg-primary text-[#1c1c0d]'
+                          ? 'bg-primary text-foreground'
                           : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
                       }`}
                     >

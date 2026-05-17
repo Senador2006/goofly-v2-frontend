@@ -38,8 +38,8 @@ const markerIcon = L.divIcon({
   html:
     '<div style="' +
     'width:14px;height:14px;border-radius:9999px;' +
-    'background:#FEC107;' +
-    'box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(254,193,7,0.5);' +
+    'background:#FEC641;' +
+    'box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(254,198,65,0.5);' +
     '"></div>',
   iconSize: [18, 18],
   iconAnchor: [9, 9],
@@ -105,7 +105,7 @@ export function MemoryMap({ points = [], className = '', ariaLabel = 'Mapa de me
             {(m.caption || m.createdAt) && (
               <Popup>
                 {m.caption ? (
-                  <p className="m-0 text-sm font-semibold text-[#1c1c0d]">{m.caption}</p>
+                  <p className="m-0 text-sm font-semibold text-foreground">{m.caption}</p>
                 ) : null}
                 {m.createdAt ? (
                   <p className="m-0 text-xs text-text-secondary">
@@ -121,7 +121,7 @@ export function MemoryMap({ points = [], className = '', ariaLabel = 'Mapa de me
       {normalized.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
           <div className="rounded-2xl bg-white/85 dark:bg-card-dark/85 backdrop-blur px-5 py-4 text-center border border-border-light dark:border-border-dark shadow-md">
-            <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Sem memórias no mapa</p>
+            <p className="text-sm font-bold text-foreground dark:text-white">Sem memórias no mapa</p>
             <p className="text-xs text-text-secondary mt-1">
               Adicione fotos com localização para vê-las aqui.
             </p>

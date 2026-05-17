@@ -38,9 +38,9 @@ export function Dashboard() {
             } catch {
               return null
             }
-          })
-        )
-        setRecentMemories(memoryResults.filter(Boolean))
+          } catch (_) {}
+        }
+        setRecentMemories(memoriesByTrip)
       } catch (err) {
         setError(err.response?.data?.error?.message || 'Erro ao carregar dashboard')
       } finally {
@@ -77,24 +77,21 @@ export function Dashboard() {
       <DashboardHeader />
 
       <div className="bg-primary rounded-2xl p-8 md:p-10 mb-8">
-        <h1 className="text-3xl md:text-4xl font-black text-[#1c1c0d] mb-3">
+        <h1 className="text-3xl md:text-4xl font-black text-foreground mb-3">
           Para onde agora?
         </h1>
-        <p className="text-[#1c1c0d]/80 text-base md:text-lg max-w-xl mb-6">
+        <p className="text-foreground/80 text-base md:text-lg max-w-xl mb-6">
           Sua próxima grande aventura está a poucos cliques. Deixe-nos ajudar a planejar a fuga perfeita.
         </p>
         <div className="flex flex-wrap gap-4">
           <Link to="/trips/new">
-            <Button
-              variant="secondary"
-              className="bg-[#1c1c0d] text-white hover:bg-[#1c1c0d]/90 hover:text-white"
-            >
+            <Button variant="inverse">
               <Icon name="add" />
               Começar a Planejar
             </Button>
           </Link>
           <Link to="/discover">
-            <Button className="bg-white/90 text-[#1c1c0d] hover:bg-white border-2 border-[#1c1c0d]/20">
+            <Button variant="hero-light">
               Explorar Destinos
             </Button>
           </Link>
@@ -104,8 +101,11 @@ export function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
         <div className="bg-white dark:bg-card-dark rounded-2xl p-6 border border-border-light dark:border-border-dark">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-[#1c1c0d] dark:text-white">Próxima Viagem</h2>
-            <Link to="/trips" className="text-sm font-bold text-primary hover:underline">
+            <h2 className="text-lg font-bold text-foreground dark:text-white">Próxima Viagem</h2>
+            <Link
+              to="/trips"
+              className="text-sm font-bold text-primary hover:underline"
+            >
               VER TODAS
             </Link>
           </div>
@@ -116,25 +116,23 @@ export function Dashboard() {
                 style={{ backgroundImage: `url(${PLACEHOLDER_COVER})` }}
               />
               <div className="flex-1 min-w-0">
-                {daysUntil != null && (
-                  <p className="text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">
-                    EM {daysUntil} {daysUntil === 1 ? 'DIA' : 'DIAS'}
-                  </p>
-                )}
-                <h3 className="text-xl font-bold text-[#1c1c0d] dark:text-white truncate">
-                  {firstDest?.city}
-                  {firstDest?.country ? `, ${firstDest.country}` : ''}
+                <p className="text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">
+                  EM {daysUntil ?? 12} DIAS
+                </p>
+                <h3 className="text-xl font-bold text-foreground dark:text-white truncate">
+                  {firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Tokyo, Japan'}
                 </h3>
-                {dateRange && (
-                  <p className="text-sm text-text-secondary mt-1">{dateRange}</p>
-                )}
-                <div className="flex items-center gap-2 mt-4">
-                  <Link
-                    to={`/trips/${nextTrip.id}/itinerary`}
-                    className="ml-auto text-sm font-semibold text-[#1c1c0d] dark:text-white flex items-center gap-1 hover:text-primary"
-                  >
-                    Gerenciar
-                    <Icon name="arrow_forward" className="text-sm" />
+                <p className="text-sm text-text-secondary mt-1">{dateRange}</p>
+                <div className="flex items-center justify-between gap-3 mt-4 flex-wrap">
+                  <div className="flex -space-x-2">
+                    <div className="size-8 rounded-full bg-surface-light dark:bg-surface-dark border-2 border-white dark:border-card-dark flex items-center justify-center text-xs font-bold">
+                      +2
+                    </div>
+                  </div>
+                  <Link to={`/trips/${nextTrip.id}/itinerary`} className="ml-auto shrink-0">
+                    <Button variant="primary" size="sm">
+                      Ver viagem
+                    </Button>
                   </Link>
                 </div>
               </div>
@@ -152,30 +150,27 @@ export function Dashboard() {
 
         <div className="bg-white dark:bg-card-dark rounded-2xl p-6 border border-border-light dark:border-border-dark">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-[#1c1c0d] dark:text-white">Memórias Recentes</h2>
-            <Link to="/memories" className="text-sm font-bold text-primary hover:underline">
+            <h2 className="text-lg font-bold text-foreground dark:text-white">Memórias Recentes</h2>
+            <Link
+              to="/memories"
+              className="text-sm font-bold text-primary hover:underline"
+            >
               EXPLORAR ÁREA
             </Link>
           </div>
-          {recentMemories.length > 0 ? (
-            <div className="grid grid-cols-3 gap-4">
-              {recentMemories.slice(0, 2).map((mem) => (
-                <Link
-                  key={mem.id || mem.tripLabel}
-                  to="/memories"
-                  className="aspect-square rounded-xl bg-center bg-cover overflow-hidden group"
-                  style={{
-                    backgroundImage: `url(${mem.photo_url || mem.image_url || PLACEHOLDER_COVER})`,
-                  }}
-                >
-                  <div className="w-full h-full bg-black/30 group-hover:bg-black/20 transition-all flex items-end p-3">
-                    <span className="text-white text-xs font-bold drop-shadow">{mem.tripLabel}</span>
-                  </div>
-                </Link>
-              ))}
+          <div
+            className={`grid gap-4 ${
+              recentMemories.length > 0 ? 'grid-cols-3' : 'grid-cols-1 max-w-[140px]'
+            }`}
+          >
+            {recentMemories.slice(0, 2).map((mem, i) => (
               <Link
+                key={mem.id ?? i}
                 to="/memories"
-                className="aspect-square rounded-xl border-2 border-dashed border-text-secondary flex flex-col items-center justify-center gap-2 text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+                className="aspect-square rounded-xl bg-center bg-cover overflow-hidden group"
+                style={{
+                  backgroundImage: `url(${mem.photo_url || mem.image_url})`,
+                }}
               >
                 <Icon name="add_a_photo" className="text-2xl" />
                 <span className="text-xs font-bold">Adicionar</span>

@@ -8,7 +8,6 @@ import { Discover } from './pages/Discover'
 import { TripList } from './pages/TripList'
 import { Itinerary } from './pages/Itinerary'
 import { Memories } from './pages/Memories'
-import { Documents } from './pages/Documents'
 import { Settings } from './pages/Settings'
 import { NewTrip } from './pages/NewTrip'
 import { Pagamento } from './pages/Pagamento'
@@ -62,7 +61,6 @@ export default function App() {
         <Route path="pagamento" element={<Pagamento />} />
         <Route path="discover" element={<Discover />} />
         <Route path="memories" element={<Memories />} />
-        <Route path="documents" element={<Documents />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

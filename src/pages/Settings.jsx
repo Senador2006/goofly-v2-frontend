@@ -69,7 +69,7 @@ export function Settings() {
         <div className="bg-white dark:bg-card-dark rounded-xl p-6 border border-border-light dark:border-border-dark">
           <h3 className="text-lg font-bold mb-4">Perfil</h3>
           <div className="flex items-center gap-4 mb-6">
-            <div className="size-20 rounded-full bg-primary flex items-center justify-center text-2xl font-black">
+            <div className="size-20 rounded-full bg-primary flex items-center justify-center text-2xl font-black text-foreground">
               {user?.name?.[0] || 'U'}
             </div>
             <div>
@@ -129,14 +129,22 @@ export function Settings() {
               <span>Modo escuro</span>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={isDark}
+              aria-label="Alternar modo escuro"
               onClick={toggleTheme}
-              className={`relative w-14 h-8 rounded-full transition-colors ${
-                isDark ? 'bg-primary' : 'bg-surface-light dark:bg-surface-dark'
+              className={`relative w-14 h-8 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                isDark
+                  ? 'border-primary bg-primary'
+                  : 'border-border-light bg-border-light dark:border-border-dark dark:bg-surface-dark'
               }`}
             >
               <span
-                className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-transform ${
-                  isDark ? 'left-7' : 'left-1'
+                className={`absolute top-1/2 size-6 -translate-y-1/2 rounded-full bg-white shadow-md ring-1 transition-all duration-200 ${
+                  isDark
+                    ? 'right-1 ring-white/30'
+                    : 'left-1 ring-foreground/15'
                 }`}
               />
             </button>

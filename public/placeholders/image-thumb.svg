@@ -6,6 +6,6 @@
     </linearGradient>
   </defs>
   <rect width="400" height="300" fill="url(#t)"/>
-  <circle cx="300" cy="60" r="70" fill="#f9f506" opacity="0.15"/>
+  <circle cx="300" cy="60" r="70" fill="#FEC641" opacity="0.15"/>
   <text x="200" y="155" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="14">Goofly</text>
 </svg>

@@ -67,7 +67,7 @@ export function Register() {
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-3 mb-10">
           <div className="bg-primary size-14 rounded-full flex items-center justify-center">
-            <Icon name="flight_takeoff" className="text-black text-2xl font-bold" />
+            <Icon name="flight_takeoff" className="text-foreground text-2xl font-bold" />
           </div>
           <div>
             <h1 className="text-2xl font-extrabold">Goofly v2</h1>
