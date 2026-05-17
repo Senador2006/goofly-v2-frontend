@@ -14,8 +14,8 @@ function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
 }
 
-/** Quando restam poucos cards, pede discover em background (servidor: cache ou 1 batch n8n). */
-const PREFETCH_WHEN_REMAINING_AT_MOST = 5
+/** Só antecipa próximo lote quando restam poucas cartas (evita conflito com o 1º fetch da sessão). */
+const PREFETCH_WHEN_REMAINING_AT_MOST = 3
 
 /**
  * TDV — mobile: pilha única (card · ações · finalizar/listas).
@@ -42,6 +42,14 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   const prefetchInFlightRef = useRef(false)
   const prefetchReturnedEmptyRef = useRef(false)
+  /** Tamanho do baralho logo após o último `discoverSession` (ignora append de prefetch). */
+  const sessionDeckBaselineRef = useRef(0)
+  /** Após like/dislike que remove carta; volta a false no próximo session load ou undo que restaura o baseline. */
+  const consumedSinceSessionRef = useRef(false)
+  const loadGenRef = useRef(0)
+  const loadAbortRef = useRef(null)
+  const prefetchGenRef = useRef(0)
+  const prefetchAbortRef = useRef(null)
 
   const currentPlace = places[currentIndex]
 
@@ -50,14 +58,22 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setLoading(false)
       return
     }
+    loadAbortRef.current?.abort()
+    const ac = new AbortController()
+    loadAbortRef.current = ac
+    const gen = ++loadGenRef.current
     setLoading(true)
     setError(null)
     try {
-      const res = await placeService.discoverSession(tripId, day)
+      const res = await placeService.discoverSession(tripId, day, undefined, { signal: ac.signal })
+      if (gen !== loadGenRef.current) return
       const p = res.places ?? []
       const cd = res.currentDay ?? 1
+      const list = Array.isArray(p) ? p : []
+      sessionDeckBaselineRef.current = list.length
+      consumedSinceSessionRef.current = false
       setTdvRestriction(res.tdvRestriction ?? null)
-      setPlaces(Array.isArray(p) ? p : [])
+      setPlaces(list)
       setUndoStack([])
       setTotalLikes(res.totalLikes ?? 0)
       setLikedPlaces(res.likedPlaces || [])
@@ -65,9 +81,16 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setCurrentDay(day != null ? day : cd)
       setCurrentIndex(0)
     } catch (err) {
+      if (gen !== loadGenRef.current) return
+      const aborted =
+        ac.signal.aborted ||
+        err.code === 'ERR_CANCELED' ||
+        err.name === 'CanceledError' ||
+        err.message === 'canceled'
+      if (aborted) return
       setError(getRequestErrorMessage(err))
     } finally {
-      setLoading(false)
+      if (gen === loadGenRef.current) setLoading(false)
     }
   }, [tripId])
 
@@ -84,6 +107,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setTdvRestriction(null)
       setError(null)
       setUndoStack([])
+      sessionDeckBaselineRef.current = 0
+      consumedSinceSessionRef.current = false
     }
   }, [tripId])
 
@@ -103,11 +128,14 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     loadPlaces()
   }, [isActive, tripId, loadPlaces])
 
-  // Antecipa o próximo lote quando o baralho está baixo (back: cache TDV ou 1 batch sync ao agente).
+  // Antecipa o próximo lote só quando o baralho encolheu desde o último discoverSession (evita 2º HTTP
+  // logo após o 1º que mudava fotos/dados na cara do utilizador). Strict Mode: abort + generation.
   useEffect(() => {
     if (!isActive || !tripId || loading) return
     const n = places.length
     if (n === 0 || n > PREFETCH_WHEN_REMAINING_AT_MOST) return
+    const baseline = sessionDeckBaselineRef.current
+    if (baseline > 0 && n === baseline && !consumedSinceSessionRef.current) return
     if (prefetchInFlightRef.current || prefetchReturnedEmptyRef.current) return
 
     const excludePlaceIds = places.map(getPlaceId).filter(Boolean)
@@ -115,13 +143,18 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
     const existingIds = new Set(excludePlaceIds.map((id) => String(id)))
 
+    prefetchAbortRef.current?.abort()
+    const ac = new AbortController()
+    prefetchAbortRef.current = ac
+    const prefetchGen = ++prefetchGenRef.current
+
     let cancelled = false
     prefetchInFlightRef.current = true
 
     ;(async () => {
       try {
-        const res = await placeService.discover(tripId, currentDay, excludePlaceIds)
-        if (cancelled) return
+        const res = await placeService.discover(tripId, currentDay, excludePlaceIds, { signal: ac.signal })
+        if (cancelled || prefetchGen !== prefetchGenRef.current) return
         const incoming = Array.isArray(res.places) ? res.places : []
         if (incoming.length === 0) {
           if (res.tdvRestriction) setTdvRestriction(res.tdvRestriction)
@@ -156,14 +189,15 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         setTdvRestriction(res.tdvRestriction ?? null)
         if (typeof res.totalLikes === 'number') setTotalLikes(res.totalLikes)
       } catch {
-        // silencioso: o utilizador ainda tem cartas no baralho
+        // silencioso (abort ou rede): utilizador ainda tem cartas no baralho
       } finally {
-        prefetchInFlightRef.current = false
+        if (prefetchGen === prefetchGenRef.current) prefetchInFlightRef.current = false
       }
     })()
 
     return () => {
       cancelled = true
+      ac.abort()
     }
   }, [isActive, tripId, loading, places, currentDay])
 
@@ -205,6 +239,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setCurrentDay(res?.currentDay ?? currentDay)
       setLikedPlaces((prev) => [{ placeId, name: currentPlace.name, day: res?.currentDay ?? currentDay }, ...prev])
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
+      consumedSinceSessionRef.current = true
       setCurrentIndex(0)
       setUndoStack((prev) => [...prev, { type: 'like', place: { ...currentPlace } }])
       onItineraryUpdate?.()
@@ -236,6 +271,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       await placeService.dislike(tripId, placeId, currentPlace)
       setDislikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev].slice(0, 30))
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
+      consumedSinceSessionRef.current = true
       setCurrentIndex(0)
       setUndoStack((prev) => [...prev, { type: 'dislike', place: { ...currentPlace } }])
     } catch (err) {
@@ -288,7 +324,9 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
       setPlaces((prev) => {
         const filtered = prev.filter((x) => getPlaceId(x) !== pid)
-        return [entry.place, ...filtered]
+        const next = [entry.place, ...filtered]
+        if (next.length === sessionDeckBaselineRef.current) consumedSinceSessionRef.current = false
+        return next
       })
       setCurrentIndex(0)
     } catch (err) {

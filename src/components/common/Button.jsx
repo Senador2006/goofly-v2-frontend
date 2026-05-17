@@ -1,4 +1,4 @@
-export function Button({ children, variant = 'primary', size = 'md', className = '', ...props }) {
+export function Button({ children, variant = 'primary', size = 'md', className = '', type = 'button', ...props }) {
   const base =
     'rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2'
   const variants = {
@@ -23,6 +23,7 @@ export function Button({ children, variant = 'primary', size = 'md', className =
   }
   return (
     <button
+      type={type}
       className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >

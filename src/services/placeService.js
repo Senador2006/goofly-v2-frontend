@@ -26,7 +26,7 @@ function unwrapDiscover(res) {
 
 export const placeService = {
   // RF03 — Tinder de Viagens. Um único HTTP: discover + resumo (REV3).
-  discoverSession: (tripId, day, excludePlaceIds) =>
+  discoverSession: (tripId, day, excludePlaceIds, requestConfig = {}) =>
     api
       .get('/places/discover/session', {
         params: {
@@ -38,11 +38,12 @@ export const placeService = {
             }),
         },
         timeout: AI_TIMEOUT_MS,
+        ...requestConfig,
       })
       .then(unwrapDiscover),
 
   // excludePlaceIds: IDs ainda no baralho (prefetch REV2/REV4) — backend repassa ao agente.
-  discover: (tripId, day, excludePlaceIds) =>
+  discover: (tripId, day, excludePlaceIds, requestConfig = {}) =>
     api
       .get('/places/discover', {
         params: {
@@ -54,6 +55,7 @@ export const placeService = {
             }),
         },
         timeout: AI_TIMEOUT_MS,
+        ...requestConfig,
       })
       .then(unwrapDiscover),
 
