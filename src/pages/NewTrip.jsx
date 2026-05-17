@@ -89,6 +89,25 @@ function generateId() {
   return 'dest-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9)
 }
 
+/** Garante 1 estadia por destino (ex.: usuário pulou o passo 2 pelas abas). */
+function getPaddedAccommodations(destinations, accommodations) {
+  const dests = destinations || []
+  const accs = [...(accommodations || [])]
+  for (let i = accs.length; i < dests.length; i++) {
+    const dest = dests[i]
+    accs.push({
+      destinationId: dest?.id,
+      type: 'hotel',
+      name: '',
+      address: '',
+      checkIn: dest?.arrivalDate || '',
+      checkOut: dest?.departureDate || '',
+      nights: 0,
+    })
+  }
+  return accs.slice(0, dests.length)
+}
+
 export function NewTrip() {
   useDocumentTitle('Nova viagem')
   const navigate = useNavigate()
@@ -201,8 +220,8 @@ export function NewTrip() {
       return null
     }
     if (s === 2) {
-      const accs = formData.accommodations || []
       const dests = formData.destinations
+      const accs = getPaddedAccommodations(dests, formData.accommodations)
       if (accs.length < dests.length) return 'Preencha a estadia para cada destino'
       for (let i = 0; i < accs.length; i++) {
         const a = accs[i]
@@ -250,7 +269,7 @@ export function NewTrip() {
       departureDate: d.departureDate,
       order: i + 1,
     }))
-    const accs = (formData.accommodations || []).slice(0, dests.length).map((a, i) => ({
+    const accs = getPaddedAccommodations(formData.destinations, formData.accommodations).map((a, i) => ({
       destinationId: dests[i]?.id,
       type: a.type || 'hotel',
       name: a.name?.trim() || '',
@@ -277,12 +296,14 @@ export function NewTrip() {
     }
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    const err = validateStep(4)
-    if (err) {
-      setError(err)
-      return
+  const runCreateTrip = async () => {
+    for (let s = 1; s <= 4; s++) {
+      const err = validateStep(s)
+      if (err) {
+        setError(err)
+        setStep(s)
+        return
+      }
     }
     setLoading(true)
     setError(null)
@@ -290,12 +311,21 @@ export function NewTrip() {
       const payload = buildPayload()
       const trip = await tripService.createTrip(payload)
       navigate(`/trips/${trip.id}/itinerary`)
-
     } catch (err) {
       setError(err.response?.data?.error?.message || err.message || 'Erro ao criar viagem')
     } finally {
       setLoading(false)
     }
+  }
+
+  /** Enter em campos ou submit implícito só avança até o passo 4; criar viagem só no último passo. */
+  const handleFormSubmit = (e) => {
+    e.preventDefault()
+    if (step < 4) {
+      handleNext()
+      return
+    }
+    void runCreateTrip()
   }
 
   return (
@@ -320,7 +350,7 @@ export function NewTrip() {
           ))}
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-card-dark rounded-xl p-6 md:p-8 border border-border-light dark:border-border-dark">
+        <form onSubmit={handleFormSubmit} className="bg-white dark:bg-card-dark rounded-xl p-6 md:p-8 border border-border-light dark:border-border-dark">
           {error && (
             <div className="mb-6 p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm">
               <p>{error}</p>
