@@ -23,4 +23,10 @@ export const tripService = {
     api
       .post(`/trips/${tripId}/finalize-tdv`, {}, { timeout: AI_TIMEOUT_MS })
       .then((res) => res.body?.data ?? res.data?.data ?? res.data),
+  getItineraryRoute: (tripId, { day = 1, profile = 'foot-walking' } = {}) =>
+    api
+      .get(`/trips/${tripId}/itinerary/route`, {
+        params: { day, profile },
+      })
+      .then((res) => res.body.data),
 }

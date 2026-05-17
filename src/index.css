@@ -15,6 +15,13 @@
   background: #111111;
 }
 
+/* RF04.3 — marcadores numerados do roteiro (divIcon sem sprite padrão) */
+.goofly-itinerary-marker,
+.goofly-memory-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
 body {
   font-family: 'Plus Jakarta Sans', sans-serif;
   margin: 0;

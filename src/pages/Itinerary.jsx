@@ -8,6 +8,7 @@ import { DocumentosView } from '../components/itinerary/DocumentosView'
 import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivityCard'
 import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
+import { ItineraryDayMap } from '../components/itinerary/ItineraryDayMap'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -747,32 +748,13 @@ export function Itinerary() {
             />
           </div>
           {mode === MODE_ROTEIRO ? (
-            <>
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-100/90 to-slate-100/90 dark:from-gray-900 dark:to-gray-950" />
-              <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-60">
-                <button
-                  type="button"
-                  className="bg-white dark:bg-card-dark size-10 rounded-full flex items-center justify-center shadow-md border border-border-light dark:border-border-dark"
-                  aria-hidden
-                >
-                  <Icon name="add" />
-                </button>
-                <button
-                  type="button"
-                  className="bg-white dark:bg-card-dark size-10 rounded-full flex items-center justify-center shadow-md border border-border-light dark:border-border-dark"
-                  aria-hidden
-                >
-                  <Icon name="remove" />
-                </button>
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center p-6">
-                <div className="text-center max-w-sm rounded-2xl bg-white/80 dark:bg-card-dark/80 backdrop-blur px-6 py-8 border border-border-light dark:border-border-dark shadow-lg">
-                  <Icon name="map" className="text-4xl text-primary mb-3 mx-auto opacity-80" />
-                  <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Mapa</p>
-                  <p className="text-xs text-text-secondary mt-1">Integração em breve — use a lista ao lado para o roteiro.</p>
-                </div>
-              </div>
-            </>
+            <ItineraryDayMap
+              tripId={tripId}
+              day={effectiveSelectedDay}
+              activities={dayActivities}
+              className="absolute inset-0"
+              ariaLabel={`Mapa do roteiro — dia ${effectiveSelectedDay}`}
+            />
           ) : null}
         </section>
       </div>
