@@ -72,7 +72,7 @@ export default {
     video_link_aria: 'Abrir vídeo {{n}} em nova aba',
     finalize_cta: 'Estou satisfeito — gerar roteiro',
     finalize_generating: 'Gerando roteiro...',
-    finalize_hint: 'Curta pelo menos um lugar antes de concluir.',
+    finalize_hint: 'Sem curtidas, o roteiro será gerado apenas com os dados do formulário.',
     already_liked: 'Este lugar já recebeu seu like',
     skip: 'Pular',
     like: 'Adicionar ao roteiro',

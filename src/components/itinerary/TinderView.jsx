@@ -410,9 +410,10 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const finalizePanel = (
     <div className="relative z-[1] w-full max-w-xl lg:mx-0 lg:max-w-none mx-auto p-3 sm:p-4 rounded-2xl bg-white dark:bg-surface-dark/90 border border-border-light dark:border-border-dark shadow-sm">
       <p className="text-[11px] sm:text-xs text-text-secondary mb-2 leading-relaxed">
-        Ao finalizar, a IA combina o formulário da viagem com suas curtidas e descartes para montar o roteiro.
+        Ao finalizar, a IA usa o formulário da viagem e, se houver, suas curtidas e descartes. Sem curtidas, o roteiro
+        vem só do planejamento.
       </p>
-      <Button onClick={onTdvSatisfied} disabled={finalizingTdv || totalLikes < 1} className="w-full rounded-full py-2.5 sm:py-3">
+      <Button onClick={onTdvSatisfied} disabled={finalizingTdv} className="w-full rounded-full py-2.5 sm:py-3">
         {finalizingTdv ? t('tdv.finalize_generating') : t('tdv.finalize_cta')}
       </Button>
       {totalLikes < 1 && (
