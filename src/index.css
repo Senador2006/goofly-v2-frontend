@@ -37,18 +37,48 @@ body {
   background: rgba(17, 17, 17, 0.7);
 }
 
-/* Place Autocomplete (Places API novo) — Nova Viagem / planejamento */
+/* Place Autocomplete (Places API novo) — integrado aos inputs Nova Viagem (sem overflow clipping no dropdown).
+ * O widget pode seguir `prefers-color-scheme` mesmo com UI clara — força `color-scheme` nos dois modos Goofly. */
 .planning-google-place-ac-frame {
   min-height: 3.125rem;
+  font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light;
 }
 
 .planning-google-place-ac-frame gmp-place-autocomplete {
   display: block;
   width: 100%;
+  min-height: 3.125rem;
   border-radius: 0.75rem;
-  --gmp-mat-color-on-surface: #1c1c0d;
+  /* Superfície alinhada a `rounded-xl border … bg-background-light` dos <input>s irmãos */
+  --gmp-mat-color-surface: #ffffff;
+  --gmp-mat-color-on-surface: #111111;
+  --gmp-mat-color-on-surface-variant: #6b6b6b;
+  --gmp-mat-color-outline-decorative: #e5e5e5;
+  --gmp-mat-color-primary: #fec641;
+  --gmp-mat-color-neutral-container: #ffffff;
+  --gmp-mat-color-on-neutral-container: #111111;
+  --gmp-mat-color-secondary-container: #fafafa;
+  --gmp-mat-font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --gmp-button-border-radius: 12px;
+  --gmp-dialog-border-radius: 12px;
+  --gmp-card-border-radius: 12px;
+  --gmp-popover-max-width: min(100vw - 2rem, 520px);
+  --gmp-popover-min-width: 100%;
+  --gmp-popover-pixel-offset-y: 4px;
+}
+
+.dark .planning-google-place-ac-frame {
+  color-scheme: dark;
 }
 
 .dark .planning-google-place-ac-frame gmp-place-autocomplete {
+  --gmp-mat-color-surface: #1a1a1a;
   --gmp-mat-color-on-surface: rgba(249, 250, 251, 0.96);
+  --gmp-mat-color-on-surface-variant: rgba(180, 180, 180, 0.95);
+  --gmp-mat-color-outline-decorative: #2a2a2a;
+  --gmp-mat-color-primary: #fec641;
+  --gmp-mat-color-neutral-container: #232323;
+  --gmp-mat-color-on-neutral-container: rgba(249, 250, 251, 0.96);
+  --gmp-mat-color-secondary-container: #161616;
 }

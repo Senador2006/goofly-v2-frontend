@@ -38,9 +38,9 @@ export function Dashboard() {
             } catch {
               return null
             }
-          } catch (_) {}
-        }
-        setRecentMemories(memoriesByTrip)
+          })
+        )
+        setRecentMemories(memoryResults.filter(Boolean))
       } catch (err) {
         setError(err.response?.data?.error?.message || 'Erro ao carregar dashboard')
       } finally {
@@ -158,23 +158,25 @@ export function Dashboard() {
               EXPLORAR ÁREA
             </Link>
           </div>
-          <div
-            className={`grid gap-4 ${
-              recentMemories.length > 0 ? 'grid-cols-3' : 'grid-cols-1 max-w-[140px]'
-            }`}
-          >
-            {recentMemories.slice(0, 2).map((mem, i) => (
-              <Link
-                key={mem.id ?? i}
-                to="/memories"
-                className="aspect-square rounded-xl bg-center bg-cover overflow-hidden group"
-                style={{
-                  backgroundImage: `url(${mem.photo_url || mem.image_url})`,
-                }}
-              >
-                <Icon name="add_a_photo" className="text-2xl" />
-                <span className="text-xs font-bold">Adicionar</span>
-              </Link>
+          {recentMemories.length > 0 ? (
+            <div
+              className={`grid gap-4 ${
+                recentMemories.length > 0 ? 'grid-cols-3' : 'grid-cols-1 max-w-[140px]'
+              }`}
+            >
+              {recentMemories.slice(0, 2).map((mem, i) => (
+                <Link
+                  key={mem.id ?? i}
+                  to="/memories"
+                  className="aspect-square rounded-xl bg-center bg-cover overflow-hidden group"
+                  style={{
+                    backgroundImage: `url(${mem.photo_url || mem.image_url})`,
+                  }}
+                >
+                  <Icon name="add_a_photo" className="text-2xl" />
+                  <span className="text-xs font-bold">Adicionar</span>
+                </Link>
+              ))}
             </div>
           ) : (
             <div className="py-8 text-center">

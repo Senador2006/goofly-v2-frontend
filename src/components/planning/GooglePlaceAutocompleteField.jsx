@@ -1,113 +1,239 @@
 import { useEffect, useRef } from 'react'
-import { hasGoogleMapsApiKey, loadPlacesLibrary } from '../../services/googleMapsPlacesLoader.js'
-import { summarizePlaceFromGoogleAutocomplete } from '../../utils/googlePlaceAutocompleteSummary.js'
+import { ensurePlacesLibrary } from '../../services/googleMapsPlacesLoader'
 
 /**
- * Campo destino usando o Place Autocomplete (novo — `PlaceAutocompleteElement`).
- * Ao escolher uma sugestão, chama `onResolved` com cidade, país e coordenadas (se existirem).
- *
- * Docs: https://developers.google.com/maps/documentation/javascript/place-autocomplete-new
- *
- * Props: `id`, `placeholder`, `disabled`, `onResolved(patch)`
+ * @typedef {{
+ *   city?: string,
+ *   country?: string,
+ *   coordinates?: { latitude: number, longitude: number },
+ * }} PlaceResolvedPatch
  */
-export function GooglePlaceAutocompleteField({ id, placeholder, disabled, onResolved }) {
-  const hostRef = useRef(null)
-  const acRef = useRef(null)
+
+/**
+ * @param {google.maps.places.AddressComponent | undefined} ac
+ */
+function longText(ac) {
+  if (!ac) return ''
+  return String(ac.longText ?? ac.long_name ?? '').trim()
+}
+
+/**
+ * @param {google.maps.places.Place} place
+ * @returns {{ city: string, country: string }}
+ */
+function cityCountryFromPlace(place) {
+  const parts = place.addressComponents ?? []
+  let locality = ''
+  let adm2 = ''
+  let adm1 = ''
+  let country = ''
+
+  for (const c of parts) {
+    const types = /** @type {string[]} */ (c.types ?? [])
+    if (types.includes('locality')) locality = longText(c)
+    if (types.includes('administrative_area_level_2')) adm2 = longText(c)
+    if (types.includes('administrative_area_level_1')) adm1 = longText(c)
+    if (types.includes('country')) country = longText(c)
+  }
+
+  let city =
+    locality ||
+    adm2 ||
+    adm1 ||
+    (place.displayName ? String(place.displayName).split(',')[0].trim() : '')
+
+  if (!city && place.formattedAddress) {
+    const head = String(place.formattedAddress).split(',')[0].trim()
+    if (head) city = head
+  }
+
+  return { city, country }
+}
+
+/**
+ * @param {google.maps.places.Place | null | undefined} place
+ * @returns {{ latitude: number, longitude: number } | null}
+ */
+function coordinatesFromPlace(place) {
+  const loc = place?.location
+  if (!loc) return null
+  if (typeof loc.lat === 'function' && typeof loc.lng === 'function') {
+    return { latitude: loc.lat(), longitude: loc.lng() }
+  }
+  const lit = /** @type {{ lat?: number; lng?: number }} */ (loc)
+  if (typeof lit.lat === 'number' && typeof lit.lng === 'number') {
+    return { latitude: lit.lat, longitude: lit.lng }
+  }
+  return null
+}
+
+/**
+ * Place Autocomplete (novo): `PlaceAutocompleteElement` (`gmp-place-autocomplete`).
+ * @see {@link https://developers.google.com/maps/documentation/javascript/place-autocomplete-new}
+ *
+ * @param {{
+ *   id: string,
+ *   placeholder?: string,
+ *   disabled?: boolean,
+ *   value?: string,
+ *   onDraftChange?: (text: string) => void,
+ *   onResolved: (patch: PlaceResolvedPatch) => void,
+ *   includedRegionCodes?: string[],
+ * }} props
+ */
+export function GooglePlaceAutocompleteField({
+  id,
+  placeholder = 'Cidade ou destino…',
+  disabled = false,
+  value = '',
+  onDraftChange,
+  onResolved,
+  includedRegionCodes,
+}) {
+  const wrapRef = useRef(/** @type {HTMLDivElement | null} */ (null))
+  const acRef = useRef(/** @type {google.maps.places.PlaceAutocompleteElement | null} */ (null))
+  const syncingRef = useRef(false)
   const onResolvedRef = useRef(onResolved)
-  onResolvedRef.current = onResolved
+  const onDraftRef = useRef(onDraftChange)
+  const latestPropsRef = useRef({ value, placeholder, disabled, includedRegionCodes })
+  latestPropsRef.current = { value, placeholder, disabled, includedRegionCodes }
 
   useEffect(() => {
-    let ac
-    /** @type {(() => void) | undefined} */
-    let unsub
+    onResolvedRef.current = onResolved
+  }, [onResolved])
+
+  useEffect(() => {
+    onDraftRef.current = onDraftChange
+  }, [onDraftChange])
+
+  /* Monta uma única vez por `id`; evita remover o Web Component a cada render do pai. */
+  useEffect(() => {
     let cancelled = false
+    /** @type {google.maps.places.PlaceAutocompleteElement | null} */
+    let ac = null
 
-    /** @type {((event: Event) => void) | undefined} */
-    let selectHandler
-
-    const run = async () => {
-      if (!hasGoogleMapsApiKey() || !hostRef.current) return
-
+    /** @param {Event} evt */
+    const onSelect = async (evt) => {
       try {
-        const places = await loadPlacesLibrary()
-        if (cancelled || !hostRef.current || !places?.PlaceAutocompleteElement) return
+        const e = /** @type {google.maps.places.PlacePredictionSelectEvent} */ (evt)
+        const prediction = e.placePrediction
+        if (!prediction) return
 
-        const PlaceAutocompleteElement = places.PlaceAutocompleteElement
-
-        /** @see https://developers.google.com/maps/documentation/javascript/reference/places-widget */
-        ac = new PlaceAutocompleteElement({
-          placeholder: placeholder || '',
+        const place = prediction.toPlace()
+        await place.fetchFields({
+          fields: ['displayName', 'formattedAddress', 'location', 'addressComponents'],
         })
-        acRef.current = ac
-        try {
-          if ('disabled' in ac) ac.disabled = !!disabled
-        } catch (_) {
-          /* noop */
-        }
-        selectHandler = async (ev) => {
-          const ce = /** @type {CustomEvent<{ placePrediction?: { toPlace?: () => Record<string, unknown> } }>} */ (
-            /** @type {unknown} */ (ev)
-          )
-          const pred = ce?.placePrediction
-          if (!pred || typeof pred.toPlace !== 'function') return
-          const place = pred.toPlace()
-          try {
-            await place.fetchFields({
-              fields: ['displayName', 'formattedAddress', 'addressComponents', 'location'],
-            })
-            const patch = summarizePlaceFromGoogleAutocomplete(place)
-            if (patch.city || patch.country) onResolvedRef.current(patch)
-          } catch (_) {
-            /* Falha pontual do Place Details não bloqueia o formulário manual */
-          }
-        }
 
-        ac.addEventListener('gmp-select', selectHandler)
+        /** @type {PlaceResolvedPatch} */
+        const patch = {}
+        const { city, country } = cityCountryFromPlace(place)
+        if (city) patch.city = city
+        if (country) patch.country = country
+        const coords = coordinatesFromPlace(place)
+        if (coords) patch.coordinates = coords
 
-        hostRef.current.replaceChildren(ac)
+        onResolvedRef.current?.(patch)
 
-        unsub = () => {
-          try {
-            if (selectHandler && ac) ac.removeEventListener('gmp-select', selectHandler)
-          } catch (_) {
-            /* ignore */
-          }
-          ac?.remove()
-          acRef.current = null
-        }
-      } catch (_) {
-        /* Sem Google: deixamos o pai renderizar só o fallback */
+        syncingRef.current = true
+        const composed = city || ''
+        if (composed && ac) ac.value = composed
+        requestAnimationFrame(() => {
+          syncingRef.current = false
+        })
+      } catch {
+        /* degradação: formulário manual */
       }
     }
 
-    run()
+    /** @type {EventListener} */
+    const onInputInternal = () => {
+      if (syncingRef.current || !ac) return
+      onDraftRef.current?.(ac.value || '')
+    }
+
+    ;(async () => {
+      try {
+        const placesMod =
+          /** @type {{ PlaceAutocompleteElement: typeof google.maps.places.PlaceAutocompleteElement }} */
+          await ensurePlacesLibrary()
+        if (cancelled || !wrapRef.current) return
+
+        ac = new placesMod.PlaceAutocompleteElement({})
+        const snap = latestPropsRef.current
+
+        ac.id = id
+        ac.placeholder = snap.placeholder ?? ''
+        ac.disabled = Boolean(snap.disabled)
+        ac.requestedLanguage = 'pt-BR'
+
+        if (snap.includedRegionCodes?.length) ac.includedRegionCodes = [...snap.includedRegionCodes]
+        else ac.includedRegionCodes = null
+
+        syncingRef.current = true
+        if (typeof snap.value === 'string' && snap.value.trim()) ac.value = snap.value.trim()
+        requestAnimationFrame(() => {
+          syncingRef.current = false
+        })
+
+        ac.addEventListener('gmp-select', onSelect)
+        ac.addEventListener('input', onInputInternal)
+
+        wrapRef.current.replaceChildren(ac)
+        acRef.current = ac
+      } catch {
+        if (!cancelled && wrapRef.current) wrapRef.current.replaceChildren()
+        acRef.current = null
+      }
+    })()
+
     return () => {
       cancelled = true
-      unsub?.()
+      if (ac) {
+        ac.removeEventListener('gmp-select', onSelect)
+        ac.removeEventListener('input', onInputInternal)
+      }
+      acRef.current = null
+      wrapRef.current?.replaceChildren()
     }
+    // valor inicial apenas na montagem; depois usa o efeito de sync
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intencional: id identifica cada destino
+  }, [id])
+
+  useEffect(() => {
+    const ac = acRef.current
+    if (!ac) return
+    if (includedRegionCodes?.length) ac.includedRegionCodes = [...includedRegionCodes]
+    else ac.includedRegionCodes = null
+  }, [includedRegionCodes])
+
+  useEffect(() => {
+    const ac = acRef.current
+    if (!ac) return
+    ac.placeholder = placeholder || ''
   }, [placeholder])
 
   useEffect(() => {
-    const el = acRef.current
-    if (!el || !('disabled' in el)) return
-    try {
-      el.disabled = !!disabled
-    } catch (_) {
-      /* noop */
-    }
+    const ac = acRef.current
+    if (!ac) return
+    ac.disabled = Boolean(disabled)
   }, [disabled])
-  if (!hasGoogleMapsApiKey()) return null
+
+  useEffect(() => {
+    const ac = acRef.current
+    if (!ac) return
+    const next = typeof value === 'string' ? value : ''
+    if ((ac.value || '') === next) return
+    syncingRef.current = true
+    ac.value = next
+    requestAnimationFrame(() => {
+      syncingRef.current = false
+    })
+  }, [value])
 
   return (
     <div
-      className={`planning-google-place-ac-host planning-google-place-ac-frame w-full rounded-xl overflow-hidden border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark ring-1 ring-transparent focus-within:ring-primary/40 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-offset-white dark:focus-within:ring-offset-card-dark py-px px-[2px] ${
-        disabled ? 'pointer-events-none opacity-60' : ''
-      }`}
-    >
-      <div ref={hostRef} id={id} className="w-full [&_gmp-place-autocomplete]:block [&_gmp-place-autocomplete]:w-full" />
-      <span id={`${id}-hint`} className="sr-only">
-        Pesquisa por cidade ou destino — sugestões do Google Places. Após escolher, cidade e país são preenchidos.
-      </span>
-    </div>
+      ref={wrapRef}
+      className="planning-google-place-ac-frame relative z-[42] w-full min-h-[3.125rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-transparent"
+    />
   )
 }

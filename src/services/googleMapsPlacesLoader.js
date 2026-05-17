@@ -1,25 +1,36 @@
 /**
- * Bootstrap único da Maps JavaScript API + biblioteca Places (novo Place Autocomplete).
- * @returns {Promise<import('@googlemaps/js-api-loader').APILibraryMap['places']> | null}
+ * Bootstrap da Maps JavaScript API + biblioteca Places (Place Autocomplete novo).
+ *
+ * {@link https://developers.google.com/maps/documentation/javascript/libraries}
+ * {@link https://developers.google.com/maps/documentation/javascript/load-maps-js-api}
  */
-let placesImportPromise
+import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
 
+let optionsInstalled = false
+let placesPromise = null
+
+/** @returns {boolean} */
 export function hasGoogleMapsApiKey() {
-  return Boolean(String(import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim())
+  return Boolean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim?.())
 }
 
-export async function loadPlacesLibrary() {
-  const key = String(import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim()
-  if (!key) throw new Error('Google Maps API key não configurada (VITE_GOOGLE_MAPS_API_KEY)')
-  const { setOptions, importLibrary } = await import('@googlemaps/js-api-loader')
-  if (!placesImportPromise) {
-    setOptions({
-      key,
-      v: 'weekly',
-      /** UI e previsões em português; sem `region` fixo para viagens para qualquer país */
-      language: 'pt-BR',
-    })
-    placesImportPromise = importLibrary('places')
+/**
+ * Configura uma única vez a chave e carrega `places` (Autocomplete Element novo).
+ * @returns {Promise<unknown>}
+ */
+export function ensurePlacesLibrary() {
+  if (!hasGoogleMapsApiKey()) {
+    return Promise.reject(new Error('VITE_GOOGLE_MAPS_API_KEY não configurada.'))
   }
-  return placesImportPromise
+  if (!optionsInstalled) {
+    setOptions({
+      key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+      v: 'weekly',
+      language: 'pt-BR',
+      region: 'BR',
+    })
+    optionsInstalled = true
+  }
+  placesPromise ??= importLibrary('places')
+  return placesPromise
 }
