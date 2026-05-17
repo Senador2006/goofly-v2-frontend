@@ -9,6 +9,10 @@ import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivity
 import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
+import {
+  ItineraryDayMap,
+  clearItineraryRouteCache,
+} from '../components/itinerary/ItineraryDayMap'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -178,6 +182,7 @@ export function Itinerary() {
     }
     try {
       const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
+      clearItineraryRouteCache(tripId)
       setItinerary(itineraryData)
       return itineraryData
     } catch {
@@ -263,6 +268,7 @@ export function Itinerary() {
       const result = await tripService.finalizeTdvPlanning(tripId)
       if (result?.trip) setTrip(result.trip)
       const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
+      clearItineraryRouteCache(tripId)
       setItinerary(itineraryData)
       const firstDay = itineraryData?.activities?.[0]?.day
       if (firstDay != null && firstDay !== '') {
@@ -577,9 +583,16 @@ export function Itinerary() {
         )}
       </header>
 
-      <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
+      <div
+        className={`flex-1 flex min-w-0 min-h-0 overflow-hidden ${
+          mode === MODE_ROTEIRO ? 'flex-col lg:flex-row' : ''
+        }`}
+      >
         {showRoteiroSidebar ? (
-          <section className="w-full lg:w-1/2 xl:w-2/5 flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark">
+          <section
+            className="w-full flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5"
+            aria-label="Paradas do dia"
+          >
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
               {isPlanning ? (
                 <div className="mb-5 rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/[0.08] to-transparent dark:from-primary/15 p-4 sm:p-5">
@@ -706,9 +719,11 @@ export function Itinerary() {
         ) : null}
 
         <section
-          className={`flex-1 min-w-0 min-h-0 flex flex-col relative overflow-hidden ${
-            mode === MODE_ROTEIRO ? 'hidden lg:flex' : 'flex'
-          } ${mode === MODE_ROTEIRO ? 'bg-gray-200 dark:bg-gray-900/50' : ''}`}
+          className={`min-w-0 flex flex-col relative overflow-hidden ${
+            mode === MODE_ROTEIRO
+              ? 'flex w-full h-[42vh] min-h-[280px] shrink-0 border-t border-border-light dark:border-border-dark lg:flex-1 lg:min-h-0 lg:h-auto lg:border-t-0 bg-gray-200 dark:bg-gray-900/50'
+              : 'flex-1 min-h-0'
+          }`}
         >
           {isPlanning && mode === MODE_TDV ? (
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -740,32 +755,16 @@ export function Itinerary() {
             />
           </div>
           {mode === MODE_ROTEIRO ? (
-            <>
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-100/90 to-slate-100/90 dark:from-gray-900 dark:to-gray-950" />
-              <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-60">
-                <button
-                  type="button"
-                  className="bg-white dark:bg-card-dark size-10 rounded-full flex items-center justify-center shadow-md border border-border-light dark:border-border-dark"
-                  aria-hidden
-                >
-                  <Icon name="add" />
-                </button>
-                <button
-                  type="button"
-                  className="bg-white dark:bg-card-dark size-10 rounded-full flex items-center justify-center shadow-md border border-border-light dark:border-border-dark"
-                  aria-hidden
-                >
-                  <Icon name="remove" />
-                </button>
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center p-6">
-                <div className="text-center max-w-sm rounded-2xl bg-white/80 dark:bg-card-dark/80 backdrop-blur px-6 py-8 border border-border-light dark:border-border-dark shadow-lg">
-                  <Icon name="map" className="text-4xl text-primary mb-3 mx-auto opacity-80" />
-                  <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Mapa</p>
-                  <p className="text-xs text-text-secondary mt-1">Integração em breve — use a lista ao lado para o roteiro.</p>
-                </div>
-              </div>
-            </>
+            <div className="relative flex-1 min-h-0 w-full h-full">
+              <ItineraryDayMap
+                tripId={tripId}
+                day={effectiveSelectedDay}
+                activities={dayActivities}
+                disabled={isSelectedDayPremiumLockedUi}
+                className="absolute inset-0 h-full w-full"
+                ariaLabel={`Mapa do roteiro — dia ${effectiveSelectedDay}`}
+              />
+            </div>
           ) : null}
         </section>
       </div>

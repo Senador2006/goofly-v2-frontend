@@ -6,6 +6,7 @@ import { Button } from '../components/common/Button'
 import { GooglePlaceAutocompleteField } from '../components/planning/GooglePlaceAutocompleteField'
 import { tripService } from '../services/tripService'
 import { hasGoogleMapsApiKey } from '../services/googleMapsPlacesLoader'
+import { readLatLng } from '../utils/coordinates'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 // Constantes do PRE_TRIP_FORM.md
@@ -207,6 +208,9 @@ export function NewTrip() {
       const dests = formData.destinations
       for (const d of dests) {
         if (!d.city?.trim() || !d.country?.trim()) return 'Preencha cidade e país de cada destino'
+        if (!readLatLng({ coordinates: d.coordinates })) {
+          return `Selecione "${d.city.trim()}" nas sugestões do autocomplete para localizar o destino no mapa`
+        }
         if (!d.arrivalDate || !d.departureDate) return 'Preencha as datas de cada destino'
         const arr = new Date(d.arrivalDate)
         const dep = new Date(d.departureDate)
@@ -268,7 +272,7 @@ export function NewTrip() {
       id: d.id,
       city: d.city.trim(),
       country: d.country.trim(),
-      coordinates: d.coordinates || { latitude: 0, longitude: 0 },
+      ...(d.coordinates ? { coordinates: d.coordinates } : {}),
       arrivalDate: d.arrivalDate,
       departureDate: d.departureDate,
       order: i + 1,
