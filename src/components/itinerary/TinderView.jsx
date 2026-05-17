@@ -581,6 +581,38 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
             </div>
           )}
 
+          {(undoStack.length > 0 || undoLoading || undoNotice) && (
+            <div className="w-full max-w-xl flex flex-col items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={undoStack.length === 0 || undoLoading}
+                className="rounded-full"
+                onClick={handleUndo}
+                aria-label="Desfazer última ação no TDV"
+              >
+                <Icon name="undo" className="text-lg" />
+                {undoLoading ? 'Desfazendo...' : 'Desfazer última ação'}
+              </Button>
+              {undoNotice && (
+                <p className="text-[11px] text-red-500 dark:text-red-400 text-center px-2">{undoNotice}</p>
+              )}
+            </div>
+          )}
+
+          {choicesPanel}
+
+          <div className="w-full max-w-xl p-4 sm:p-5 rounded-2xl bg-white dark:bg-surface-dark/80 border border-border-light dark:border-border-dark shadow-sm">
+            <p className="text-xs sm:text-sm text-text-secondary mb-3 leading-relaxed">
+              Ao finalizar, a IA monta o roteiro com base no formulário da viagem
+              {totalLikes > 0 ? ', nas suas curtidas e descartes do TDV' : ''}. O TDV é opcional — você pode
+              gerar o roteiro mesmo sem curtir lugares.
+            </p>
+            <Button onClick={onTdvSatisfied} disabled={finalizingTdv} className="w-full rounded-full py-3">
+              {finalizingTdv ? 'Gerando roteiro...' : 'Gerar roteiro'}
+            </Button>
+          </div>
         </div>
       </section>
 

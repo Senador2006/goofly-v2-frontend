@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useTheme } from '../../context/ThemeContext'
 import { Icon } from '../common/Icon'
 
@@ -12,7 +11,6 @@ function formatLocaleDate() {
 
 export function DashboardHeader() {
   const { isDark, toggleTheme } = useTheme()
-  const [search, setSearch] = useState('')
 
   return (
     <header className="flex items-center justify-between gap-4 mb-8">
@@ -20,19 +18,6 @@ export function DashboardHeader() {
         {formatLocaleDate()}
       </p>
       <div className="flex items-center gap-3">
-        <div className="relative hidden sm:block">
-          <Icon
-            name="search"
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-lg"
-          />
-          <input
-            type="text"
-            placeholder="Buscar..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-48 bg-white dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-          />
-        </div>
         <button
           onClick={toggleTheme}
           className="size-10 rounded-xl bg-white dark:bg-card-dark flex items-center justify-center border border-border-light dark:border-border-dark hover:bg-surface-light dark:hover:bg-surface-dark transition-colors"

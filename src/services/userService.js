@@ -6,9 +6,33 @@ import api from './api'
  * mapeia o objeto inteiro para `body.data`, então `res.body.data` aqui é
  * sempre o payload utilizável.
  */
+function normalizeActivationPayload(payload) {
+  if (!payload) return null
+  const nestedUser = payload.user && typeof payload.user === 'object' ? payload.user : null
+  const base = nestedUser || (payload.id || payload.email ? payload : null)
+  const subscription_type = base?.subscription_type || payload.subscription_type
+  const subscription_expires_at = base?.subscription_expires_at ?? payload.subscription_expires_at
+  if (!subscription_type) return base || payload
+  return {
+    ...(base || {}),
+    subscription_type,
+    subscription_expires_at: subscription_expires_at ?? null
+  }
+}
+
 export const userService = {
-  completeCheckout: () =>
-    api.post('/users/me/checkout-complete').then((res) => res.body.data),
+  completeCheckout: (options = {}) =>
+    api
+      .post('/users/me/checkout-complete', {
+        tripId: options.tripId,
+        paymentApproved: options.paymentApproved === true,
+        paymentStatus: options.paymentStatus,
+      })
+      .then((res) => res.body.data),
+
+  /** Dev/demo: desbloqueia planejamento da viagem (rota só existe fora de produção). */
+  activatePlanningDev: (tripId) =>
+    api.post('/users/me/upgrade-planejamento', { tripId }).then((res) => res.body.data),
 
   updateProfile: (userId, { name, email }) =>
     api.put(`/users/${userId}`, { name, email }).then((res) => res.body.data),

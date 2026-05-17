@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { I18nProvider } from './i18n'
@@ -14,7 +15,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <I18nProvider>
         <ThemeProvider>
           <AuthProvider>
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
           </AuthProvider>
         </ThemeProvider>
       </I18nProvider>

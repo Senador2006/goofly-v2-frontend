@@ -1,4 +1,4 @@
-import api from './api'
+import api, { AI_TIMEOUT_MS } from './api'
 
 /**
  * Contrato consumido aqui (ver `services/api.js`):
@@ -11,9 +11,16 @@ export const tripService = {
   createTrip: (data) => api.post('/trips', data).then((res) => res.body.data),
   updateTrip: (id, data) => api.put(`/trips/${id}`, data).then((res) => res.body.data),
   deleteTrip: (id) => api.delete(`/trips/${id}`).then(() => undefined),
-  getItinerary: (tripId) => api.get(`/trips/${tripId}/itinerary`).then((res) => res.body.data),
+  getItinerary: (tripId, options = {}) =>
+    api
+      .get(`/trips/${tripId}/itinerary`, {
+        params: options.refresh ? { _t: Date.now() } : undefined,
+      })
+      .then((res) => res.body.data),
   optimizeItinerary: (tripId) =>
     api.post(`/trips/${tripId}/optimize`).then((res) => res.body.data),
   finalizeTdvPlanning: (tripId) =>
-    api.post(`/trips/${tripId}/finalize-tdv`).then((res) => res.body.data),
+    api
+      .post(`/trips/${tripId}/finalize-tdv`, {}, { timeout: AI_TIMEOUT_MS })
+      .then((res) => res.body?.data ?? res.data?.data ?? res.data),
 }

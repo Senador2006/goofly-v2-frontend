@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { userService } from '../services/userService'
 import { paymentService } from '../services/paymentService'
 import { createLogger } from '../utils/logger'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 const MERCADO_PAGO_SCRIPT_ID = 'mercado-pago-sdk'
 let mercadoPagoScriptPromise = null
@@ -53,7 +54,19 @@ export function Pagamento() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tripId = searchParams.get('tripId')
-  const { user, refreshUser } = useAuth()
+  const { user, refreshUser, applyUserUpdate } = useAuth()
+
+  const syncPlanningAccess = async (activationPayload) => {
+    const patch = activationPayload?.user || activationPayload
+    if (patch?.subscription_type) {
+      applyUserUpdate({
+        subscription_type: patch.subscription_type,
+        subscription_expires_at: patch.subscription_expires_at ?? null,
+      })
+    }
+    const fresh = await refreshUser().catch(() => null)
+    return fresh || patch
+  }
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -111,6 +124,7 @@ export function Pagamento() {
               try {
                 const data = formData.formData ?? formData
                 const payload = {
+                  tripId: tripId || undefined,
                   token: data.token,
                   payment_method_id: data.payment_method_id,
                   transaction_amount: data.transaction_amount ?? 12.00,
@@ -128,14 +142,23 @@ export function Pagamento() {
                   throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
                 }
 
-                await userService.completeCheckout()
-                await refreshUser().catch(() => {})
+                // O backend já ativa o plano no pagamento aprovado; reforça com checkout-complete.
+                if (!tripId) {
+                  throw new Error('Volte ao roteiro e use o botão de desbloqueio para abrir o pagamento desta viagem.')
+                }
+
+                await userService.completeCheckout({
+                  tripId,
+                  paymentApproved: true,
+                  paymentStatus: 'approved',
+                })
 
                 if (!isMountedRef.current) return
                 setSuccess(true)
                 setTimeout(() => {
-                  navigate(tripId ? `/trips/${tripId}/itinerary` : '/', { replace: true })
-                }, 2000)
+                  const base = tripId ? `/trips/${tripId}/itinerary` : '/'
+                  navigate(`${base}${tripId ? '?unlocked=1' : ''}`, { replace: true })
+                }, 1200)
               } catch (err) {
                 if (!isMountedRef.current) return
                 setError(err.response?.data?.error?.message || err.message || 'Erro ao processar o pagamento.')
@@ -190,10 +213,15 @@ export function Pagamento() {
       <h1 className="text-2xl md:text-3xl font-black text-foreground dark:text-white mb-2">
         Desbloqueie seu roteiro
       </h1>
-      <p className="text-text-secondary mb-8">
+      <p className="text-text-secondary mb-4">
         O TDV gratuito pode ser usado em 25% dos dias da sua viagem. Com o Planejamento Completo
         você usa o roteiro em todos os dias e libera documentos.
       </p>
+      {import.meta.env.DEV && (
+        <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2 mb-6">
+          Ambiente de demonstração: use o botão abaixo para simular a ativação sem cobrança real.
+        </p>
+      )}
 
       <div className="bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-2xl p-6 mb-8">
         <div className="flex items-center gap-3 mb-4">
@@ -220,7 +248,7 @@ export function Pagamento() {
           </li>
           <li className="flex items-center gap-2">
             <Icon name="check" className="text-primary shrink-0" />
-            Acesso por 1 ano
+            Válido para este planejamento
           </li>
         </ul>
         <p className="text-2xl font-black text-foreground dark:text-white">
@@ -244,6 +272,35 @@ export function Pagamento() {
         </Button>
       ) : (
         <div id="paymentBrick_container" />
+      )}
+
+      {import.meta.env.DEV && (
+        <Button
+          variant="secondary"
+          className="w-full mt-4"
+          disabled={loading}
+          onClick={async () => {
+            setLoading(true)
+            setError(null)
+            try {
+              if (!tripId) {
+                throw new Error('Abra o pagamento a partir do roteiro da viagem que deseja desbloquear.')
+              }
+              await userService.activatePlanningDev(tripId)
+              setSuccess(true)
+              setTimeout(() => {
+                const base = tripId ? `/trips/${tripId}/itinerary` : '/'
+                navigate(`${base}${tripId ? '?unlocked=1' : ''}`, { replace: true })
+              }, 1500)
+            } catch (err) {
+              setError(err.response?.data?.error?.message || 'Não foi possível ativar a demonstração.')
+            } finally {
+              setLoading(false)
+            }
+          }}
+        >
+          Ativar demonstração (sem cobrança)
+        </Button>
       )}
 
       <button

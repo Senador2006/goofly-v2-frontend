@@ -39,6 +39,15 @@ export function AuthProvider({ children }) {
     }
   }
 
+  const applyUserUpdate = (patch) => {
+    if (!patch || typeof patch !== 'object') return
+    setUser((prev) => {
+      const next = { ...(prev || {}), ...patch }
+      localStorage.setItem(USER_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY)
     const savedUser = localStorage.getItem(USER_KEY)
@@ -97,7 +106,9 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, refreshUser, loading, isAuthenticated: !!user }}>
+    <AuthContext.Provider
+      value={{ user, login, register, logout, refreshUser, applyUserUpdate, loading, isAuthenticated: !!user }}
+    >
       {children}
     </AuthContext.Provider>
   )

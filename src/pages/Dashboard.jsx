@@ -21,22 +21,22 @@ export function Dashboard() {
     const load = async () => {
       try {
         setError(null)
-        const [overviewData, memoryMapData] = await Promise.all([
-          dashboardService.getOverview().catch(() => null),
-          memoryService.getMap().catch(() => ({ points: [], total_memories: 0 })),
-        ])
+        const overviewData = await dashboardService.getOverview().catch(() => null)
         setOverview(overviewData)
+
         const trips = overviewData?.recent_trips || []
-        const memoriesByTrip = []
-        for (const t of trips.slice(0, 2)) {
-          try {
-            const mems = await memoryService.getByTrip(t.id).catch(() => [])
-            if (mems?.[0]) {
-              const year = new Date().getFullYear().toString().slice(-2)
-              memoriesByTrip.push({
+        const memoryResults = await Promise.all(
+          trips.slice(0, 2).map(async (t) => {
+            try {
+              const mems = await memoryService.getByTrip(t.id)
+              if (!mems?.[0]) return null
+              const year = new Date(mems[0].created_at || Date.now()).getFullYear().toString().slice(-2)
+              return {
                 ...mems[0],
                 tripLabel: `${t.first_destination || 'Viagem'} '${year}`,
-              })
+              }
+            } catch {
+              return null
             }
           } catch (_) {}
         }
@@ -61,16 +61,21 @@ export function Dashboard() {
   }
 
   const nextTrip = overview?.next_trip
-  const recentTrips = overview?.recent_trips || []
   const daysUntil = overview?.days_until_trip ?? nextTrip?.days_until
-  const firstDest = nextTrip ? { city: nextTrip.first_destination, country: nextTrip.country } : null
-  const dateRange = nextTrip?.arrival_date ? formatDate(nextTrip.arrival_date) : '24/11/24 - 02/12/24'
+  const firstDest = nextTrip
+    ? { city: nextTrip.first_destination, country: nextTrip.country }
+    : null
+  const dateRange =
+    nextTrip?.arrival_date && nextTrip?.departure_date
+      ? `${formatDate(nextTrip.arrival_date)} – ${formatDate(nextTrip.departure_date)}`
+      : nextTrip?.arrival_date
+        ? formatDate(nextTrip.arrival_date)
+        : null
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-2rem)]">
       <DashboardHeader />
 
-      {/* Hero - Call to Action */}
       <div className="bg-primary rounded-2xl p-8 md:p-10 mb-8">
         <h1 className="text-3xl md:text-4xl font-black text-foreground mb-3">
           Para onde agora?
@@ -93,9 +98,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Two Column Widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
-        {/* Upcoming Trip Card */}
         <div className="bg-white dark:bg-card-dark rounded-2xl p-6 border border-border-light dark:border-border-dark">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-bold text-foreground dark:text-white">Próxima Viagem</h2>
@@ -145,7 +148,6 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Recent Memories Card */}
         <div className="bg-white dark:bg-card-dark rounded-2xl p-6 border border-border-light dark:border-border-dark">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-bold text-foreground dark:text-white">Memórias Recentes</h2>
@@ -170,23 +172,26 @@ export function Dashboard() {
                   backgroundImage: `url(${mem.photo_url || mem.image_url})`,
                 }}
               >
-                <div className="w-full h-full bg-black/30 group-hover:bg-black/20 transition-all flex items-end p-3">
-                  <span className="text-white text-xs font-bold drop-shadow">{mem.tripLabel}</span>
-                </div>
+                <Icon name="add_a_photo" className="text-2xl" />
+                <span className="text-xs font-bold">Adicionar</span>
               </Link>
-            ))}
-            <Link
-              to="/memories"
-              className="aspect-square rounded-xl border-2 border-dashed border-text-secondary flex flex-col items-center justify-center gap-2 text-text-secondary hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
-            >
-              <Icon name="add_a_photo" className="text-2xl" />
-              <span className="text-xs font-bold">Adicionar</span>
-            </Link>
-          </div>
+            </div>
+          ) : (
+            <div className="py-8 text-center">
+              <Icon name="add_a_photo" className="text-4xl text-text-secondary mb-3 opacity-50" />
+              <p className="text-text-secondary text-sm mb-4">
+                Suas memórias de viagem aparecerão aqui
+              </p>
+              <Link to="/memories">
+                <Button size="sm" variant="secondary">
+                  Ver memórias
+                </Button>
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="mt-12 pt-8 border-t border-border-light dark:border-border-dark flex flex-col md:flex-row justify-between items-center gap-4 text-text-secondary text-sm">
         <p>© {new Date().getFullYear()} Goofly Travel Assistance v2.0</p>
         <div className="flex gap-6">

@@ -36,3 +36,19 @@ body {
 .dark .glass-effect {
   background: rgba(17, 17, 17, 0.7);
 }
+
+/* Place Autocomplete (Places API novo) — Nova Viagem / planejamento */
+.planning-google-place-ac-frame {
+  min-height: 3.125rem;
+}
+
+.planning-google-place-ac-frame gmp-place-autocomplete {
+  display: block;
+  width: 100%;
+  border-radius: 0.75rem;
+  --gmp-mat-color-on-surface: #1c1c0d;
+}
+
+.dark .planning-google-place-ac-frame gmp-place-autocomplete {
+  --gmp-mat-color-on-surface: rgba(249, 250, 251, 0.96);
+}
