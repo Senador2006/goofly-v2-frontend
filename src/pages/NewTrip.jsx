@@ -314,7 +314,7 @@ export function NewTrip() {
     try {
       const payload = buildPayload()
       const trip = await tripService.createTrip(payload)
-      navigate(`/trips/${trip.id}/itinerary`)
+      navigate(`/trips/${trip.id}/itinerary?tab=tdv`)
     } catch (err) {
       setError(err.response?.data?.error?.message || err.message || 'Erro ao criar viagem')
     } finally {

@@ -238,6 +238,17 @@ export function Itinerary() {
     }
   }, [searchParams, setSearchParams, tripId, refetchItineraryImmediate])
 
+  /** Deep link da criação de viagem (/trips/new): abrir direto na aba TDV quando ainda está em planejamento. */
+  useEffect(() => {
+    if (searchParams.get('tab') !== 'tdv' || !trip) return
+    if (trip.status === 'planejando') {
+      setMode(MODE_TDV)
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('tab')
+    setSearchParams(next, { replace: true })
+  }, [trip, searchParams, setSearchParams])
+
   const handleDevUnlock = async () => {
     if (!tripId) return
     try {
