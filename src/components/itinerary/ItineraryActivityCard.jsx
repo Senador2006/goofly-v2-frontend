@@ -178,18 +178,35 @@ function resolveTicketInfo(act) {
   return { required, hint, links }
 }
 
-export function ItineraryActivityCard({ act, index, isLast }) {
+export function ItineraryActivityCard({
+  act,
+  index,
+  isLast,
+  editing = false,
+  draft,
+  onDraftPatch,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+  disableMoveUp = false,
+  disableMoveDown = false,
+  dayPickerValue,
+  dayPickerOptions = [],
+  onDayChange,
+}) {
   const panelId = useId()
   const [open, setOpen] = useState(false)
 
-  const start = act.startTime || act.start_time || act.time || '09:00'
-  const end = act.endTime || act.end_time
+  const effective = editing ? draft : act
+
+  const start = effective?.startTime || effective?.start_time || effective?.time || '09:00'
+  const end = effective?.endTime || effective?.end_time
   const scheduleLabel =
     typeof end === 'string' && end.trim() ? `${start}–${String(end).trim()}` : start
-  const title = act.title || act.name || act.placeName || `Atividade ${index + 1}`
-  const description = resolveActivityDescription(act)
-  const badge = sourceBadgeLabel(act)
-  const ticket = resolveTicketInfo(act)
+  const title = effective?.title || effective?.name || effective?.placeName || `Atividade ${index + 1}`
+  const description = resolveActivityDescription(effective)
+  const badge = sourceBadgeLabel(effective)
+  const ticket = resolveTicketInfo(effective || act)
 
   const toggle = useCallback(() => {
     setOpen((v) => !v)
@@ -201,29 +218,198 @@ export function ItineraryActivityCard({ act, index, isLast }) {
         <div className="absolute left-0 top-3 bottom-0 w-px border-l-2 border-dashed border-primary/70" aria-hidden />
       )}
       <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary z-10" />
-      <article className="rounded-2xl border border-border-light dark:border-border-dark bg-background-light dark:bg-[#23220f] overflow-hidden shadow-sm">
-        {act.image_url ? (
+      <article className="rounded-2xl border border-border-light dark:border-border-dark bg-background-light dark:bg-[#23220f] overflow-hidden shadow-sm ring-inset ring-primary/25">
+        {(effective?.image_url || act?.image_url) ? (
           <div
             className="h-36 sm:h-40 w-full bg-cover bg-center"
-            style={{ backgroundImage: `url(${act.image_url})` }}
+            style={{ backgroundImage: `url(${effective?.image_url || act.image_url})` }}
             role="img"
             aria-label={title}
           />
         ) : null}
-        <CardBody
-          scheduleLabel={scheduleLabel}
-          act={act}
-          title={title}
-          description={description}
-          startResolved={start}
-          endResolved={typeof end === 'string' ? end.trim() : null}
-          badge={badge}
-          ticket={ticket}
-          open={open}
-          onToggle={toggle}
-          panelId={panelId}
-        />
+        {editing ? (
+          <CardEditFields
+            index={index}
+            title={title}
+            scheduleLabelHint={scheduleLabel}
+            ticket={ticket}
+            badge={badge}
+            draft={draft}
+            onDraftPatch={onDraftPatch}
+            onRemove={onRemove}
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            disableMoveUp={disableMoveUp}
+            disableMoveDown={disableMoveDown}
+            dayPickerValue={dayPickerValue}
+            dayPickerOptions={dayPickerOptions}
+            onDayChange={onDayChange}
+          />
+        ) : (
+          <CardBody
+            scheduleLabel={scheduleLabel}
+            act={act}
+            title={title}
+            description={description}
+            startResolved={start}
+            endResolved={typeof end === 'string' ? end.trim() : null}
+            badge={badge}
+            ticket={ticket}
+            open={open}
+            onToggle={toggle}
+            panelId={panelId}
+          />
+        )}
       </article>
+    </div>
+  )
+}
+
+function CardEditFields({
+  index,
+  title,
+  scheduleLabelHint,
+  ticket,
+  badge,
+  draft,
+  onDraftPatch,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+  disableMoveUp,
+  disableMoveDown,
+  dayPickerValue,
+  dayPickerOptions,
+  onDayChange,
+}) {
+  const rawDesc =
+    draft.description ??
+    draft.notes ??
+    draft.summary ??
+    draft.aiReasoning ??
+    draft.ai_reasoning ??
+    ''
+  const descText = typeof rawDesc === 'string' ? rawDesc : ''
+
+  const st = draft.startTime || draft.start_time || draft.time || '09:00'
+  const et = draft.endTime || draft.end_time || ''
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Parada {index + 1}</span>
+        {badge ? (
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
+            {badge}
+          </span>
+        ) : null}
+        {ticket.required ? (
+          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
+            Ingresso
+          </span>
+        ) : null}
+      </div>
+
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+        <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-text-secondary">
+          Início
+          <input
+            type="text"
+            className="rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-2.5 py-2 text-sm font-semibold text-[#1c1c0d] dark:text-white"
+            value={st}
+            onChange={(e) =>
+              onDraftPatch({ startTime: e.target.value, start_time: e.target.value, time: e.target.value })
+            }
+            placeholder="09:00"
+            autoComplete="off"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-text-secondary">
+          Fim (opcional)
+          <input
+            type="text"
+            className="rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-2.5 py-2 text-sm font-semibold text-[#1c1c0d] dark:text-white"
+            value={et}
+            onChange={(e) => onDraftPatch({ endTime: e.target.value, end_time: e.target.value })}
+            placeholder="—"
+            autoComplete="off"
+          />
+        </label>
+        {dayPickerOptions.length > 0 ? (
+          <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-text-secondary col-span-2 sm:min-w-[7rem]">
+            Dia
+            <select
+              className="rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-2.5 py-2 text-sm font-semibold text-[#1c1c0d] dark:text-white"
+              value={String(dayPickerValue)}
+              onChange={(e) => onDayChange(Number(e.target.value))}
+            >
+              {dayPickerOptions.map((d) => (
+                <option key={d} value={d}>
+                  Dia {d}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+      <p className="text-[10px] text-text-secondary/80 -mt-1">
+        Horários no formato 24h (ex.: {scheduleLabelHint}).
+      </p>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Título</span>
+        <input
+          type="text"
+          className="w-full rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-3 py-2.5 text-sm font-bold text-[#1c1c0d] dark:text-white"
+          value={title}
+          onChange={(e) =>
+            onDraftPatch({
+              title: e.target.value,
+              name: e.target.value,
+              placeName: e.target.value,
+            })
+          }
+        />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Descrição / notas</span>
+        <textarea
+          className="w-full min-h-[5.5rem] rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-3 py-2.5 text-sm text-[#1c1c0d] dark:text-white leading-relaxed resize-y"
+          value={descText}
+          onChange={(e) => onDraftPatch({ description: e.target.value })}
+          placeholder="O que você quer fazer nesta parada?"
+        />
+      </label>
+
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <button
+          type="button"
+          disabled={disableMoveUp}
+          onClick={onMoveUp}
+          className="inline-flex items-center justify-center rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-white/[0.06] px-2.5 py-2 text-sm font-bold text-[#1c1c0d] dark:text-white disabled:opacity-35 disabled:pointer-events-none min-h-[2.25rem]"
+          title="Mover para cima"
+        >
+          <Icon name="arrow_upward" className="text-lg" aria-hidden />
+        </button>
+        <button
+          type="button"
+          disabled={disableMoveDown}
+          onClick={onMoveDown}
+          className="inline-flex items-center justify-center rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-white/[0.06] px-2.5 py-2 text-sm font-bold text-[#1c1c0d] dark:text-white disabled:opacity-35 disabled:pointer-events-none min-h-[2.25rem]"
+          title="Mover para baixo"
+        >
+          <Icon name="arrow_downward" className="text-lg" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="inline-flex items-center gap-1 rounded-xl border border-red-500/35 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-700 dark:text-red-400 min-h-[2.25rem] ml-auto"
+        >
+          <Icon name="delete" className="text-sm" aria-hidden />
+          Remover
+        </button>
+      </div>
     </div>
   )
 }

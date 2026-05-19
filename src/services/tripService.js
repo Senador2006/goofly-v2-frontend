@@ -18,6 +18,8 @@ export const tripService = {
         params: options.refresh ? { _t: Date.now() } : undefined,
       })
       .then((res) => res.body.data),
+  updateItinerary: (tripId, payload) =>
+    api.put(`/trips/${tripId}/itinerary`, payload).then((res) => res.body.data),
   optimizeItinerary: (tripId) =>
     api.post(`/trips/${tripId}/optimize`).then((res) => res.body.data),
   finalizeTdvPlanning: (tripId) =>
