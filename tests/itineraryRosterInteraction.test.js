@@ -10,8 +10,9 @@ const itinerarySource = readFileSync(
 )
 
 describe('Itinerary roster interaction', () => {
-  it('chips de dia chamam setSelectedDay', () => {
-    assert.match(itinerarySource, /onClick=\{\(\) => setSelectedDay\(day\)\}/)
+  it('chips de dia chamam setSelectedDay via ItineraryDayChips', () => {
+    assert.match(itinerarySource, /onSelectDay=\{setSelectedDay\}/)
+    assert.match(itinerarySource, /ItineraryDayChips/)
   })
 
   it('header de dias não usa pointer-events-none no container dos chips', () => {
