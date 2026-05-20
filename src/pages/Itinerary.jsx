@@ -13,6 +13,7 @@ import {
   ItineraryDayMap,
   clearItineraryRouteCache,
 } from '../components/itinerary/ItineraryDayMap'
+import { ItineraryMobileMapDrawer } from '../components/itinerary/ItineraryMobileMapDrawer'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -152,6 +153,7 @@ export function Itinerary() {
   useDocumentTitle(tripDestCity ? `Roteiro · ${tripDestCity}` : 'Roteiro')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [finalizingTdv, setFinalizingTdv] = useState(false)
+  const [mobileMapOpen, setMobileMapOpen] = useState(false)
   const deleteInFlightRef = useRef(false)
 
   const isPlanning = trip?.status === 'planejando'
@@ -321,6 +323,10 @@ export function Itinerary() {
     if (first == null) return
     setSelectedDay(first)
   }, [itinerary, selectedDay, dateToDayMap])
+
+  useEffect(() => {
+    setMobileMapOpen(false)
+  }, [mode])
 
   if (loading) return <LoadingSpinner />
   if (error || !trip) {
@@ -601,7 +607,12 @@ export function Itinerary() {
       >
         {showRoteiroSidebar ? (
           <section
-            className="w-full flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5"
+            className={
+              'relative flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark ' +
+              (mode === MODE_ROTEIRO
+                ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-8 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
+                : 'w-full max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5')
+            }
             aria-label="Paradas do dia"
           >
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
@@ -726,13 +737,23 @@ export function Itinerary() {
                 </div>
               )}
             </div>
+            {mode === MODE_ROTEIRO ? (
+              <ItineraryMobileMapDrawer
+                open={mobileMapOpen}
+                onOpenChange={setMobileMapOpen}
+                tripId={tripId}
+                day={effectiveSelectedDay}
+                activities={dayActivities}
+                disabled={isSelectedDayPremiumLockedUi}
+              />
+            ) : null}
           </section>
         ) : null}
 
         <section
           className={`min-w-0 flex flex-col relative overflow-hidden ${
             mode === MODE_ROTEIRO
-              ? 'flex w-full h-[42vh] min-h-[280px] shrink-0 border-t border-border-light dark:border-border-dark lg:flex-1 lg:min-h-0 lg:h-auto lg:border-t-0 bg-gray-200 dark:bg-gray-900/50'
+              ? 'hidden lg:flex flex-1 min-h-0 bg-gray-200 dark:bg-gray-900/50'
               : 'flex-1 min-h-0'
           }`}
         >
