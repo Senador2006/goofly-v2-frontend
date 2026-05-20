@@ -30,6 +30,9 @@ function videoLinkLabel(url) {
 
 /** Só antecipa próximo lote quando restam poucas cartas (evita conflito com o 1º fetch da sessão). */
 const PREFETCH_WHEN_REMAINING_AT_MOST = 3
+/** Retentativas automáticas quando o baralho esvazia antes do próximo batch chegar. */
+const EMPTY_DECK_PREFETCH_MAX_ATTEMPTS = 5
+const EMPTY_DECK_PREFETCH_RETRY_MS = 2000
 
 /**
  * TDV — mobile: pilha única (card · ações · finalizar/listas).
@@ -44,6 +47,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const [likedPlaces, setLikedPlaces] = useState([])
   const [dislikedPlaces, setDislikedPlaces] = useState([])
   const [loading, setLoading] = useState(false)
+  const [prefetchLoading, setPrefetchLoading] = useState(false)
   const [error, setError] = useState(null)
   const [swipeFeedback, setSwipeFeedback] = useState(null)
   /** Pilha LIFO: desfazer só a última curtida/descarte (espelha o servidor). */
@@ -62,6 +66,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const loadAbortRef = useRef(null)
   const prefetchGenRef = useRef(0)
   const prefetchAbortRef = useRef(null)
+  const prefetchEmptyAttemptsRef = useRef(0)
+  const [emptyDeckRetryTick, setEmptyDeckRetryTick] = useState(0)
 
   const currentPlace = places[currentIndex]
   const placeVideoLinks = useMemo(
@@ -133,6 +139,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     .join('|')
   useEffect(() => {
     prefetchReturnedEmptyRef.current = false
+    prefetchEmptyAttemptsRef.current = 0
   }, [deckKey])
 
   // Carrega ao ativar a aba / mudar viagem. Não incluir places.length nem loading nas deps:
@@ -142,19 +149,17 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     loadPlaces()
   }, [isActive, tripId, loadPlaces])
 
-  // Antecipa o próximo lote só quando o baralho encolheu desde o último discoverSession (evita 2º HTTP
-  // logo após o 1º que mudava fotos/dados na cara do utilizador). Strict Mode: abort + generation.
+  // Antecipa o próximo lote quando o baralho encolheu (inclui baralho vazio — continuidade TDV).
   useEffect(() => {
     if (!isActive || !tripId || loading) return
     const n = places.length
-    if (n === 0 || n > PREFETCH_WHEN_REMAINING_AT_MOST) return
+    if (n > PREFETCH_WHEN_REMAINING_AT_MOST) return
     const baseline = sessionDeckBaselineRef.current
-    if (baseline > 0 && n === baseline && !consumedSinceSessionRef.current) return
-    if (prefetchInFlightRef.current || prefetchReturnedEmptyRef.current) return
+    if (n > 0 && baseline > 0 && n === baseline && !consumedSinceSessionRef.current) return
+    if (prefetchInFlightRef.current) return
+    if (n > 0 && prefetchReturnedEmptyRef.current) return
 
     const excludePlaceIds = places.map(getPlaceId).filter(Boolean)
-    if (excludePlaceIds.length === 0) return
-
     const existingIds = new Set(excludePlaceIds.map((id) => String(id)))
 
     prefetchAbortRef.current?.abort()
@@ -164,6 +169,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
     let cancelled = false
     prefetchInFlightRef.current = true
+    setPrefetchLoading(true)
 
     ;(async () => {
       try {
@@ -171,9 +177,19 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         if (cancelled || prefetchGen !== prefetchGenRef.current) return
         const incoming = Array.isArray(res.places) ? res.places : []
         if (incoming.length === 0) {
+          if (n === 0 && prefetchEmptyAttemptsRef.current < EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
+            prefetchEmptyAttemptsRef.current += 1
+            window.setTimeout(() => {
+              if (!cancelled && prefetchGen === prefetchGenRef.current) {
+                setEmptyDeckRetryTick((t) => t + 1)
+              }
+            }, EMPTY_DECK_PREFETCH_RETRY_MS)
+            return
+          }
           prefetchReturnedEmptyRef.current = true
           return
         }
+        prefetchEmptyAttemptsRef.current = 0
         let wouldAdd = 0
         for (const p of incoming) {
           const id = getPlaceId(p)
@@ -181,6 +197,15 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           if (sid && !existingIds.has(sid)) wouldAdd += 1
         }
         if (wouldAdd === 0) {
+          if (n === 0 && prefetchEmptyAttemptsRef.current < EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
+            prefetchEmptyAttemptsRef.current += 1
+            window.setTimeout(() => {
+              if (!cancelled && prefetchGen === prefetchGenRef.current) {
+                setEmptyDeckRetryTick((t) => t + 1)
+              }
+            }, EMPTY_DECK_PREFETCH_RETRY_MS)
+            return
+          }
           prefetchReturnedEmptyRef.current = true
           return
         }
@@ -202,8 +227,19 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         if (typeof res.totalLikes === 'number') setTotalLikes(res.totalLikes)
       } catch {
         // silencioso (abort ou rede): utilizador ainda tem cartas no baralho
+        if (n === 0 && prefetchEmptyAttemptsRef.current < EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
+          prefetchEmptyAttemptsRef.current += 1
+          window.setTimeout(() => {
+            if (!cancelled && prefetchGen === prefetchGenRef.current) {
+              setEmptyDeckRetryTick((t) => t + 1)
+            }
+          }, EMPTY_DECK_PREFETCH_RETRY_MS)
+        }
       } finally {
-        if (prefetchGen === prefetchGenRef.current) prefetchInFlightRef.current = false
+        if (prefetchGen === prefetchGenRef.current) {
+          prefetchInFlightRef.current = false
+          setPrefetchLoading(false)
+        }
       }
     })()
 
@@ -211,7 +247,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       cancelled = true
       ac.abort()
     }
-  }, [isActive, tripId, loading, places, currentDay])
+  }, [isActive, tripId, loading, places, currentDay, emptyDeckRetryTick])
 
   const handleNextDay = useCallback(async () => {
     if (!tripId) return
@@ -624,6 +660,11 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                 {belowFoldContent}
               </aside>
             </div>
+          ) : prefetchLoading ? (
+          <div className="w-full py-12 flex flex-col items-center justify-center gap-3" role="status" aria-live="polite">
+            <LoadingSpinner />
+            <p className="text-sm text-text-secondary">Buscando mais lugares...</p>
+          </div>
           ) : (
           <div className="w-full py-4">
             <EmptyState
