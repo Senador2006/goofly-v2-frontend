@@ -7,15 +7,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiProxyTarget = env.VITE_DEV_API_PROXY || 'http://localhost:3000'
 
-  const sharedServerOptions = {
-    host: true,
-    allowedHosts: [RENDER_FRONTEND_HOST, '.onrender.com'],
-    proxy: {
-      '/api': {
-        target: apiProxyTarget,
-        changeOrigin: true,
-        secure: true,
-      },
+  const devProxy = {
+    '/api': {
+      target: apiProxyTarget,
+      changeOrigin: true,
+      secure: true,
     },
   }
 
@@ -23,13 +19,16 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: 5173,
-      ...sharedServerOptions,
+      host: true,
+      allowedHosts: [RENDER_FRONTEND_HOST, '.onrender.com'],
+      proxy: devProxy,
     },
     preview: {
       port: Number(process.env.PORT) || 4173,
       host: '0.0.0.0',
       strictPort: true,
-      ...sharedServerOptions,
+      allowedHosts: [RENDER_FRONTEND_HOST, '.onrender.com'],
+      // Sem proxy em preview/produção — API usa URL absoluta do gateway.
     },
   }
 })

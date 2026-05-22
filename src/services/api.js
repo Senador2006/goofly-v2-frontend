@@ -46,19 +46,30 @@ if (directFlag && isProd && typeof console !== 'undefined') {
   )
 }
 
-const gatewayBaseURL = import.meta.env.VITE_API_GATEWAY_URL || '/api/v1'
+const DEFAULT_PRODUCTION_GATEWAY =
+  'https://goofly-v2-api-gateway.onrender.com/api/v1'
 
-if (
-  isProd &&
-  typeof gatewayBaseURL === 'string' &&
-  gatewayBaseURL.startsWith('/') &&
-  typeof console !== 'undefined'
-) {
-  console.error(
-    '[api] VITE_API_GATEWAY_URL deve ser uma URL absoluta em produção (ex.: https://seu-gateway.onrender.com/api/v1). ' +
-      'URL relativa só funciona com proxy do Vite em dev.'
-  )
+function resolveGatewayBaseURL() {
+  const configured = String(import.meta.env.VITE_API_GATEWAY_URL || '').trim()
+
+  if (/^https?:\/\//i.test(configured)) {
+    return configured.replace(/\/$/, '')
+  }
+
+  if (isProd) {
+    if (configured && typeof console !== 'undefined') {
+      console.warn(
+        '[api] VITE_API_GATEWAY_URL relativa ou ausente em produção; usando gateway Render:',
+        DEFAULT_PRODUCTION_GATEWAY
+      )
+    }
+    return DEFAULT_PRODUCTION_GATEWAY
+  }
+
+  return configured || '/api/v1'
 }
+
+const gatewayBaseURL = resolveGatewayBaseURL()
 const baseURL = useDirect
   ? import.meta.env.VITE_API_SERVICES_URL || 'http://localhost:3001'
   : gatewayBaseURL
