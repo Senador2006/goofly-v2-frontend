@@ -15,8 +15,9 @@ import {
 } from '../components/itinerary/ItineraryDayMap'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
+import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { hasTripPlanningUnlocked, getTripDayCount } from '../utils/planningAccess'
+import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
 
 const MODE_ROTEIRO = 'roteiro'
 const MODE_TDV = 'tdv'
@@ -199,6 +200,7 @@ function normalizedPremiumRestriction(r) {
 export function Itinerary() {
   const { tripId } = useParams()
   const navigate = useNavigate()
+  const { refreshUser } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [trip, setTrip] = useState(null)
   const [itinerary, setItinerary] = useState(null)
@@ -218,7 +220,7 @@ export function Itinerary() {
   const deleteInFlightRef = useRef(false)
 
   const isPlanning = trip?.status === 'planejando'
-  const hasPlanejamentoCompleto = hasTripPlanningUnlocked(trip)
+  const hasFullAccess = hasItineraryFullAccess(itinerary, trip)
 
   const handleDeletePlanning = async () => {
     if (deleteInFlightRef.current) return
@@ -292,6 +294,7 @@ export function Itinerary() {
     if (searchParams.get('unlocked') !== '1' || !tripId) return
     let cancelled = false
     ;(async () => {
+      await refreshUser().catch(() => null)
       const tripData = await tripService.getTrip(tripId).catch(() => null)
       if (cancelled) return
       if (tripData) setTrip(tripData)
@@ -304,7 +307,7 @@ export function Itinerary() {
     return () => {
       cancelled = true
     }
-  }, [searchParams, setSearchParams, tripId, refetchItineraryImmediate])
+  }, [searchParams, setSearchParams, tripId, refetchItineraryImmediate, refreshUser])
 
   /** Deep link da criação de viagem (/trips/new): abrir direto na aba TDV quando ainda está em planejamento. */
   useEffect(() => {
@@ -414,7 +417,6 @@ export function Itinerary() {
   const premiumRestriction = itinerary?._premiumRestriction
     ? normalizedPremiumRestriction(itinerary._premiumRestriction)
     : null
-  const hasFullAccess = itinerary?._access?.fullAccess === true
   const tripDayCount = getTripDayCount(trip)
   const chronologicalDays = Array.from({ length: tripDayCount }, (_, i) => i + 1)
   const numericDaysFromActs = [
@@ -574,7 +576,7 @@ export function Itinerary() {
             <Icon name="folder_shared" className="text-sm" />
             <span className="hidden sm:inline">Documentos</span>
             <span className="sm:hidden">Docs</span>
-            {!hasPlanejamentoCompleto && <Icon name="lock" className="text-xs opacity-70" />}
+            {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
           </button>
         </>
       ) : (
@@ -604,7 +606,7 @@ export function Itinerary() {
           >
             <Icon name="folder_shared" className="text-sm" />
             Docs
-            {!hasPlanejamentoCompleto && <Icon name="lock" className="text-xs opacity-70" />}
+            {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
           </button>
         </>
       )}
@@ -1022,7 +1024,7 @@ export function Itinerary() {
             <DocumentosView
               tripId={tripId}
               trip={trip}
-              hasPlanejamentoCompleto={hasPlanejamentoCompleto}
+              hasPlanejamentoCompleto={hasFullAccess}
               isActive={mode === MODE_DOCUMENTOS}
               onUpgrade={async () => {
                 const tripData = await tripService.getTrip(tripId)
