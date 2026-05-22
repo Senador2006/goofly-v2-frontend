@@ -118,6 +118,7 @@ export function ItineraryDayMap({
   highlightedIndex = null,
   className = '',
   ariaLabel = 'Mapa do roteiro do dia',
+  mapLayoutWatch,
 }) {
   const [routeData, setRouteData] = useState(null)
   const [routeDay, setRouteDay] = useState(null)
@@ -204,8 +205,9 @@ export function ItineraryDayMap({
   )
 
   const useApiLayer = routeReady && apiMarkers.length > 0
-  const markers = useApiLayer ? apiMarkers : localMarkers
-  const usingLocalFallback = !useApiLayer && localMarkers.length > 0 && !loading && !disabled
+  const markers = localMarkers.length > 0 ? localMarkers : apiMarkers
+  const usingLocalFallback =
+    localMarkers.length > 0 && (!useApiLayer || apiMarkers.length === 0) && !loading && !disabled
 
   const polylinePositions = useMemo(() => {
     if (routePayloadValid) {
@@ -284,7 +286,7 @@ export function ItineraryDayMap({
           </Marker>
         ))}
         <FitBoundsToPoints coords={allCoords} />
-        <MapInvalidateSize watch={`${mapInstanceKey}-${markers.length}`} />
+        <MapInvalidateSize watch={`${mapInstanceKey}-${markers.length}-${mapLayoutWatch ?? ''}`} />
       </MapContainer>
 
       {dayNum != null && !disabled ? (

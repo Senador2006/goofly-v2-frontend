@@ -13,6 +13,8 @@ import {
   ItineraryDayMap,
   clearItineraryRouteCache,
 } from '../components/itinerary/ItineraryDayMap'
+import { ItineraryMobileMapDrawer } from '../components/itinerary/ItineraryMobileMapDrawer'
+import { ItineraryDayChips } from '../components/itinerary/ItineraryDayChips'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
 import { useAuth } from '../context/AuthContext'
@@ -217,6 +219,7 @@ export function Itinerary() {
   const [roteiroEditOpen, setRoteiroEditOpen] = useState(false)
   const [draftActivities, setDraftActivities] = useState(null)
   const [savingRoteiro, setSavingRoteiro] = useState(false)
+  const [mobileMapOpen, setMobileMapOpen] = useState(false)
   const deleteInFlightRef = useRef(false)
 
   const isPlanning = trip?.status === 'planejando'
@@ -392,6 +395,10 @@ export function Itinerary() {
     if (first == null) return
     setSelectedDay(first)
   }, [itinerary, selectedDay, dateToDayMap])
+
+  useEffect(() => {
+    setMobileMapOpen(false)
+  }, [mode])
 
   if (loading) return <LoadingSpinner />
   if (error || !trip) {
@@ -690,72 +697,31 @@ export function Itinerary() {
           </div>
         </div>
         {showRoteiroSidebar && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mt-3 pt-3 pb-2 sm:pb-2.5 border-t border-border-light dark:border-white/10 [-webkit-overflow-scrolling:touch]">
-            {days.map((day) => {
-              const peek =
-                previewDayMapsReady && premiumRestriction && !hasFullAccess && !isPlanning
-                  ? getPremiumDayTotals(premiumRestriction, day)
-                  : null
-              const dayLockedPremium =
-                previewDayMapsReady && peek?.totalOnDay > 0 && peek.visibleOnDay === 0
-              const dayPartialPremium =
-                previewDayMapsReady &&
-                peek != null &&
-                peek.totalOnDay > 0 &&
-                peek.visibleOnDay > 0 &&
-                peek.totalOnDay > peek.visibleOnDay
-              const isActiveChin = effectiveSelectedDay === day
-
-              let chipClass =
-                'relative shrink-0 inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-[0.4375rem] sm:py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all '
-
-              if (isActiveChin && dayLockedPremium) {
-                chipClass +=
-                  'bg-gradient-to-b from-amber-100 to-amber-50 dark:from-amber-950/80 dark:to-amber-900/55 text-[#45340a] dark:text-amber-100 ring-[3px] ring-amber-400/95 dark:ring-amber-500/60 shadow-[inset_0_-3px_0_0_rgba(251,191,36,0.45)] '
-              } else if (isActiveChin && dayPartialPremium) {
-                chipClass +=
-                  'bg-primary text-black shadow-[0_10px_24px_-6px_rgba(234,179,8,0.55)] ring-2 ring-amber-800/35 dark:ring-amber-200/25 '
-              } else if (isActiveChin) {
-                chipClass += 'bg-primary text-black shadow-sm '
-              } else if (dayLockedPremium) {
-                chipClass +=
-                  'overflow-hidden ' +
-                  'bg-neutral-100 dark:bg-neutral-800/92 text-neutral-400 dark:text-neutral-500 grayscale-[35%] ' +
-                  'ring-2 ring-neutral-300/95 dark:ring-neutral-600 dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)] ' +
-                  "before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:z-[1] before:bg-[repeating-linear-gradient(-35deg,rgba(0,0,0,.055)_0px,rgba(0,0,0,.055)_4px,transparent_4px,transparent_8px)] " +
-                  "dark:before:bg-[repeating-linear-gradient(-35deg,rgba(255,255,255,.05)_0px,rgba(255,255,255,.05)_4px,transparent_4px,transparent_8px)] hover:brightness-[1.03] hover:ring-neutral-400/90 "
-              } else if (dayPartialPremium) {
-                chipClass +=
-                  'bg-amber-50/95 dark:bg-amber-500/10 text-amber-900/92 dark:text-amber-200 ring-2 ring-dashed ring-amber-500/65 dark:ring-amber-400/40 ' +
-                  'hover:bg-amber-100/98 dark:hover:bg-amber-500/15 hover:ring-amber-600/80 '
-              } else {
-                chipClass +=
-                  'bg-surface-light dark:bg-white/[0.08] text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white '
-              }
-
-              return (
-                <button key={day} type="button" onClick={() => setSelectedDay(day)} className={chipClass}>
-                  <span className="relative z-[2] inline-flex items-center gap-1.5">
-                    {dayLockedPremium ? (
-                      <Icon
-                        name="lock"
-                        className={`text-[15px] shrink-0 ${isActiveChin ? 'text-amber-900/90 dark:text-amber-100' : ''}`}
-                        aria-hidden
-                      />
-                    ) : null}
-                    {dayPartialPremium && !dayLockedPremium ? (
-                      <Icon
-                        name="more_horiz"
-                        className={`text-[16px] shrink-0 opacity-90 ${isActiveChin ? 'text-black/70' : 'text-amber-800/80 dark:text-amber-300/90'}`}
-                        title="Prévia parcial — há mais paradas neste dia"
-                        aria-hidden
-                      />
-                    ) : null}
-                    <span>Dia {day}</span>
-                  </span>
-                </button>
-              )
-            })}
+          <div className="mt-3 pt-3 pb-2 sm:pb-2.5 border-t border-border-light dark:border-white/10">
+            <ItineraryDayChips
+              days={days}
+              selectedDay={effectiveSelectedDay}
+              onSelectDay={setSelectedDay}
+              getDayState={(day) => {
+                const peek =
+                  previewDayMapsReady && premiumRestriction && !hasFullAccess && !isPlanning
+                    ? getPremiumDayTotals(premiumRestriction, day)
+                    : null
+                const dayLockedPremium =
+                  previewDayMapsReady && peek?.totalOnDay > 0 && peek.visibleOnDay === 0
+                const dayPartialPremium =
+                  previewDayMapsReady &&
+                  peek != null &&
+                  peek.totalOnDay > 0 &&
+                  peek.visibleOnDay > 0 &&
+                  peek.totalOnDay > peek.visibleOnDay
+                return {
+                  dayLockedPremium,
+                  dayPartialPremium,
+                  isActive: effectiveSelectedDay === day,
+                }
+              }}
+            />
           </div>
         )}
       </header>
@@ -767,7 +733,12 @@ export function Itinerary() {
       >
         {showRoteiroSidebar ? (
           <section
-            className="w-full flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5"
+            className={
+              'relative flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark ' +
+              (mode === MODE_ROTEIRO
+                ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-8 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
+                : 'w-full max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5')
+            }
             aria-label="Paradas do dia"
           >
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
@@ -994,13 +965,23 @@ export function Itinerary() {
                 </div>
               ) : null}
             </div>
+            {mode === MODE_ROTEIRO ? (
+              <ItineraryMobileMapDrawer
+                open={mobileMapOpen}
+                onOpenChange={setMobileMapOpen}
+                tripId={tripId}
+                day={effectiveSelectedDay}
+                activities={dayActivities}
+                disabled={isSelectedDayPremiumLockedUi}
+              />
+            ) : null}
           </section>
         ) : null}
 
         <section
           className={`min-w-0 flex flex-col relative overflow-hidden ${
             mode === MODE_ROTEIRO
-              ? 'flex w-full h-[42vh] min-h-[280px] shrink-0 border-t border-border-light dark:border-border-dark lg:flex-1 lg:min-h-0 lg:h-auto lg:border-t-0 bg-gray-200 dark:bg-gray-900/50'
+              ? 'hidden lg:flex flex-1 min-h-0 bg-gray-200 dark:bg-gray-900/50'
               : 'flex-1 min-h-0'
           }`}
         >
