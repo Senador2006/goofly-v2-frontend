@@ -4,6 +4,13 @@ services:
     runtime: static
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_GATEWAY_URL
+        value: https://goofly-v2-api-gateway.onrender.com/api/v1
+      - key: VITE_USE_SERVICES_DIRECT
+        value: "0"
+      - key: VITE_ENV
+        value: production
     routes:
       - type: rewrite
         source: /*
