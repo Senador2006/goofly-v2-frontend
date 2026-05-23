@@ -5,6 +5,7 @@ import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
 import { documentService } from '../../services/documentService'
 import { userService } from '../../services/userService'
+import { useAuth } from '../../context/AuthContext'
 
 /**
  * Assistente de Documentos na área de planejamento.
@@ -23,6 +24,7 @@ export function DocumentosView({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const loadedForTripRef = useRef(null)
+  const { isAdmin } = useAuth()
 
   useEffect(() => {
     if (loadedForTripRef.current === tripId) return
@@ -63,10 +65,10 @@ export function DocumentosView({
     }
   }, [tripId, hasPlanejamentoCompleto, isActive])
 
-  const handleDevUpgrade = async () => {
+  const handleAdminUpgrade = async () => {
     if (!tripId) return
     try {
-      await userService.activatePlanningDev(tripId)
+      await userService.activatePlanningAdmin(tripId)
       await onUpgrade?.()
     } catch (_) {}
   }
@@ -90,9 +92,9 @@ export function DocumentosView({
             <Icon name="workspace_premium" />
             Adquirir Planejamento Completo
           </Link>
-          {import.meta.env.DEV && (
-            <Button variant="secondary" className="w-full mt-2" size="sm" onClick={handleDevUpgrade}>
-              Testar plano (dev)
+          {isAdmin && (
+            <Button variant="secondary" className="w-full mt-2" size="sm" onClick={handleAdminUpgrade}>
+              Liberar planejamento completo
             </Button>
           )}
           <p className="text-xs text-text-secondary mt-4">

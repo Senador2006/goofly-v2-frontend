@@ -1,7 +1,7 @@
 import api from './api'
 
 /**
- * Endpoints legacy (`/users/me/checkout-complete`, `/users/me/upgrade-planejamento`)
+ * Endpoint `/users/me/checkout-complete` (pagamento validado no servidor ou conta admin).
  * devolvem `{ message, ... }` sem chave `data`. O normalizador do `api.js`
  * mapeia o objeto inteiro para `body.data`, então `res.body.data` aqui é
  * sempre o payload utilizável.
@@ -30,9 +30,9 @@ export const userService = {
       })
       .then((res) => res.body.data),
 
-  /** Dev/demo: desbloqueia planejamento da viagem (rota só existe fora de produção). */
-  activatePlanningDev: (tripId) =>
-    api.post('/users/me/upgrade-planejamento', { tripId }).then((res) => res.body.data),
+  /** Administrador: libera planejamento da viagem (validado no servidor por role). */
+  activatePlanningAdmin: (tripId) =>
+    api.post('/users/me/checkout-complete', { tripId }).then((res) => res.body.data),
 
   updateProfile: (userId, { name, email }) =>
     api.put(`/users/${userId}`, { name, email }).then((res) => res.body.data),

@@ -1,4 +1,5 @@
 import { useAuth } from '../context/AuthContext'
+import { AdminSettingsSection } from '../components/admin/AdminSettingsSection'
 import { useTheme } from '../context/ThemeContext'
 import { Header } from '../components/layout/Header'
 import { Icon } from '../components/common/Icon'
@@ -9,7 +10,7 @@ import { userService } from '../services/userService'
 
 export function Settings() {
   useDocumentTitle('Configurações')
-  const { user, logout, refreshUser } = useAuth()
+  const { user, logout, refreshUser, isAdmin } = useAuth()
   const { isDark, toggleTheme } = useTheme()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(user?.name || '')
@@ -66,6 +67,7 @@ export function Settings() {
         subtitle="Gerencie sua conta e preferências"
       />
       <div className="max-w-2xl space-y-8">
+        {isAdmin ? <AdminSettingsSection /> : null}
         <div className="bg-white dark:bg-card-dark rounded-xl p-6 border border-border-light dark:border-border-dark">
           <h3 className="text-lg font-bold mb-4">Perfil</h3>
           <div className="flex items-center gap-4 mb-6">
