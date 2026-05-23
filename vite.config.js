@@ -1,7 +1,12 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
-const RENDER_FRONTEND_HOST = 'goofly-v2-frontend.onrender.com'
+const FRONTEND_ALLOWED_HOSTS = [
+  'goofly-v2-frontend.onrender.com',
+  'www.goofly.com.br',
+  'goofly.com.br',
+  '.onrender.com',
+]
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -20,14 +25,14 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       host: true,
-      allowedHosts: [RENDER_FRONTEND_HOST, '.onrender.com'],
+      allowedHosts: FRONTEND_ALLOWED_HOSTS,
       proxy: devProxy,
     },
     preview: {
       port: Number(process.env.PORT) || 4173,
       host: '0.0.0.0',
       strictPort: true,
-      allowedHosts: [RENDER_FRONTEND_HOST, '.onrender.com'],
+      allowedHosts: FRONTEND_ALLOWED_HOSTS,
       // Sem proxy em preview/produção — API usa URL absoluta do gateway.
     },
   }
