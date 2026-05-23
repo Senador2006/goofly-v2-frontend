@@ -63,7 +63,7 @@ export function Register() {
   }
 
   return (
-    <div className="min-h-screen bg-background-light dark:bg-background-dark flex items-center justify-center p-4">
+    <div className="min-h-screen bg-white text-foreground flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-start gap-3 mb-10 w-full -ml-3">
           <GooflyLogo heightClass="h-16 sm:h-20" className="max-w-[min(100%,22rem)] -translate-x-2" />
@@ -71,10 +71,10 @@ export function Register() {
             Travel Planner
           </p>
         </div>
-        <div className="bg-white dark:bg-card-dark rounded-2xl p-8 shadow-lg border border-border-light dark:border-border-dark">
+        <div className="bg-white rounded-2xl p-8 shadow-lg border border-border-light">
           <h2 className="text-2xl font-black mb-6">Criar conta</h2>
           {error && (
-            <div className="mb-4 p-3 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm">
+            <div className="mb-4 p-3 bg-red-500/10 text-red-600 rounded-xl text-sm">
               {error}
             </div>
           )}
@@ -86,7 +86,7 @@ export function Register() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
+                className="w-full bg-surface-light border border-border-light rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
                 placeholder="Seu nome"
               />
             </div>
@@ -97,7 +97,7 @@ export function Register() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
+                className="w-full bg-surface-light border border-border-light rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
                 placeholder="seu@email.com"
               />
             </div>
@@ -109,7 +109,7 @@ export function Register() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={8}
-                className="w-full bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
+                className="w-full bg-surface-light border border-border-light rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
                 placeholder="********"
               />
             </div>
