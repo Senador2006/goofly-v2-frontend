@@ -15,88 +15,21 @@ import {
 } from '../components/itinerary/ItineraryDayMap'
 import { ItineraryMobileMapDrawer } from '../components/itinerary/ItineraryMobileMapDrawer'
 import { ItineraryDayChips } from '../components/itinerary/ItineraryDayChips'
+import { ItineraryPrintView } from '../components/itinerary/ItineraryPrintView'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { hasTripPlanningUnlocked, getTripDayCount } from '../utils/planningAccess'
+import {
+  buildDateToDayMap,
+  getActivityDayNumber,
+  sortDayActivities,
+} from '../utils/itineraryDayHelpers'
+import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
 
 const MODE_ROTEIRO = 'roteiro'
 const MODE_TDV = 'tdv'
 const MODE_DOCUMENTOS = 'documentos'
-
-/** Garante a qual dia (1-based) cada atividade pertence — `day`, `dayNumber` ou datas (`dayDate`, `canonicalDate`, etc.). */
-function getActivityDayNumber(act, dateToDayMap) {
-  if (!act || typeof act !== 'object') return null
-  const raw = act.day ?? act.dayNumber ?? act.day_number
-  if (raw != null && raw !== '') {
-    const n = Number(raw)
-    if (Number.isFinite(n) && n >= 1) return Math.floor(n)
-    if (typeof raw === 'string') {
-      const isoMatch = /^(\d{4}-\d{2}-\d{2})/.exec(raw)
-      if (isoMatch && dateToDayMap.has(isoMatch[1])) return dateToDayMap.get(isoMatch[1])
-    }
-  }
-  const candidates = [
-    act.dayDate,
-    act.day_date,
-    act.date,
-    act.canonicalDate,
-    act.canonical_date,
-    act.scheduledDate,
-    act.scheduled_date,
-    act.itineraryDate,
-    act.itinerary_date,
-  ]
-  for (const d of candidates) {
-    if (typeof d !== 'string') continue
-    const isoMatch = /^(\d{4}-\d{2}-\d{2})/.exec(d)
-    if (isoMatch && dateToDayMap.has(isoMatch[1])) return dateToDayMap.get(isoMatch[1])
-  }
-  return null
-}
-
-/** Mapa `YYYY-MM-DD` → número do dia (1-based) na ordem das datas da trip. */
-function buildDateToDayMap(trip) {
-  const map = new Map()
-  if (!trip) return map
-  let dayNum = 1
-  for (const dest of trip?.destinations || []) {
-    const start = new Date(dest.arrivalDate)
-    const end = new Date(dest.departureDate)
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue
-    const d = new Date(start)
-    while (d <= end) {
-      map.set(d.toISOString().split('T')[0], dayNum)
-      dayNum += 1
-      d.setDate(d.getDate() + 1)
-    }
-  }
-  return map
-}
-
-function startTimeKey(act) {
-  const raw = act?.startTime || act?.start_time || act?.time || ''
-  const m = /^(\d{1,2}):(\d{2})/.exec(String(raw))
-  if (!m) return 99 * 60
-  return Number(m[1]) * 60 + Number(m[2])
-}
-
-function activityOrderKey(act) {
-  const o = Number(act?.order)
-  if (Number.isFinite(o) && o >= 0) return o
-  return Number.MAX_SAFE_INTEGER
-}
-
-/** Ordena atividades de UM dia por `order` (do agente) e desempata por `startTime`. */
-function sortDayActivities(list) {
-  return [...list].sort((a, b) => {
-    const oa = activityOrderKey(a)
-    const ob = activityOrderKey(b)
-    if (oa !== ob) return oa - ob
-    return startTimeKey(a) - startTimeKey(b)
-  })
-}
 
 function activityStableId(act) {
   const id = act?.id ?? act?.placeId ?? act?.place_id
@@ -202,6 +135,7 @@ function normalizedPremiumRestriction(r) {
 export function Itinerary() {
   const { tripId } = useParams()
   const navigate = useNavigate()
+  const { refreshUser } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const { isAdmin } = useAuth()
   const [trip, setTrip] = useState(null)
@@ -223,7 +157,7 @@ export function Itinerary() {
   const deleteInFlightRef = useRef(false)
 
   const isPlanning = trip?.status === 'planejando'
-  const hasPlanejamentoCompleto = hasTripPlanningUnlocked(trip)
+  const hasFullAccess = hasItineraryFullAccess(itinerary, trip)
 
   const handleDeletePlanning = async () => {
     if (deleteInFlightRef.current) return
@@ -297,6 +231,7 @@ export function Itinerary() {
     if (searchParams.get('unlocked') !== '1' || !tripId) return
     let cancelled = false
     ;(async () => {
+      await refreshUser().catch(() => null)
       const tripData = await tripService.getTrip(tripId).catch(() => null)
       if (cancelled) return
       if (tripData) setTrip(tripData)
@@ -309,7 +244,7 @@ export function Itinerary() {
     return () => {
       cancelled = true
     }
-  }, [searchParams, setSearchParams, tripId, refetchItineraryImmediate])
+  }, [searchParams, setSearchParams, tripId, refetchItineraryImmediate, refreshUser])
 
   /** Deep link da criação de viagem (/trips/new): abrir direto na aba TDV quando ainda está em planejamento. */
   useEffect(() => {
@@ -423,7 +358,6 @@ export function Itinerary() {
   const premiumRestriction = itinerary?._premiumRestriction
     ? normalizedPremiumRestriction(itinerary._premiumRestriction)
     : null
-  const hasFullAccess = itinerary?._access?.fullAccess === true
   const tripDayCount = getTripDayCount(trip)
   const chronologicalDays = Array.from({ length: tripDayCount }, (_, i) => i + 1)
   const numericDaysFromActs = [
@@ -473,6 +407,14 @@ export function Itinerary() {
 
   const roteiroEditAllowed =
     showRoteiroSidebar && !isPlanning && hasFullAccess && persistedActivities.length > 0
+
+  const canPrintItinerary =
+    showRoteiroSidebar && !isPlanning && !roteiroEditOpen && persistedActivities.length > 0
+
+  const handlePrintItinerary = () => {
+    if (roteiroEditOpen) return
+    globalThis.print?.()
+  }
 
   const handleCancelRoteiroEdit = () => {
     setRoteiroEditOpen(false)
@@ -583,7 +525,7 @@ export function Itinerary() {
             <Icon name="folder_shared" className="text-sm" />
             <span className="hidden sm:inline">Documentos</span>
             <span className="sm:hidden">Docs</span>
-            {!hasPlanejamentoCompleto && <Icon name="lock" className="text-xs opacity-70" />}
+            {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
           </button>
         </>
       ) : (
@@ -613,7 +555,7 @@ export function Itinerary() {
           >
             <Icon name="folder_shared" className="text-sm" />
             Docs
-            {!hasPlanejamentoCompleto && <Icon name="lock" className="text-xs opacity-70" />}
+            {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
           </button>
         </>
       )}
@@ -621,7 +563,8 @@ export function Itinerary() {
   )
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8 min-h-0 bg-background-light/50 dark:bg-background-dark/30">
+    <>
+    <div className="print:hidden flex flex-col h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8 min-h-0 bg-background-light/50 dark:bg-background-dark/30">
       {/* Cabeçalho único — evita três colunas competindo por atenção */}
       <header className="flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 py-3 sm:py-4">
         <div className="flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
@@ -649,6 +592,20 @@ export function Itinerary() {
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             {modeTabs}
+            {canPrintItinerary ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-xl shrink-0 font-bold"
+                onClick={handlePrintItinerary}
+                type="button"
+                title="Abrir diálogo de impressão — escolha «Salvar como PDF» para exportar"
+              >
+                <Icon name="picture_as_pdf" />
+                <span className="hidden sm:inline">Exportar PDF</span>
+                <span className="sm:hidden">PDF</span>
+              </Button>
+            ) : null}
             {roteiroEditAllowed ? (
               !roteiroEditOpen ? (
                 <Button
@@ -1005,7 +962,7 @@ export function Itinerary() {
             <DocumentosView
               tripId={tripId}
               trip={trip}
-              hasPlanejamentoCompleto={hasPlanejamentoCompleto}
+              hasPlanejamentoCompleto={hasFullAccess}
               isActive={mode === MODE_DOCUMENTOS}
               onUpgrade={async () => {
                 const tripData = await tripService.getTrip(tripId)
@@ -1037,5 +994,15 @@ export function Itinerary() {
         tripLabel={destLabel}
       />
     </div>
+    <ItineraryPrintView
+      trip={trip}
+      activities={persistedActivities}
+      days={days}
+      dateToDayMap={dateToDayMap}
+      destLabel={destLabel}
+      hasFullAccess={hasFullAccess}
+      premiumRestriction={premiumRestriction}
+    />
+    </>
   )
 }

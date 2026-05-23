@@ -49,11 +49,19 @@ if (directFlag && isProd && typeof console !== 'undefined') {
 const DEFAULT_PRODUCTION_GATEWAY =
   'https://goofly-v2-api-gateway.onrender.com/api/v1'
 
+function normalizeGatewayURL(url) {
+  const base = String(url || '').trim().replace(/\/$/, '')
+  if (!base) return base
+  if (base.endsWith('/api/v1')) return base
+  if (base.endsWith('/api')) return `${base}/v1`
+  return `${base}/api/v1`
+}
+
 function resolveGatewayBaseURL() {
   const configured = String(import.meta.env.VITE_API_GATEWAY_URL || '').trim()
 
   if (/^https?:\/\//i.test(configured)) {
-    return configured.replace(/\/$/, '')
+    return normalizeGatewayURL(configured)
   }
 
   if (isProd) {

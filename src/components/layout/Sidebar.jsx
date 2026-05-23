@@ -10,11 +10,11 @@ const navItems = [
   { to: '/memories', icon: 'photo_library', label: 'Memórias' },
 ]
 
-export function Sidebar() {
+export function Sidebar({ className = '' }) {
   const { user } = useAuth()
 
   return (
-    <aside className="w-64 flex flex-col bg-white dark:bg-card-dark border-r border-border-light dark:border-border-dark p-6 h-full hidden lg:flex">
+    <aside className={`w-64 flex flex-col bg-white dark:bg-card-dark border-r border-border-light dark:border-border-dark p-6 h-full hidden lg:flex ${className}`.trim()}>
       <Link to="/" className="flex items-center justify-start self-start mb-10 shrink-0 -ml-3">
         <GooflyLogo heightClass="h-14 md:h-16" className="max-w-[min(100%,17rem)]" />
       </Link>

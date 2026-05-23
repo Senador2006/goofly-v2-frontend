@@ -11,6 +11,8 @@ services:
         value: "0"
       - key: VITE_ENV
         value: production
+      - key: VITE_TURNSTILE_SITE_KEY
+        value: 0x4AAAAAADSwci_iwR-Xdxpl
     routes:
       - type: rewrite
         source: /*

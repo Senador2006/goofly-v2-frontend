@@ -8,9 +8,9 @@ const navItems = [
   { to: '/memories', icon: 'photo_library', label: 'Memórias' },
 ]
 
-export function MobileNav() {
+export function MobileNav({ className = '' }) {
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-card-dark border-t border-border-light dark:border-border-dark p-2 flex justify-around safe-area-pb z-50">
+    <nav className={`lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-card-dark border-t border-border-light dark:border-border-dark p-2 flex justify-around safe-area-pb z-50 ${className}`.trim()}>
       {navItems.map(({ to, icon, label }) => (
         <NavLink
           key={to}

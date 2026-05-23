@@ -89,3 +89,32 @@ body {
   --gmp-mat-color-on-neutral-container: rgba(249, 250, 251, 0.96);
   --gmp-mat-color-secondary-container: #161616;
 }
+
+/* Exportação PDF simples — `window.print()` + layout em ItineraryPrintView */
+@media print {
+  @page {
+    margin: 14mm 12mm;
+    size: A4;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  #itinerary-print {
+    display: block !important;
+    width: 100%;
+    min-height: auto;
+    padding: 0;
+    margin: 0;
+  }
+
+  .break-inside-avoid-page {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+}

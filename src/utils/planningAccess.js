@@ -13,6 +13,18 @@ export function hasActivePlanningAccess(user) {
   return new Date(user.subscription_expires_at) > new Date()
 }
 
+/**
+ * UI do roteiro — fonte de verdade é a resposta da API desta viagem.
+ * Não usa subscription global do usuário (pode existir de outro pagamento).
+ */
+export function hasItineraryFullAccess(itinerary, trip) {
+  if (itinerary?._premiumRestriction) return false
+  if (itinerary?._access && typeof itinerary._access.fullAccess === 'boolean') {
+    return itinerary._access.fullAccess === true
+  }
+  return hasTripPlanningUnlocked(trip)
+}
+
 export function getTripDayCount(trip) {
   if (!trip?.destinations?.length) return 1
   let total = 0
