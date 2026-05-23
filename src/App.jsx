@@ -11,6 +11,8 @@ import { Memories } from './pages/Memories'
 import { Settings } from './pages/Settings'
 import { NewTrip } from './pages/NewTrip'
 import { Pagamento } from './pages/Pagamento'
+import { AdminDashboard } from './pages/AdminDashboard'
+import { AdminRoute } from './components/AdminRoute'
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth()
@@ -49,6 +51,16 @@ export default function App() {
           <Register />
         </PublicRoute>
       } />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
+          </ProtectedRoute>
+        }
+      />
       <Route path="/" element={
         <ProtectedRoute>
           <Layout />

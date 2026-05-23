@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 
-export function ItineraryPremiumBanner({ tripId, restriction, onDevUnlock, showDevUnlock }) {
+export function ItineraryPremiumBanner({ tripId, restriction, onAdminUnlock, showAdminUnlock }) {
   if (!restriction?.total || restriction.visible >= restriction.total) return null
 
   const hidden = restriction.total - restriction.visible
@@ -26,9 +26,9 @@ export function ItineraryPremiumBanner({ tripId, restriction, onDevUnlock, showD
           Desbloquear roteiro completo
         </Button>
       </Link>
-      {showDevUnlock ? (
-        <Button variant="secondary" className="w-full mt-2 rounded-full text-xs" size="sm" onClick={onDevUnlock}>
-          Ativar plano (dev)
+      {showAdminUnlock ? (
+        <Button variant="secondary" className="w-full mt-2 rounded-full text-xs" size="sm" onClick={onAdminUnlock}>
+          Liberar planejamento completo
         </Button>
       ) : null}
     </div>

@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import api, { gatewayApi } from '../services/api'
+import { resolveIsAdmin } from '../utils/jwtRole'
 
 const AuthContext = createContext()
 
@@ -83,18 +84,18 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password })
     const payload = res.body?.data || res.data?.data || res.data || {}
-    const userData = persistAuthPayload(payload)
-    setUser(userData)
-    if (userData) localStorage.setItem(USER_KEY, JSON.stringify(userData))
+    persistAuthPayload(payload)
+    const userData = (await refreshUser()) || payload.user || payload
+    if (userData) setUser(userData)
     return res.data
   }
 
   const register = async (name, email, password, captchaToken) => {
     const res = await gatewayApi.post('/auth/register', { name, email, password, captchaToken })
     const payload = res.body?.data || res.data?.data || res.data || {}
-    const userData = persistAuthPayload(payload)
-    setUser(userData)
-    if (userData) localStorage.setItem(USER_KEY, JSON.stringify(userData))
+    persistAuthPayload(payload)
+    const userData = (await refreshUser()) || payload.user || payload
+    if (userData) setUser(userData)
     return res.data
   }
 
@@ -105,9 +106,21 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  const isAdmin = useMemo(() => resolveIsAdmin(user), [user])
+
   return (
     <AuthContext.Provider
-      value={{ user, login, register, logout, refreshUser, applyUserUpdate, loading, isAuthenticated: !!user }}
+      value={{
+        user,
+        login,
+        register,
+        logout,
+        refreshUser,
+        applyUserUpdate,
+        loading,
+        isAuthenticated: !!user,
+        isAdmin,
+      }}
     >
       {children}
     </AuthContext.Provider>

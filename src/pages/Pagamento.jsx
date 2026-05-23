@@ -59,7 +59,7 @@ export function Pagamento() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tripId = searchParams.get('tripId')
-  const { user, refreshUser, applyUserUpdate } = useAuth()
+  const { user, refreshUser, applyUserUpdate, isAdmin } = useAuth()
 
   const syncPlanningAccess = async (activationPayload) => {
     const patch = activationPayload?.user || activationPayload
@@ -196,11 +196,7 @@ export function Pagamento() {
                   throw new Error('Volte ao roteiro e use o botão de desbloqueio para abrir o pagamento desta viagem.')
                 }
 
-                await userService.completeCheckout({
-                  tripId,
-                  paymentApproved: true,
-                  paymentStatus: 'approved',
-                })
+                await userService.completeCheckout({ tripId })
 
                 if (!isMountedRef.current) return
                 setSuccess(true)
@@ -267,9 +263,9 @@ export function Pagamento() {
         recomendações por viagem. O Tinder de Viagens permanece disponível para todos na fase de
         planejamento.
       </p>
-      {import.meta.env.DEV && (
-        <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2 mb-6">
-          Ambiente de demonstração: use o botão abaixo para simular a ativação sem cobrança real.
+      {isAdmin && (
+        <p className="text-xs text-text-secondary bg-background-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-2 mb-6">
+          Como administrador, você pode liberar o planejamento desta viagem sem processar pagamento.
         </p>
       )}
 
@@ -344,7 +340,7 @@ export function Pagamento() {
         <div id="paymentBrick_container" />
       )}
 
-      {import.meta.env.DEV && (
+      {isAdmin && (
         <Button
           variant="secondary"
           className="w-full mt-4"
@@ -356,20 +352,20 @@ export function Pagamento() {
               if (!tripId) {
                 throw new Error('Abra o pagamento a partir do roteiro da viagem que deseja desbloquear.')
               }
-              await userService.activatePlanningDev(tripId)
+              await userService.activatePlanningAdmin(tripId)
               setSuccess(true)
               setTimeout(() => {
                 const base = tripId ? `/trips/${tripId}/itinerary` : '/'
                 navigate(`${base}${tripId ? '?unlocked=1' : ''}`, { replace: true })
               }, 1500)
             } catch (err) {
-              setError(err.response?.data?.error?.message || 'Não foi possível ativar a demonstração.')
+              setError(err.response?.data?.error?.message || 'Não foi possível ativar o planejamento.')
             } finally {
               setLoading(false)
             }
           }}
         >
-          Ativar demonstração (sem cobrança)
+          Liberar planejamento completo
         </Button>
       )}
 

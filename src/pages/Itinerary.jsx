@@ -17,6 +17,7 @@ import { ItineraryMobileMapDrawer } from '../components/itinerary/ItineraryMobil
 import { ItineraryDayChips } from '../components/itinerary/ItineraryDayChips'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
+import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { hasTripPlanningUnlocked, getTripDayCount } from '../utils/planningAccess'
 
@@ -202,6 +203,7 @@ export function Itinerary() {
   const { tripId } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const { isAdmin } = useAuth()
   const [trip, setTrip] = useState(null)
   const [itinerary, setItinerary] = useState(null)
   const [selectedDay, setSelectedDay] = useState(1)
@@ -320,10 +322,10 @@ export function Itinerary() {
     setSearchParams(next, { replace: true })
   }, [trip, searchParams, setSearchParams])
 
-  const handleDevUnlock = async () => {
+  const handleAdminUnlock = async () => {
     if (!tripId) return
     try {
-      const activated = await userService.activatePlanningDev(tripId)
+      const activated = await userService.activatePlanningAdmin(tripId)
       if (activated?.trip) {
         setTrip((prev) => (prev ? { ...prev, ...activated.trip } : activated.trip))
       }
@@ -333,7 +335,7 @@ export function Itinerary() {
         setSelectedDay(Number.isFinite(d) && d >= 1 ? d : data.activities[0].day)
       }
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Não foi possível ativar o plano de demonstração.')
+      setError(err.response?.data?.error?.message || 'Não foi possível ativar o planejamento.')
     }
   }
 
@@ -761,8 +763,8 @@ export function Itinerary() {
                 <ItineraryPremiumBanner
                   tripId={tripId}
                   restriction={premiumRestriction}
-                  showDevUnlock={import.meta.env.DEV}
-                  onDevUnlock={handleDevUnlock}
+                  showAdminUnlock={isAdmin}
+                  onAdminUnlock={handleAdminUnlock}
                 />
               ) : null}
               {isSelectedDayPremiumLockedUi ? (
