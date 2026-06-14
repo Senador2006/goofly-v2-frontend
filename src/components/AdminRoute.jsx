@@ -15,7 +15,7 @@ export function AdminRoute({ children }) {
   }
 
   if (!user || !isAdmin) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/dashboard" replace />
   }
 
   return children

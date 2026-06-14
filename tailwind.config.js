@@ -36,6 +36,8 @@ export default {
       },
       boxShadow: {
         primary: '0 10px 30px rgba(254, 198, 65, 0.4)',
+        'primary-glow': '0 2px 10px rgba(254, 198, 65, 0.14)',
+        'primary-glow-hover': '0 4px 14px rgba(254, 198, 65, 0.2)',
       },
     },
   },

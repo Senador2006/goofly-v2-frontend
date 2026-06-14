@@ -58,7 +58,7 @@ export function AdminDashboard() {
             </p>
           </div>
           <Link
-            to="/"
+            to="/dashboard"
             className="text-sm font-semibold text-primary hover:underline"
           >
             Voltar ao app

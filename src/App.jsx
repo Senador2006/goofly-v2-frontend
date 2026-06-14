@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import { Layout } from './components/layout/Layout'
@@ -13,6 +14,9 @@ import { NewTrip } from './pages/NewTrip'
 import { Pagamento } from './pages/Pagamento'
 import { AdminDashboard } from './pages/AdminDashboard'
 import { AdminRoute } from './components/AdminRoute'
+import { LoadingSpinner } from './components/common/LoadingSpinner'
+
+const Landing = lazy(() => import('./pages/Landing'))
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth()
@@ -33,14 +37,44 @@ function PublicRoute({ children }) {
   const { isAuthenticated, loading } = useAuth()
   if (loading) return null
   if (isAuthenticated) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/dashboard" replace />
   }
   return children
+}
+
+export function LandingOrRedirect() {
+  const { isAuthenticated, loading } = useAuth()
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <LoadingSpinner />
+      </div>
+    )
+  }
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />
+  }
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <LoadingSpinner />
+      </div>
+    }>
+      <Landing />
+    </Suspense>
+  )
+}
+
+export function CatchAllRedirect() {
+  const { isAuthenticated, loading } = useAuth()
+  if (loading) return null
+  return <Navigate to={isAuthenticated ? '/dashboard' : '/'} replace />
 }
 
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<LandingOrRedirect />} />
       <Route path="/login" element={
         <PublicRoute>
           <Login />
@@ -61,21 +95,21 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route path="/" element={
+      <Route element={
         <ProtectedRoute>
           <Layout />
         </ProtectedRoute>
       }>
-        <Route index element={<Dashboard />} />
-        <Route path="trips" element={<TripList />} />
-        <Route path="trips/new" element={<NewTrip />} />
-        <Route path="trips/:tripId/itinerary" element={<Itinerary />} />
-        <Route path="pagamento" element={<Pagamento />} />
-        <Route path="discover" element={<Discover />} />
-        <Route path="memories" element={<Memories />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/trips" element={<TripList />} />
+        <Route path="/trips/new" element={<NewTrip />} />
+        <Route path="/trips/:tripId/itinerary" element={<Itinerary />} />
+        <Route path="/pagamento" element={<Pagamento />} />
+        <Route path="/discover" element={<Discover />} />
+        <Route path="/memories" element={<Memories />} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<CatchAllRedirect />} />
     </Routes>
   )
 }

@@ -46,7 +46,7 @@ export function Register() {
 
     try {
       await register(name, email, password, captchaToken)
-      navigate('/')
+      navigate('/dashboard')
     } catch (err) {
       setCaptchaToken('')
       setCaptchaResetNonce((value) => value + 1)

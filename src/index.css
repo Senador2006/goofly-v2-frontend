@@ -44,6 +44,281 @@ body {
   background: rgba(17, 17, 17, 0.7);
 }
 
+/* Landing page — light-only, tipografia editorial */
+.landing-page {
+  --landing-yellow: #FEC107;
+  --landing-yellow-dark: #d4a00a;
+  --landing-yellow-hover: #FFD029;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color-scheme: light;
+  scroll-behavior: smooth;
+}
+
+/* Amarelo vivo da landing (#FEC107) — sobrescreve primary do app (#FEC641) */
+.landing-page .text-primary,
+.landing-page .hover\:text-primary:hover {
+  color: var(--landing-yellow) !important;
+}
+
+.landing-page .bg-primary,
+.landing-page .hover\:bg-primary:hover {
+  background-color: var(--landing-yellow) !important;
+}
+
+.landing-page .border-primary {
+  border-color: var(--landing-yellow) !important;
+}
+
+.landing-page .outline-primary {
+  outline-color: var(--landing-yellow) !important;
+}
+
+.landing-page .bg-primary\/10 {
+  background-color: rgb(254 193 7 / 0.1) !important;
+}
+
+.landing-page .bg-primary\/15 {
+  background-color: rgb(254 193 7 / 0.15) !important;
+}
+
+.landing-page .bg-primary\/20 {
+  background-color: rgb(254 193 7 / 0.2) !important;
+}
+
+.landing-page .border-primary\/25 {
+  border-color: rgb(254 193 7 / 0.25) !important;
+}
+
+.landing-page .border-primary\/30 {
+  border-color: rgb(254 193 7 / 0.3) !important;
+}
+
+.landing-page .border-primary\/40 {
+  border-color: rgb(254 193 7 / 0.4) !important;
+}
+
+.landing-page .hover\:border-primary\/25:hover {
+  border-color: rgb(254 193 7 / 0.25) !important;
+}
+
+.landing-page .hover\:border-primary\/40:hover {
+  border-color: rgb(254 193 7 / 0.4) !important;
+}
+
+/* Cards de benefícios — hover com borda amarela e lift */
+.landing-page .landing-benefit-card {
+  background: #1E1B17;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.5rem;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.landing-page .landing-benefit-card:hover {
+  background: #2C2820;
+  border-color: rgba(254, 193, 7, 0.35);
+  transform: translateY(-4px);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(254, 193, 7, 0.18);
+}
+
+.landing-page .landing-benefit-icon {
+  transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.landing-page .landing-benefit-card:hover .landing-benefit-icon {
+  border-color: rgba(254, 193, 7, 0.45);
+  background: rgba(254, 193, 7, 0.14);
+}
+
+.landing-page .font-display {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.landing-page .fade-up {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.landing-page .fade-up.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.landing-page [data-tour] {
+  scroll-margin-top: 5rem;
+}
+
+/* Botões da landing — espelham wanderlust-planner-pro (rounded-xl, glow leve) */
+.landing-page .landing-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.landing-page .landing-btn-hero-primary {
+  padding: 0.875rem 2rem;
+  border-radius: 9999px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111111;
+  background: var(--landing-yellow);
+  border: 2px solid var(--landing-yellow-dark);
+  box-shadow: 0 4px 16px rgba(254, 193, 7, 0.28);
+}
+
+.landing-page .landing-btn-hero-primary:hover {
+  background: var(--landing-yellow-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(254, 193, 7, 0.34);
+}
+
+.landing-page .landing-btn-hero-secondary {
+  padding: 0.875rem 2rem;
+  border-radius: 9999px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+}
+
+.landing-page .landing-btn-hero-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #ffffff;
+}
+
+.landing-page .landing-btn-nav-secondary {
+  padding: 0.5rem 1.25rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #111111;
+  background: transparent;
+  border: 1.5px solid rgba(17, 17, 17, 0.2);
+}
+
+.landing-page .landing-btn-nav-secondary:hover {
+  border-color: #111111;
+  background: #F5F2ED;
+}
+
+.landing-page .landing-btn-nav-primary {
+  padding: 0.625rem 1.25rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #111111;
+  background: var(--landing-yellow);
+  border: 2px solid var(--landing-yellow-dark);
+  box-shadow: 0 2px 8px rgba(254, 193, 7, 0.25);
+  gap: 0.375rem;
+}
+
+.landing-page .landing-btn-nav-primary .material-icons-outlined {
+  font-size: 1.375rem;
+  line-height: 1;
+}
+
+.landing-page .landing-btn-nav-primary:hover {
+  background: var(--landing-yellow-dark);
+  color: #FFFDF7;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(212, 160, 10, 0.32);
+}
+
+.landing-page .landing-btn-card-primary {
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #111111;
+  background: var(--landing-yellow);
+  border: 2px solid var(--landing-yellow-dark);
+  box-shadow: 0 2px 8px rgba(254, 193, 7, 0.25);
+}
+
+.landing-page .landing-btn-card-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(212, 160, 10, 0.28);
+}
+
+.goofly-tour-popover.driver-popover {
+  background-color: #111111;
+  color: #ffffff;
+  border: 2px solid #FEC107;
+  border-radius: 1.5rem;
+  box-shadow: 0 20px 60px rgba(17, 17, 17, 0.22);
+  max-width: min(360px, calc(100vw - 2rem));
+}
+
+.goofly-tour-popover .driver-popover-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.25;
+}
+
+.goofly-tour-popover .driver-popover-description {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.goofly-tour-popover .driver-popover-description strong {
+  color: #FEC107;
+  font-weight: 600;
+}
+
+.goofly-tour-popover .driver-popover-progress-text {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #FEC107;
+}
+
+.goofly-tour-popover .driver-popover-prev-btn,
+.goofly-tour-popover .driver-popover-next-btn {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border-radius: 0.625rem;
+  padding: 0.5rem 1rem;
+  text-shadow: none;
+}
+
+.goofly-tour-popover .driver-popover-prev-btn {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+}
+
+.goofly-tour-popover .driver-popover-next-btn {
+  background: #FEC107;
+  color: #111111;
+  border: 2px solid #d4a00a;
+}
+
+.goofly-tour-popover .driver-popover-close-btn {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.goofly-tour-popover .driver-popover-close-btn:hover {
+  color: #ffffff;
+}
+
+body.site-tour-active .guide-button-fab {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Place Autocomplete (Places API novo) — integrado aos inputs Nova Viagem (sem overflow clipping no dropdown).
  * O widget pode seguir `prefers-color-scheme` mesmo com UI clara — força `color-scheme` nos dois modos Goofly. */
 .planning-google-place-ac-frame {

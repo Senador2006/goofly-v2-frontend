@@ -20,7 +20,7 @@ export function Login() {
     setLoading(true)
     try {
       await login(email, password)
-      navigate('/')
+      navigate('/dashboard')
     } catch (err) {
       const errData = err.response?.data?.error
       const message = typeof errData === 'object' && errData?.message

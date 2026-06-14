@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 
 const navItems = [
-  { to: '/', icon: 'dashboard', label: 'Início' },
+  { to: '/dashboard', icon: 'dashboard', label: 'Início' },
   { to: '/trips', icon: 'luggage', label: 'Viagens' },
   { to: '/discover', icon: 'explore', label: 'Descobrir' },
   { to: '/memories', icon: 'photo_library', label: 'Memórias' },
