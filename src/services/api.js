@@ -210,7 +210,9 @@ function attachAuthRetry(client) {
         original.headers.Authorization = `Bearer ${newToken}`
         return client.request(original)
       } catch (refreshErr) {
-        hardLogout()
+        if (refreshErr.response?.status !== 429) {
+          hardLogout()
+        }
         return Promise.reject(refreshErr)
       }
     }
