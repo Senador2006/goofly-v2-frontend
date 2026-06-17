@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { AuthPageLayout, AUTH_INPUT_CLASS } from '../components/auth/AuthPageLayout'
 import { TurnstileWidget } from '../components/auth/TurnstileWidget'
-import { GooflyLogo } from '../components/branding/GooflyLogo'
 import { Button } from '../components/common/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
@@ -63,76 +63,65 @@ export function Register() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-foreground flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="flex flex-col items-start gap-3 mb-10 w-full -ml-3">
-          <GooflyLogo heightClass="h-16 sm:h-20" className="max-w-[min(100%,22rem)] -translate-x-2" />
-          <p className="text-xs text-text-secondary uppercase tracking-widest text-left">
-            Travel Planner
-          </p>
+    <AuthPageLayout
+      title="Criar conta"
+      error={error}
+      footer={
+        <p className="mt-6 text-center text-sm text-text-secondary">
+          Ja tem conta?{' '}
+          <Link to="/login" className="text-primary font-bold hover:underline">
+            Entrar
+          </Link>
+        </p>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-bold mb-2 text-text-secondary">Nome completo</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className={AUTH_INPUT_CLASS}
+            placeholder="Seu nome"
+          />
         </div>
-        <div className="bg-white rounded-2xl p-8 shadow-lg border border-border-light">
-          <h2 className="text-2xl font-black mb-6">Criar conta</h2>
-          {error && (
-            <div className="mb-4 p-3 bg-red-500/10 text-red-600 rounded-xl text-sm">
-              {error}
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-bold mb-2 text-text-secondary">Nome completo</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="w-full bg-surface-light border border-border-light rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
-                placeholder="Seu nome"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold mb-2 text-text-secondary">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full bg-surface-light border border-border-light rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
-                placeholder="seu@email.com"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold mb-2 text-text-secondary">Senha (min. 8 caracteres)</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={8}
-                className="w-full bg-surface-light border border-border-light rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:outline-none"
-                placeholder="********"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold mb-2 text-text-secondary">Verificacao de seguranca</label>
-              <TurnstileWidget
-                siteKey={turnstileSiteKey}
-                onTokenChange={handleCaptchaTokenChange}
-                resetNonce={captchaResetNonce}
-              />
-            </div>
-            <Button type="submit" className="w-full justify-center" disabled={loading || !captchaToken}>
-              {loading ? 'Criando conta...' : 'Cadastrar'}
-            </Button>
-          </form>
-          <p className="mt-6 text-center text-sm text-text-secondary">
-            Ja tem conta?{' '}
-            <Link to="/login" className="text-primary font-bold hover:underline">
-              Entrar
-            </Link>
-          </p>
+        <div>
+          <label className="block text-sm font-bold mb-2 text-text-secondary">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className={AUTH_INPUT_CLASS}
+            placeholder="seu@email.com"
+          />
         </div>
-      </div>
-    </div>
+        <div>
+          <label className="block text-sm font-bold mb-2 text-text-secondary">Senha (min. 8 caracteres)</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            className={AUTH_INPUT_CLASS}
+            placeholder="********"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-bold mb-2 text-text-secondary">Verificacao de seguranca</label>
+          <TurnstileWidget
+            siteKey={turnstileSiteKey}
+            onTokenChange={handleCaptchaTokenChange}
+            resetNonce={captchaResetNonce}
+          />
+        </div>
+        <Button type="submit" className="w-full justify-center" disabled={loading || !captchaToken}>
+          {loading ? 'Criando conta...' : 'Cadastrar'}
+        </Button>
+      </form>
+    </AuthPageLayout>
   )
 }
