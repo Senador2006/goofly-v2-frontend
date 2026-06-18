@@ -78,7 +78,7 @@ export function Memories() {
   return (
     <div className="flex flex-col min-h-[calc(100vh-2rem)]">
       <Header title="Memórias & Mapa" subtitle="Seu diário de viagens" />
-      <div className="flex flex-col lg:flex-row flex-1 gap-6 overflow-hidden">
+      <div className="flex flex-col lg:flex-row flex-1 gap-6 lg:overflow-hidden">
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex gap-4 mb-4 overflow-x-auto no-scrollbar">
             {stats.map((s) => (
@@ -109,7 +109,7 @@ export function Memories() {
           </div>
           <MemoryMap
             points={memoryMap?.points || []}
-            className="flex-1 min-h-[300px]"
+            className="min-h-[280px] max-h-[45vh] mb-4 lg:flex-1 lg:max-h-none lg:mb-0"
             ariaLabel="Mapa Mundi com pontos das suas memórias"
           />
           {memoryMap?.points && memoryMap.points.length > 0 && (

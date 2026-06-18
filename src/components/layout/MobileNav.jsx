@@ -6,7 +6,7 @@ export function MobileNav({ className = '' }) {
   return (
     <nav
       aria-label="Navegação principal"
-      className={`lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-card-dark border-t border-border-light dark:border-border-dark px-1 py-2 flex justify-around safe-area-pb z-50 ${className}`.trim()}
+      className={`lg:hidden fixed bottom-0 left-0 right-0 z-[1100] bg-white dark:bg-card-dark border-t border-border-light dark:border-border-dark px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex justify-around ${className}`.trim()}
     >
       {MOBILE_NAV_ITEMS.map(({ to, icon, label }) => (
         <NavLink
