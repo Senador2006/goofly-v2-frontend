@@ -1,11 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
+import { EmptyState } from '../components/common/EmptyState'
+import { LoadingSpinner } from '../components/common/LoadingSpinner'
+import { TripSelector } from '../components/trips/TripSelector'
 import { useAuth } from '../context/AuthContext'
 import { userService } from '../services/userService'
 import { paymentService } from '../services/paymentService'
 import { tripService } from '../services/tripService'
+import { hasTripPlanningUnlocked } from '../utils/planningAccess'
 import { createLogger } from '../utils/logger'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
@@ -54,24 +58,21 @@ function formatBRL(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value))
 }
 
+function normalizeTripId(raw) {
+  const trimmed = raw?.trim()
+  return trimmed || null
+}
+
 export function Pagamento() {
   useDocumentTitle('Planejamento Completo')
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const tripId = searchParams.get('tripId')
-  const { user, refreshUser, applyUserUpdate, isAdmin } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tripId = normalizeTripId(searchParams.get('tripId'))
+  const { user, isAdmin } = useAuth()
 
-  const syncPlanningAccess = async (activationPayload) => {
-    const patch = activationPayload?.user || activationPayload
-    if (patch?.subscription_type) {
-      applyUserUpdate({
-        subscription_type: patch.subscription_type,
-        subscription_expires_at: patch.subscription_expires_at ?? null,
-      })
-    }
-    const fresh = await refreshUser().catch(() => null)
-    return fresh || patch
-  }
+  const [trips, setTrips] = useState([])
+  const [tripsLoading, setTripsLoading] = useState(true)
+  const [tripsError, setTripsError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -81,13 +82,56 @@ export function Pagamento() {
   const brickControllerRef = useRef(null)
   const isMountedRef = useRef(false)
 
+  const selectedTrip = useMemo(
+    () => trips.find((t) => String(t.id) === String(tripId)) ?? null,
+    [trips, tripId]
+  )
+  const isSelectedUnlocked = hasTripPlanningUnlocked(selectedTrip)
+
+  const unlockedTripIds = useMemo(() => {
+    const ids = new Set()
+    for (const trip of trips) {
+      if (hasTripPlanningUnlocked(trip)) ids.add(String(trip.id))
+    }
+    return ids
+  }, [trips])
+
   const planningAmount =
     priceQuote?.amountBrl != null ? Number(priceQuote.amountBrl) : null
 
   useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setTripsLoading(true)
+      setTripsError(null)
+      try {
+        const data = await tripService.getTrips()
+        if (!cancelled && isMountedRef.current) {
+          setTrips(Array.isArray(data) ? data : [])
+        }
+      } catch (err) {
+        logger.error('Carregar viagens:', err)
+        if (!cancelled && isMountedRef.current) {
+          setTripsError(err.response?.data?.error?.message || 'Erro ao carregar suas viagens')
+        }
+      } finally {
+        if (!cancelled && isMountedRef.current) setTripsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    setShowBrick(false)
+    setError(null)
+    setPriceQuote(null)
+  }, [tripId])
+
+  useEffect(() => {
     if (!tripId) {
       setPriceLoading(false)
-      setPriceQuote(null)
       return
     }
 
@@ -104,7 +148,7 @@ export function Pagamento() {
         if (!cancelled && isMountedRef.current) {
           setError(
             err.response?.data?.error?.message ||
-              'Não foi possível calcular o preço desta viagem. Confira seu login e volte pelo roteiro.'
+              'Não foi possível calcular o preço desta viagem. Selecione outra viagem ou confira se ela pertence à sua conta.'
           )
         }
       } finally {
@@ -123,6 +167,10 @@ export function Pagamento() {
       isMountedRef.current = false
     }
   }, [])
+
+  const handleTripSelect = (id) => {
+    setSearchParams({ tripId: id }, { replace: true })
+  }
 
   useEffect(() => {
     if (!showBrick) return
@@ -191,9 +239,8 @@ export function Pagamento() {
                   throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
                 }
 
-                // O backend já ativa o plano no pagamento aprovado; reforça com checkout-complete.
                 if (!tripId) {
-                  throw new Error('Volte ao roteiro e use o botão de desbloqueio para abrir o pagamento desta viagem.')
+                  throw new Error('Selecione a viagem que deseja desbloquear antes de concluir o pagamento.')
                 }
 
                 await userService.completeCheckout({ tripId })
@@ -201,8 +248,7 @@ export function Pagamento() {
                 if (!isMountedRef.current) return
                 setSuccess(true)
                 setTimeout(() => {
-                  const base = tripId ? `/trips/${tripId}/itinerary` : '/'
-                  navigate(`${base}${tripId ? '?unlocked=1' : ''}`, { replace: true })
+                  navigate(`/trips/${tripId}/itinerary?unlocked=1`, { replace: true })
                 }, 1200)
               } catch (err) {
                 if (!isMountedRef.current) return
@@ -237,7 +283,7 @@ export function Pagamento() {
       }
       brickControllerRef.current = null
     }
-  }, [showBrick, navigate, refreshUser, tripId, user?.email, planningAmount])
+  }, [showBrick, navigate, tripId, user?.email, planningAmount])
 
   if (success) {
     return (
@@ -252,6 +298,37 @@ export function Pagamento() {
       </div>
     )
   }
+
+  if (tripsLoading) {
+    return <LoadingSpinner />
+  }
+
+  if (tripsError) {
+    return (
+      <div className="max-w-lg mx-auto p-6">
+        <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl">{tripsError}</div>
+      </div>
+    )
+  }
+
+  if (trips.length === 0) {
+    return (
+      <div className="max-w-lg mx-auto p-6">
+        <EmptyState
+          icon="luggage"
+          title="Nenhuma viagem cadastrada"
+          description="Crie uma viagem para desbloquear o planejamento completo com roteiro integral e assistente de documentos."
+          action={
+            <Link to="/trips/new">
+              <Button className="rounded-full font-bold">Criar viagem</Button>
+            </Link>
+          }
+        />
+      </div>
+    )
+  }
+
+  const canPay = Boolean(tripId) && !isSelectedUnlocked && planningAmount != null && !priceLoading
 
   return (
     <div className="max-w-lg mx-auto p-6">
@@ -269,9 +346,35 @@ export function Pagamento() {
         </p>
       )}
 
-      {!tripId && (
+      <div className="mb-6">
+        <p className="text-sm font-medium text-foreground dark:text-white mb-2">
+          Selecione a viagem que deseja desbloquear
+        </p>
+        {!tripId && (
+          <p className="text-xs text-text-secondary mb-3">
+            O valor depende do destino (nacional ou internacional). Escolha a viagem abaixo para ver o preço correto.
+          </p>
+        )}
+        <TripSelector
+          trips={trips}
+          selectedId={tripId}
+          onChange={handleTripSelect}
+          disabledIds={unlockedTripIds}
+        />
+      </div>
+
+      {tripId && isSelectedUnlocked && (
+        <div className="mb-6 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-800 dark:text-emerald-200">
+          Esta viagem já possui planejamento completo desbloqueado.{' '}
+          <Link to={`/trips/${tripId}/itinerary`} className="font-semibold underline">
+            Ver roteiro
+          </Link>
+        </div>
+      )}
+
+      {tripId && !selectedTrip && !priceLoading && (
         <div className="mb-6 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-800 dark:text-amber-200">
-          Abra esta página pelo roteiro da viagem (botão de desbloquear) para vincular o pagamento ao preço nacional ou internacional correto.
+          A viagem informada na URL não foi encontrada. Selecione uma viagem válida abaixo.
         </div>
       )}
 
@@ -299,7 +402,11 @@ export function Pagamento() {
             Válido para este planejamento
           </li>
         </ul>
-        {priceLoading && tripId ? (
+        {!tripId ? (
+          <p className="text-sm text-text-secondary">Selecione uma viagem acima para ver o valor.</p>
+        ) : isSelectedUnlocked ? (
+          <p className="text-sm text-text-secondary">Planejamento já desbloqueado para esta viagem.</p>
+        ) : priceLoading ? (
           <p className="text-sm text-text-secondary">Calculando valor da viagem...</p>
         ) : planningAmount != null ? (
           <>
@@ -318,7 +425,9 @@ export function Pagamento() {
             </p>
           </>
         ) : (
-          <p className="text-sm text-text-secondary">Valor indisponível — recarregue ou volte pelo roteiro da viagem.</p>
+          <p className="text-sm text-text-secondary">
+            Valor indisponível — selecione outra viagem ou tente novamente.
+          </p>
         )}
       </div>
 
@@ -332,7 +441,7 @@ export function Pagamento() {
         <Button
           className="w-full rounded-full py-4 font-bold"
           onClick={() => setShowBrick(true)}
-          disabled={loading || priceLoading || !tripId || planningAmount == null}
+          disabled={loading || !canPay}
         >
           Pagar agora
         </Button>
@@ -344,19 +453,18 @@ export function Pagamento() {
         <Button
           variant="secondary"
           className="w-full mt-4"
-          disabled={loading}
+          disabled={loading || !tripId || isSelectedUnlocked}
           onClick={async () => {
             setLoading(true)
             setError(null)
             try {
               if (!tripId) {
-                throw new Error('Abra o pagamento a partir do roteiro da viagem que deseja desbloquear.')
+                throw new Error('Selecione a viagem que deseja desbloquear.')
               }
               await userService.activatePlanningAdmin(tripId)
               setSuccess(true)
               setTimeout(() => {
-                const base = tripId ? `/trips/${tripId}/itinerary` : '/'
-                navigate(`${base}${tripId ? '?unlocked=1' : ''}`, { replace: true })
+                navigate(`/trips/${tripId}/itinerary?unlocked=1`, { replace: true })
               }, 1500)
             } catch (err) {
               setError(err.response?.data?.error?.message || 'Não foi possível ativar o planejamento.')
