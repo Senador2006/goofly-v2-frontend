@@ -69,16 +69,20 @@ describe('Fase 1 — Rotas e redirects', () => {
     assert.match(read('src/pages/Register.jsx'), /navigate\(['"]\/dashboard['"]\)/)
   })
 
-  it('Sidebar aponta Dashboard para /dashboard', () => {
-    const sidebar = read('src/components/layout/Sidebar.jsx')
-    assert.match(sidebar, /to: '\/dashboard'/)
-    assert.doesNotMatch(sidebar, /to: '\/', icon: 'dashboard'/)
-  })
-
-  it('MobileNav aponta Início para /dashboard', () => {
-    const nav = read('src/components/layout/MobileNav.jsx')
+  it('Sidebar aponta Início para /dashboard', () => {
+    const nav = read('src/config/navigation.js')
     assert.match(nav, /to: '\/dashboard'/)
     assert.doesNotMatch(nav, /to: '\/', icon: 'dashboard'/)
+    assert.match(read('src/components/layout/Sidebar.jsx'), /PRIMARY_NAV_ITEMS/)
+  })
+
+  it('MobileNav aponta Início para /dashboard e expõe Perfil em /settings', () => {
+    const nav = read('src/config/navigation.js')
+    assert.match(nav, /to: '\/dashboard'/)
+    assert.doesNotMatch(nav, /to: '\/', icon: 'dashboard'/)
+    assert.match(nav, /to: '\/settings'/)
+    assert.match(nav, /label: 'Perfil'/)
+    assert.match(read('src/components/layout/MobileNav.jsx'), /MOBILE_NAV_ITEMS/)
   })
 
   it('AdminRoute redireciona não-admin para /dashboard', () => {

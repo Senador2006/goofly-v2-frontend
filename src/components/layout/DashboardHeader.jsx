@@ -1,5 +1,8 @@
+import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { Icon } from '../common/Icon'
+import { UserAvatar } from '../common/UserAvatar'
 
 function formatLocaleDate() {
   return new Date().toLocaleDateString('pt-BR', {
@@ -10,7 +13,11 @@ function formatLocaleDate() {
 }
 
 export function DashboardHeader() {
+  const { user } = useAuth()
   const { isDark, toggleTheme } = useTheme()
+  const profileLabel = user?.name?.trim()
+    ? `Perfil de ${user.name.trim()}`
+    : 'Perfil e configurações'
 
   return (
     <header className="flex items-center justify-between gap-4 mb-8">
@@ -29,6 +36,14 @@ export function DashboardHeader() {
           <Icon name="notifications" />
           <span className="absolute top-2 right-2 size-2 bg-red-500 rounded-full" />
         </button>
+        <Link
+          to="/settings"
+          className="rounded-full hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+          aria-label={profileLabel}
+          title={profileLabel}
+        >
+          <UserAvatar user={user} size="sm" />
+        </Link>
       </div>
     </header>
   )

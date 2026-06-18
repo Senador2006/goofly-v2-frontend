@@ -1,14 +1,9 @@
 import { NavLink, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Icon } from '../common/Icon'
+import { UserAvatar } from '../common/UserAvatar'
 import { GooflyLogo } from '../branding/GooflyLogo'
-
-const navItems = [
-  { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  { to: '/discover', icon: 'explore', label: 'Descobrir' },
-  { to: '/trips', icon: 'luggage', label: 'Minhas Viagens' },
-  { to: '/memories', icon: 'photo_library', label: 'Memórias' },
-]
+import { PRIMARY_NAV_ITEMS } from '../../config/navigation'
 
 export function Sidebar({ className = '' }) {
   const { user } = useAuth()
@@ -18,8 +13,8 @@ export function Sidebar({ className = '' }) {
       <Link to="/dashboard" className="flex items-center justify-start self-start mb-10 shrink-0 -ml-3">
         <GooflyLogo heightClass="h-14 md:h-16" className="max-w-[min(100%,17rem)]" />
       </Link>
-      <nav className="flex flex-col gap-1 flex-grow">
-        {navItems.map(({ to, icon, label }) => (
+      <nav className="flex flex-col gap-1 flex-grow" aria-label="Navegação principal">
+        {PRIMARY_NAV_ITEMS.map(({ to, icon, label }) => (
           <NavLink
             key={to}
             to={to}
@@ -39,21 +34,19 @@ export function Sidebar({ className = '' }) {
       <div className="pt-6 border-t border-border-light dark:border-border-dark space-y-4">
         <NavLink
           to="/settings"
-          className="flex items-center gap-3 px-4 py-2 rounded-xl text-foreground/70 dark:text-white/70 hover:bg-surface-light dark:hover:bg-surface-dark"
+          className={({ isActive }) =>
+            `flex items-center gap-3 px-4 py-2 rounded-xl transition-colors ${
+              isActive
+                ? 'bg-primary/20 text-foreground dark:text-white font-semibold'
+                : 'text-foreground/70 dark:text-white/70 hover:bg-surface-light dark:hover:bg-surface-dark'
+            }`
+          }
         >
           <Icon name="settings" />
           <span className="text-sm font-medium">Configurações</span>
         </NavLink>
         <div className="flex items-center gap-3 px-2">
-          <div className="size-10 rounded-full bg-primary flex items-center justify-center overflow-hidden border-2 border-primary shrink-0">
-            {user?.avatar ? (
-              <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-foreground font-bold text-sm">
-                {(user?.name || 'U')[0]}
-              </span>
-            )}
-          </div>
+          <UserAvatar user={user} size="sm" />
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate">{user?.name || 'Viajante'}</p>
             <p className="text-xs text-text-secondary font-medium">Explorer</p>
