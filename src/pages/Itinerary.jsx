@@ -857,7 +857,7 @@ export function Itinerary() {
                             </span>
                             <Link
                               to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}
-                              className="shrink-0 rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-[#1c1c0d] hover:opacity-90 hover:shadow-primary px-5 min-h-[2.25rem] text-sm"
+                              className="shrink-0 rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-[#1c1c0d] shadow-primary-glow dark:shadow-primary-glow-dark hover:opacity-90 hover:shadow-primary-glow-hover dark:hover:shadow-primary-glow-hover-dark px-5 min-h-[2.25rem] text-sm"
                             >
                               Ver roteiro completo
                             </Link>

@@ -88,7 +88,7 @@ export function DocumentosView({
           {tripId ? (
             <Link
               to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}
-              className="w-full rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-foreground hover:opacity-90 hover:shadow-primary px-8 py-4 text-base"
+              className="w-full rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-foreground shadow-primary-glow dark:shadow-primary-glow-dark hover:opacity-90 hover:shadow-primary-glow-hover dark:hover:shadow-primary-glow-hover-dark px-8 py-4 text-base"
             >
               <Icon name="workspace_premium" />
               Adquirir Planejamento Completo
@@ -96,7 +96,7 @@ export function DocumentosView({
           ) : (
             <Link
               to="/pagamento"
-              className="w-full rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-foreground hover:opacity-90 hover:shadow-primary px-8 py-4 text-base"
+              className="w-full rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-foreground shadow-primary-glow dark:shadow-primary-glow-dark hover:opacity-90 hover:shadow-primary-glow-hover dark:hover:shadow-primary-glow-hover-dark px-8 py-4 text-base"
             >
               <Icon name="workspace_premium" />
               Adquirir Planejamento Completo
