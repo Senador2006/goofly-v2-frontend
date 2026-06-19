@@ -648,7 +648,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                   <button
                     type="button"
                     onClick={handleLike}
-                    className="flex size-[3.625rem] shrink-0 items-center justify-center rounded-full bg-primary text-foreground shadow-primary ring-2 ring-primary/30 active:scale-95 motion-safe:transition-transform sm:size-16"
+                    className="flex size-[3.625rem] shrink-0 items-center justify-center rounded-full bg-primary text-foreground shadow-primary-glow dark:shadow-primary-glow-dark ring-2 ring-primary/15 active:scale-95 motion-safe:transition-transform sm:size-16"
                     aria-label="Curtir"
                   >
                     <Icon name="favorite" className="text-3xl sm:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />

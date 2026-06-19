@@ -3,7 +3,7 @@ export function Button({ children, variant = 'primary', size = 'md', className =
     'rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2'
   const variants = {
     primary:
-      'bg-primary text-foreground hover:opacity-90 hover:shadow-primary focus-visible:ring-primary/50 focus-visible:ring-offset-background-light dark:focus-visible:ring-offset-background-dark',
+      'bg-primary text-foreground shadow-primary-glow dark:shadow-primary-glow-dark hover:opacity-90 hover:shadow-primary-glow-hover dark:hover:shadow-primary-glow-hover-dark focus-visible:ring-primary/50 focus-visible:ring-offset-background-light dark:focus-visible:ring-offset-background-dark',
     secondary:
       'bg-surface-light dark:bg-surface-dark text-foreground dark:text-white hover:bg-opacity-80 focus-visible:ring-foreground/20',
     inverse:

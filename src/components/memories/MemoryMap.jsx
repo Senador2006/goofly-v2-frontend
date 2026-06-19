@@ -84,7 +84,7 @@ export function MemoryMap({ points = [], className = '', ariaLabel = 'Mapa de me
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border-4 border-border-light dark:border-border-dark shadow-2xl ${className}`}
+      className={`relative isolate z-0 overflow-hidden rounded-xl border-4 border-border-light dark:border-border-dark shadow-2xl ${className}`}
       role="region"
       aria-label={ariaLabel}
     >

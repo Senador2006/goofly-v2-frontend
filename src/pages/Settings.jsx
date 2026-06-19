@@ -70,15 +70,12 @@ export function Settings() {
         {isAdmin ? <AdminSettingsSection /> : null}
         <div className="bg-white dark:bg-card-dark rounded-xl p-6 border border-border-light dark:border-border-dark">
           <h3 className="text-lg font-bold mb-4">Perfil</h3>
-          <div className="flex items-center gap-4 mb-6">
-            <div className="size-20 rounded-full bg-primary flex items-center justify-center text-2xl font-black text-foreground">
-              {user?.name?.[0] || 'U'}
-            </div>
-            <div>
+          {!editing ? (
+            <div className="mb-6 space-y-1">
               <p className="font-bold text-lg">{user?.name || 'Usuário'}</p>
               <p className="text-text-secondary text-sm">{user?.email || 'email@exemplo.com'}</p>
             </div>
-          </div>
+          ) : null}
           {editing ? (
             <form onSubmit={saveProfile} className="space-y-4">
               {error && (
