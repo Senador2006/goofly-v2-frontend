@@ -5,6 +5,8 @@ import { ensurePlacesLibrary } from '../../services/googleMapsPlacesLoader'
  * @typedef {{
  *   city?: string,
  *   country?: string,
+ *   name?: string,
+ *   formattedAddress?: string,
  *   coordinates?: { latitude: number, longitude: number },
  * }} PlaceResolvedPatch
  */
@@ -79,6 +81,8 @@ function coordinatesFromPlace(place) {
  *   onDraftChange?: (text: string) => void,
  *   onResolved: (patch: PlaceResolvedPatch) => void,
  *   includedRegionCodes?: string[],
+ *   resultKind?: 'city' | 'place',
+ *   className?: string,
  * }} props
  */
 export function GooglePlaceAutocompleteField({
@@ -89,14 +93,16 @@ export function GooglePlaceAutocompleteField({
   onDraftChange,
   onResolved,
   includedRegionCodes,
+  resultKind = 'city',
+  className = 'planning-google-place-ac-frame relative z-[42] w-full min-h-[3.125rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-transparent',
 }) {
   const wrapRef = useRef(/** @type {HTMLDivElement | null} */ (null))
   const acRef = useRef(/** @type {google.maps.places.PlaceAutocompleteElement | null} */ (null))
   const syncingRef = useRef(false)
   const onResolvedRef = useRef(onResolved)
   const onDraftRef = useRef(onDraftChange)
-  const latestPropsRef = useRef({ value, placeholder, disabled, includedRegionCodes })
-  latestPropsRef.current = { value, placeholder, disabled, includedRegionCodes }
+  const latestPropsRef = useRef({ value, placeholder, disabled, includedRegionCodes, resultKind })
+  latestPropsRef.current = { value, placeholder, disabled, includedRegionCodes, resultKind }
 
   useEffect(() => {
     onResolvedRef.current = onResolved
@@ -127,15 +133,20 @@ export function GooglePlaceAutocompleteField({
         /** @type {PlaceResolvedPatch} */
         const patch = {}
         const { city, country } = cityCountryFromPlace(place)
+        const displayName = String(place.displayName ?? '').trim()
+        const formattedAddress = String(place.formattedAddress ?? '').trim()
         if (city) patch.city = city
         if (country) patch.country = country
+        if (displayName) patch.name = displayName
+        if (formattedAddress) patch.formattedAddress = formattedAddress
         const coords = coordinatesFromPlace(place)
         if (coords) patch.coordinates = coords
 
         onResolvedRef.current?.(patch)
 
         syncingRef.current = true
-        const composed = city || ''
+        const kind = latestPropsRef.current.resultKind
+        const composed = kind === 'place' ? displayName || city || '' : city || ''
         if (composed && ac) ac.value = composed
         requestAnimationFrame(() => {
           syncingRef.current = false
@@ -230,10 +241,5 @@ export function GooglePlaceAutocompleteField({
     })
   }, [value])
 
-  return (
-    <div
-      ref={wrapRef}
-      className="planning-google-place-ac-frame relative z-[42] w-full min-h-[3.125rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-transparent"
-    />
-  )
+  return <div ref={wrapRef} className={className} />
 }
