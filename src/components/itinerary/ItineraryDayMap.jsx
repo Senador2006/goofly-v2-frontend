@@ -24,10 +24,19 @@ function cacheKey(tripId, day) {
   return `${tripId}:${day}`
 }
 
-/** Assinatura estável das atividades visíveis no dia (invalida cache se ids mudarem). */
+/**
+ * Assinatura estável das atividades visíveis no dia. Inclui id E coordenadas
+ * para que a rota seja recalculada quando uma parada é geocodificada (nova) ou
+ * renomeada (coordenada muda) — não só quando os ids mudam.
+ */
 function activitiesCacheSignature(activities) {
   return (activities || [])
-    .map((a) => String(a?.id ?? a?.placeId ?? a?.place_id ?? ''))
+    .map((a) => {
+      const id = String(a?.id ?? a?.placeId ?? a?.place_id ?? '')
+      const c = readLatLng(a)
+      const coord = c ? `${c[0].toFixed(5)},${c[1].toFixed(5)}` : 'nocoord'
+      return `${id}@${coord}`
+    })
     .join('|')
 }
 
