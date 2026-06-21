@@ -4,6 +4,8 @@ import {
   googleMapsPlaceUrl,
   resolveActivityCoordinates,
 } from '../../utils/activityCoordinates'
+import { GooglePlaceAutocompleteField } from '../planning/GooglePlaceAutocompleteField'
+import { hasGoogleMapsApiKey } from '../../services/googleMapsPlacesLoader'
 
 function minutesBetweenStarts(startStr, endStr) {
   if (!startStr || !endStr) return null
@@ -358,18 +360,48 @@ function CardEditFields({
 
       <label className="flex flex-col gap-1.5">
         <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Título</span>
-        <input
-          type="text"
-          className="w-full rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-3 py-2.5 text-sm font-bold text-[#1c1c0d] dark:text-white"
-          value={title}
-          onChange={(e) =>
-            onDraftPatch({
-              title: e.target.value,
-              name: e.target.value,
-              placeName: e.target.value,
-            })
-          }
-        />
+        {hasGoogleMapsApiKey() ? (
+          <>
+            <GooglePlaceAutocompleteField
+              id={`activity-title-ac-${draft.id ?? index}`}
+              resultKind="place"
+              value={title}
+              disabled={false}
+              placeholder="Busque um lugar (ex.: Torre Eiffel)…"
+              className="itinerary-activity-ac-frame relative z-[30] w-full min-h-[2.75rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910]"
+              onDraftChange={(text) =>
+                onDraftPatch({ title: text, name: text, placeName: text })
+              }
+              onResolved={(patch) => {
+                const next = {}
+                const resolvedName = patch.name || patch.city
+                if (resolvedName) {
+                  next.title = resolvedName
+                  next.name = resolvedName
+                  next.placeName = resolvedName
+                }
+                if (patch.coordinates) next.coordinates = patch.coordinates
+                if (Object.keys(next).length > 0) onDraftPatch(next)
+              }}
+            />
+            <span className="text-[10px] text-text-secondary/80">
+              Escolha uma sugestão do Google para fixar o local exato no mapa.
+            </span>
+          </>
+        ) : (
+          <input
+            type="text"
+            className="w-full rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-3 py-2.5 text-sm font-bold text-[#1c1c0d] dark:text-white"
+            value={title}
+            onChange={(e) =>
+              onDraftPatch({
+                title: e.target.value,
+                name: e.target.value,
+                placeName: e.target.value,
+              })
+            }
+          />
+        )}
       </label>
 
       <label className="flex flex-col gap-1.5">
