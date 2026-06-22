@@ -48,6 +48,6 @@ export const offers = [
     detail: 'Dez – mar · 4 a 6 dias',
     price: '\n',
     badge: 'Praias & natureza',
-    img: u('photo-1483729558449-99ef09a8c325'),
+    img: u('photo-1663001899005-a76fd718e2bf'),
   },
 ]
