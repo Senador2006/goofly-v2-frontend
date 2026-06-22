@@ -5,12 +5,13 @@
  */
 
 import { Icon } from '../common/Icon'
+import { ItineraryStopMarker } from './ItineraryStopMarker'
 
 export function ItineraryPremiumNextPeek({ hiddenCount }) {
   const extras = Math.max(1, Math.floor(Number(hiddenCount) || 1))
   return (
-    <div className="relative pl-8 pb-0 pointer-events-none select-none" aria-hidden="true">
-      <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary/55 border-4 border-white dark:border-card-dark ring-2 ring-primary/50 z-10" />
+    <div className="relative pl-10 pb-0 pointer-events-none select-none" aria-hidden="true">
+      <ItineraryStopMarker variant="muted" className="left-[-12px] top-1" />
 
       <article className="relative overflow-hidden rounded-2xl border border-border-light dark:border-white/14 bg-neutral-50/98 dark:bg-[#1f1e17]/93 shadow-[0_16px_44px_-32px_rgba(0,0,0,0.5)] ring-1 ring-black/[0.04] dark:ring-white/[0.06] translate-y-[1px] opacity-[0.98]">
         <div className="relative h-[5.5rem] sm:h-28 w-full overflow-hidden bg-gradient-to-br from-neutral-200/92 via-neutral-100/82 to-neutral-200/93 dark:from-white/[0.075] dark:via-white/[0.045] dark:to-white/[0.075] animate-pulse">

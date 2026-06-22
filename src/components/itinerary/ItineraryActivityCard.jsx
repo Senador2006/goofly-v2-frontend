@@ -1,5 +1,6 @@
 import { useCallback, useId, useState } from 'react'
 import { Icon } from '../common/Icon'
+import { ItineraryStopMarker } from './ItineraryStopMarker'
 import {
   googleMapsPlaceUrl,
   resolveActivityCoordinates,
@@ -215,11 +216,11 @@ export function ItineraryActivityCard({
   }, [])
 
   return (
-    <div className={`relative pl-8 ${isLast ? '' : 'pb-8'}`}>
+    <div className={`relative pl-10 ${isLast ? '' : 'pb-8'}`}>
       {!isLast && (
-        <div className="absolute left-0 top-3 bottom-0 w-px border-l-2 border-dashed border-primary/70" aria-hidden />
+        <div className="absolute left-0 top-7 bottom-0 w-px border-l-2 border-dashed border-primary/70" aria-hidden />
       )}
-      <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary z-10" />
+      <ItineraryStopMarker order={index + 1} className="left-[-12px] top-1" />
       <article className="rounded-2xl border border-border-light dark:border-border-dark bg-background-light dark:bg-[#23220f] overflow-hidden shadow-sm ring-inset ring-primary/25">
         {(effective?.image_url || act?.image_url) ? (
           <div
