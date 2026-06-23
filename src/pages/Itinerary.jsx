@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
@@ -23,11 +23,31 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import {
   buildDateToDayMap,
   getActivityDayNumber,
+  reorderActivityInSameDay,
   sortDayActivities,
 } from '../utils/itineraryDayHelpers'
 import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
+import {
+  captureReorderSnapshot,
+  playReorderSwapAnimation,
+  prefersReducedFlipMotion,
+} from '../utils/flipListAnimation'
 
 const MODE_ROTEIRO = 'roteiro'
+
+/** Congela índice e isLast dos cards durante animação de reorder. */
+function captureDayFrozenLayout(dayActs, premiumHiddenCount) {
+  /** @type {Record<string, number>} */
+  const indices = {}
+  /** @type {Record<string, boolean>} */
+  const isLast = {}
+  dayActs.forEach((a, i) => {
+    const id = String(a.id)
+    indices[id] = i
+    isLast[id] = i === dayActs.length - 1 && premiumHiddenCount === 0
+  })
+  return { indices, isLast }
+}
 const MODE_TDV = 'tdv'
 const MODE_DOCUMENTOS = 'documentos'
 
@@ -79,16 +99,50 @@ function normalizeActivitiesForPersist(activities, dateToDayMap, fallbackDay = 1
   return out
 }
 
-function reorderActivityInSameDay(all, dateToDayMap, dayNum, indexInSortedDay, direction) {
-  const onDayOriginal = sortDayActivities(all.filter((a) => getActivityDayNumber(a, dateToDayMap) === dayNum))
-  const swapIdx = indexInSortedDay + direction
-  if (swapIdx < 0 || swapIdx >= onDayOriginal.length) return all
-  const onDay = [...onDayOriginal]
-  const tmp = onDay[indexInSortedDay]
-  onDay[indexInSortedDay] = onDay[swapIdx]
-  onDay[swapIdx] = tmp
-  const others = all.filter((a) => getActivityDayNumber(a, dateToDayMap) !== dayNum)
-  return [...others, ...onDay]
+/** Parada recém-criada no draft que ainda não foi nomeada pelo usuário. */
+function isPendingNewStop(act) {
+  return act?.source === 'user_edit' && String(act?.title || '').trim() === 'Nova parada'
+}
+
+function computeDaysList(activities, dateToDayMap, trip) {
+  const tripDayCount = getTripDayCount(trip)
+  const chronologicalDays = Array.from({ length: tripDayCount }, (_, i) => i + 1)
+  const numericDaysFromActs = [
+    ...new Set(
+      (activities || [])
+        .map((a) => getActivityDayNumber(a, dateToDayMap))
+        .filter((d) => d != null),
+    ),
+  ]
+  return numericDaysFromActs.length > 0
+    ? [...new Set([...chronologicalDays, ...numericDaysFromActs])].sort((a, b) => a - b)
+    : chronologicalDays
+}
+
+function resolveEffectiveSelectedDay(selectedDay, days) {
+  return days.includes(selectedDay) ? selectedDay : (days[0] ?? 1)
+}
+
+function focusStopTitleField(stopId, cardRoot) {
+  const tryFocus = () => {
+    const byId = document.getElementById(`activity-title-ac-${stopId}`)
+    if (byId && typeof byId.focus === 'function') {
+      byId.focus()
+      return true
+    }
+    const scoped =
+      cardRoot?.querySelector?.('input, textarea, gmp-place-autocomplete, [role="combobox"]') ??
+      null
+    if (scoped && typeof scoped.focus === 'function') {
+      scoped.focus()
+      return true
+    }
+    return false
+  }
+  requestAnimationFrame(() => {
+    tryFocus()
+    setTimeout(tryFocus, 80)
+  })
 }
 
 /** Contagens por dia vindas da API ({ "1": 4 }); aceita também snake_case (`total_by_day`). */
@@ -154,7 +208,14 @@ export function Itinerary() {
   const [draftActivities, setDraftActivities] = useState(null)
   const [savingRoteiro, setSavingRoteiro] = useState(false)
   const [mobileMapOpen, setMobileMapOpen] = useState(false)
+  const [trackedStopId, setTrackedStopId] = useState(null)
   const deleteInFlightRef = useRef(false)
+  const stopCardRefs = useRef(new Map())
+  const roteiroListScrollRef = useRef(null)
+  const flipBeforeReorderRef = useRef(null)
+  const reorderFrozenLayoutRef = useRef(null)
+  const [, setReorderLayoutEpoch] = useState(0)
+  const trackedFollowRef = useRef({ id: null, reason: null })
 
   const isPlanning = trip?.status === 'planejando'
   const hasFullAccess = hasItineraryFullAccess(itinerary, trip)
@@ -302,7 +363,86 @@ export function Itinerary() {
   useEffect(() => {
     setRoteiroEditOpen(false)
     setDraftActivities(null)
+    setTrackedStopId(null)
+    stopCardRefs.current.clear()
+    trackedFollowRef.current = { id: null, reason: null }
   }, [tripId])
+
+  const blockNewRoteiroStop = useMemo(() => {
+    if (!trackedStopId || !Array.isArray(draftActivities)) return false
+    const act = draftActivities.find((a) => String(a.id) === String(trackedStopId))
+    return act != null && isPendingNewStop(act)
+  }, [trackedStopId, draftActivities])
+
+  const handleSelectDay = useCallback((day) => {
+    trackedFollowRef.current = { id: null, reason: null }
+    setSelectedDay(day)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (loading || !trip || !roteiroEditOpen || !trackedStopId || !Array.isArray(draftActivities)) return
+
+    const act = draftActivities.find((a) => String(a.id) === String(trackedStopId))
+    if (!act) {
+      setTrackedStopId(null)
+      trackedFollowRef.current = { id: null, reason: null }
+      return
+    }
+
+    const follow = trackedFollowRef.current
+    const followActive = String(follow.id) === String(trackedStopId)
+    if (!followActive) return
+
+    const stopDay = getActivityDayNumber(act, dateToDayMap) ?? selectedDay
+    const days = computeDaysList(draftActivities, dateToDayMap, trip)
+    const effectiveDay = resolveEffectiveSelectedDay(selectedDay, days)
+
+    if (stopDay !== effectiveDay) {
+      setSelectedDay(stopDay)
+      return
+    }
+
+    const cardEl = stopCardRefs.current.get(String(trackedStopId))
+    cardEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+
+    if (follow.reason === 'create') {
+      focusStopTitleField(trackedStopId, cardEl)
+    }
+
+    trackedFollowRef.current = { id: null, reason: null }
+  }, [
+    loading,
+    trip,
+    roteiroEditOpen,
+    trackedStopId,
+    draftActivities,
+    selectedDay,
+    dateToDayMap,
+  ])
+
+  useLayoutEffect(() => {
+    const payload = flipBeforeReorderRef.current
+    if (!payload) return
+    flipBeforeReorderRef.current = null
+
+    playReorderSwapAnimation(
+      stopCardRefs.current,
+      payload.snapshot,
+      {
+        movedId: payload.movedId,
+        neighborId: payload.neighborId,
+        direction: payload.direction,
+      },
+      {
+        scrollContainer: roteiroListScrollRef.current,
+        moveMs: roteiroEditOpen ? 380 : 320,
+        onComplete: () => {
+          reorderFrozenLayoutRef.current = null
+          setReorderLayoutEpoch((n) => n + 1)
+        },
+      },
+    )
+  }, [draftActivities, roteiroEditOpen])
 
   useEffect(() => {
     const acts = itinerary?.activities || []
@@ -375,6 +515,10 @@ export function Itinerary() {
   const dayActivities = sortDayActivities(
     activities.filter((a) => getActivityDayNumber(a, dateToDayMap) === effectiveSelectedDay)
   )
+  const trackedMapIndex = trackedStopId
+    ? dayActivities.findIndex((a) => String(a.id) === String(trackedStopId))
+    : -1
+  const trackedMapHighlight = trackedMapIndex >= 0 ? trackedMapIndex : null
 
   const previewDayMapsReady = (() => {
     if (!premiumRestriction) return false
@@ -420,6 +564,10 @@ export function Itinerary() {
     setRoteiroEditOpen(false)
     setDraftActivities(null)
     setSavingRoteiro(false)
+    setTrackedStopId(null)
+    stopCardRefs.current.clear()
+    reorderFrozenLayoutRef.current = null
+    trackedFollowRef.current = { id: null, reason: null }
   }
 
   const handleStartRoteiroEdit = () => {
@@ -450,6 +598,7 @@ export function Itinerary() {
   }
 
   const handleAddRoteiroStop = () => {
+    if (blockNewRoteiroStop) return
     const nid = globalThis.crypto?.randomUUID?.() || `nv-${Date.now()}`
     const nextDay = Math.max(1, Math.floor(Number(effectiveSelectedDay) || 1))
     setDraftActivities((prev) => {
@@ -468,6 +617,8 @@ export function Itinerary() {
         },
       ]
     })
+    setTrackedStopId(nid)
+    trackedFollowRef.current = { id: nid, reason: 'create' }
     setRoteiroEditOpen(true)
     setError(null)
   }
@@ -562,6 +713,26 @@ export function Itinerary() {
     </div>
   )
 
+  const planCompleteBadge = hasFullAccess && !isPlanning ? (
+    <span
+      className={`inline-flex items-center shrink-0 text-green-700 dark:text-green-400 bg-green-500/15 rounded-full ${
+        roteiroEditOpen
+          ? 'justify-center w-8 h-8 sm:w-auto sm:h-auto sm:gap-1 sm:px-2 sm:py-0.5'
+          : 'gap-1 px-2 py-0.5'
+      }`}
+      title="Plano completo"
+    >
+      <Icon name="verified" className="text-sm" aria-hidden />
+      <span
+        className={`text-[10px] font-bold uppercase tracking-wide ${
+          roteiroEditOpen ? 'hidden sm:inline' : ''
+        }`}
+      >
+        Plano completo
+      </span>
+    </span>
+  ) : null
+
   return (
     <>
     <div className="print:hidden flex flex-col h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8 min-h-0 bg-background-light/50 dark:bg-background-dark/30">
@@ -591,7 +762,10 @@ export function Itinerary() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            {modeTabs}
+            <div className="flex items-center gap-2 flex-wrap">
+              {modeTabs}
+              {roteiroEditOpen ? planCompleteBadge : null}
+            </div>
             {canPrintItinerary ? (
               <Button
                 variant="secondary"
@@ -626,12 +800,7 @@ export function Itinerary() {
                 </span>
               )
             ) : null}
-            {hasFullAccess && !isPlanning ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-green-700 dark:text-green-400 bg-green-500/15 px-2 py-0.5 rounded-full shrink-0">
-                <Icon name="verified" className="text-sm" />
-                Plano completo
-              </span>
-            ) : null}
+            {hasFullAccess && !isPlanning && !roteiroEditOpen ? planCompleteBadge : null}
             {!isPlanning && !hasFullAccess && activities.length > 0 ? (
               <Link to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}>
                 <Button size="sm" className="rounded-xl shrink-0">
@@ -658,7 +827,7 @@ export function Itinerary() {
             <ItineraryDayChips
               days={days}
               selectedDay={effectiveSelectedDay}
-              onSelectDay={setSelectedDay}
+              onSelectDay={handleSelectDay}
               getDayState={(day) => {
                 const peek =
                   previewDayMapsReady && premiumRestriction && !hasFullAccess && !isPlanning
@@ -698,7 +867,7 @@ export function Itinerary() {
             }
             aria-label="Paradas do dia"
           >
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+            <div ref={roteiroListScrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
               {isPlanning ? (
                 <div className="mb-5 rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/[0.08] to-transparent dark:from-primary/15 p-4 sm:p-5">
                   <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Concluir planejamento</p>
@@ -754,17 +923,35 @@ export function Itinerary() {
               {!isSelectedDayPremiumLockedUi && (roteiroEditOpen || dayActivities.length > 0) ? (
                 <div className="relative isolate pb-2">
                   {roteiroEditOpen && draftActivities ? (
-                    <div className="mb-4 flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="rounded-xl font-bold"
-                        onClick={handleAddRoteiroStop}
-                      >
-                        <Icon name="add" aria-hidden />
-                        Nova parada (dia&nbsp;{effectiveSelectedDay})
-                      </Button>
+                    <div className="mb-4 flex flex-col gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="rounded-xl font-bold"
+                          onClick={handleAddRoteiroStop}
+                          disabled={blockNewRoteiroStop}
+                          aria-describedby={blockNewRoteiroStop ? 'roteiro-new-stop-hint' : undefined}
+                          title={
+                            blockNewRoteiroStop
+                              ? 'Termine ou remova a parada em edição antes de adicionar outra.'
+                              : undefined
+                          }
+                        >
+                          <Icon name="add" aria-hidden />
+                          Nova parada (dia&nbsp;{effectiveSelectedDay})
+                        </Button>
+                      </div>
+                      {blockNewRoteiroStop ? (
+                        <p
+                          id="roteiro-new-stop-hint"
+                          className="inline-flex items-start gap-1.5 max-w-md rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-amber-200 leading-snug"
+                        >
+                          <Icon name="info" className="text-sm shrink-0 mt-0.5" aria-hidden />
+                          Nomeie ou remova a parada em edição antes de adicionar outra.
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                   {roteiroEditOpen && dayActivities.length === 0 ? (
@@ -776,14 +963,32 @@ export function Itinerary() {
                     </div>
                   ) : null}
                   <div className="space-y-0">
-                    {dayActivities.map((act, idx) => (
+                    {dayActivities.map((act, idx) => {
+                      const frozen = reorderFrozenLayoutRef.current
+                      const actId = String(act.id)
+                      const displayIndex =
+                        frozen?.indices && actId in frozen.indices ? frozen.indices[actId] : idx
+                      const displayIsLast =
+                        frozen?.isLast && actId in frozen.isLast
+                          ? frozen.isLast[actId]
+                          : idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0
+
+                      return (
                       <ItineraryActivityCard
                         key={String(act.id || `${effectiveSelectedDay}-${idx}`)}
                         act={act}
                         index={idx}
                         isLast={idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0}
+                        displayIndex={displayIndex}
+                        displayIsLast={displayIsLast}
                         editing={roteiroEditOpen}
                         draft={act}
+                        isTracked={String(act.id) === String(trackedStopId)}
+                        cardRef={(el) => {
+                          const key = String(act.id)
+                          if (el) stopCardRefs.current.set(key, el)
+                          else stopCardRefs.current.delete(key)
+                        }}
                         onDraftPatch={(patch) => {
                           setDraftActivities((prev) =>
                             (prev ?? []).map((item) =>
@@ -791,50 +996,93 @@ export function Itinerary() {
                             ),
                           )
                         }}
-                        onRemove={() =>
+                        onRemove={() => {
+                          if (String(act.id) === String(trackedStopId)) {
+                            setTrackedStopId(null)
+                            trackedFollowRef.current = { id: null, reason: null }
+                          }
                           setDraftActivities((prev) =>
                             (prev ?? []).filter((item) => String(item.id) !== String(act.id)),
                           )
-                        }
-                        onMoveUp={() =>
+                        }}
+                        onMoveUp={() => {
+                          if (!prefersReducedFlipMotion()) {
+                            reorderFrozenLayoutRef.current = captureDayFrozenLayout(
+                              dayActivities,
+                              hiddenPremiumStopsSameDay,
+                            )
+                            flipBeforeReorderRef.current = {
+                              snapshot: captureReorderSnapshot(
+                                stopCardRefs.current,
+                                roteiroListScrollRef.current,
+                              ),
+                              movedId: String(act.id),
+                              neighborId:
+                                idx > 0 ? String(dayActivities[idx - 1].id) : null,
+                              direction: -1,
+                            }
+                          }
                           setDraftActivities((prev) =>
                             prev
                               ? reorderActivityInSameDay(
                                   prev,
                                   dateToDayMap,
                                   effectiveSelectedDay,
-                                  idx,
+                                  act.id,
                                   -1,
                                 )
                               : prev,
                           )
-                        }
-                        onMoveDown={() =>
+                        }}
+                        onMoveDown={() => {
+                          if (!prefersReducedFlipMotion()) {
+                            reorderFrozenLayoutRef.current = captureDayFrozenLayout(
+                              dayActivities,
+                              hiddenPremiumStopsSameDay,
+                            )
+                            flipBeforeReorderRef.current = {
+                              snapshot: captureReorderSnapshot(
+                                stopCardRefs.current,
+                                roteiroListScrollRef.current,
+                              ),
+                              movedId: String(act.id),
+                              neighborId:
+                                idx < dayActivities.length - 1
+                                  ? String(dayActivities[idx + 1].id)
+                                  : null,
+                              direction: 1,
+                            }
+                          }
                           setDraftActivities((prev) =>
                             prev
                               ? reorderActivityInSameDay(
                                   prev,
                                   dateToDayMap,
                                   effectiveSelectedDay,
-                                  idx,
+                                  act.id,
                                   1,
                                 )
                               : prev,
                           )
-                        }
+                        }}
                         disableMoveUp={idx === 0}
                         disableMoveDown={idx === dayActivities.length - 1}
                         dayPickerValue={getActivityDayNumber(act, dateToDayMap) ?? effectiveSelectedDay}
                         dayPickerOptions={days}
-                        onDayChange={(dn) =>
+                        onDayChange={(dn) => {
                           setDraftActivities((prev) =>
                             (prev ?? []).map((item) =>
                               String(item.id) === String(act.id) ? { ...item, day: dn, dayNumber: dn } : item,
                             ),
                           )
-                        }
+                          if (String(act.id) === String(trackedStopId)) {
+                            trackedFollowRef.current = { id: act.id, reason: 'day-change' }
+                            setSelectedDay(dn)
+                          }
+                        }}
                       />
-                    ))}
+                      )
+                    })}
                     {hiddenPremiumStopsSameDay >= 1 ? (
                       <ItineraryPremiumNextPeek hiddenCount={hiddenPremiumStopsSameDay} />
                     ) : null}
@@ -892,36 +1140,40 @@ export function Itinerary() {
                   </p>
                 </div>
               )}
-              {roteiroEditOpen && draftActivities && !isSelectedDayPremiumLockedUi ? (
-                <div className="sticky bottom-0 z-20 mt-8 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-border-light dark:border-border-dark bg-white/92 dark:bg-card-dark/95 backdrop-blur-sm flex flex-col sm:flex-row flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    className="rounded-xl font-bold flex-1 sm:flex-none min-h-[2.65rem]"
-                    onClick={handleSaveRoteiroDraft}
-                    disabled={savingRoteiro || !tripId}
-                  >
-                    <Icon name="save" aria-hidden />
-                    {savingRoteiro ? 'Salvando…' : 'Salvar alterações'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="rounded-xl font-bold flex-1 sm:flex-none min-h-[2.65rem]"
-                    onClick={() => {
-                      if (
-                        typeof globalThis.confirm === 'function' &&
-                        globalThis.confirm('Descartar todas as edições não salvas neste roteiro?')
-                      ) {
-                        handleCancelRoteiroEdit()
-                      }
-                    }}
-                    disabled={savingRoteiro}
-                  >
-                    Cancelar edição
-                  </Button>
-                </div>
-              ) : null}
             </div>
+            {roteiroEditOpen && draftActivities && !isSelectedDayPremiumLockedUi ? (
+              <div className="flex-shrink-0 z-20 px-3 sm:px-6 pt-2 sm:pt-4 pb-2 sm:pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-border-light dark:border-border-dark bg-white dark:bg-card-dark flex flex-row gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="rounded-xl font-bold flex-1 sm:flex-none sm:min-h-[2.65rem] text-xs sm:text-sm"
+                  onClick={handleSaveRoteiroDraft}
+                  disabled={savingRoteiro || !tripId}
+                >
+                  <Icon name="save" className="text-base" aria-hidden />
+                  <span className="sm:hidden">{savingRoteiro ? 'Salvando…' : 'Salvar'}</span>
+                  <span className="hidden sm:inline">{savingRoteiro ? 'Salvando…' : 'Salvar alterações'}</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl font-bold flex-1 sm:flex-none sm:min-h-[2.65rem] text-xs sm:text-sm"
+                  onClick={() => {
+                    if (
+                      typeof globalThis.confirm === 'function' &&
+                      globalThis.confirm('Descartar todas as edições não salvas neste roteiro?')
+                    ) {
+                      handleCancelRoteiroEdit()
+                    }
+                  }}
+                  disabled={savingRoteiro}
+                >
+                  <span className="sm:hidden">Cancelar</span>
+                  <span className="hidden sm:inline">Cancelar edição</span>
+                </Button>
+              </div>
+            ) : null}
             {mode === MODE_ROTEIRO ? (
               <ItineraryMobileMapDrawer
                 open={mobileMapOpen}
@@ -930,6 +1182,8 @@ export function Itinerary() {
                 day={effectiveSelectedDay}
                 activities={dayActivities}
                 disabled={isSelectedDayPremiumLockedUi}
+                highlightedIndex={trackedMapHighlight}
+                preferLocalRoute={roteiroEditOpen}
               />
             ) : null}
           </section>
@@ -978,6 +1232,8 @@ export function Itinerary() {
                 day={effectiveSelectedDay}
                 activities={dayActivities}
                 disabled={isSelectedDayPremiumLockedUi}
+                highlightedIndex={trackedMapHighlight}
+                preferLocalRoute={roteiroEditOpen}
                 className="absolute inset-0 h-full w-full"
                 ariaLabel={`Mapa do roteiro — dia ${effectiveSelectedDay}`}
               />

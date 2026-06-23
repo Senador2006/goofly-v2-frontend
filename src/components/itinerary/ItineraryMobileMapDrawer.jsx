@@ -21,6 +21,8 @@ export function ItineraryMobileMapDrawer({
   day,
   activities,
   disabled,
+  highlightedIndex = null,
+  preferLocalRoute = false,
 }) {
   const dragRef = useRef({ active: false, startX: 0, startOpen: false })
   const [dragOffset, setDragOffset] = useState(0)
@@ -115,6 +117,8 @@ export function ItineraryMobileMapDrawer({
           day={day}
           activities={activities}
           disabled={disabled}
+          highlightedIndex={highlightedIndex}
+          preferLocalRoute={preferLocalRoute}
           className="absolute inset-0 h-full w-full"
           ariaLabel={`Mapa do roteiro — dia ${day}`}
           mapLayoutWatch={open ? `open-${day}` : 'closed'}

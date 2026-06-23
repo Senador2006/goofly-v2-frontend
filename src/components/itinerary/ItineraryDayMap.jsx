@@ -16,12 +16,21 @@ import { routeDataMatchesDay } from '../../utils/itineraryRouteDay'
  */
 
 const ROUTE_PROFILE = 'foot-walking'
+const ROUTE_PREVIEW_DEBOUNCE_MS = 400
 
 /** @type {Map<string, { data: object, activitySig: string }>} */
 const routeCacheByKey = new Map()
 
 function cacheKey(tripId, day) {
   return `${tripId}:${day}`
+}
+
+function draftCacheKey(tripId, day) {
+  return `${tripId}:${day}:draft`
+}
+
+function countGeolocatedActivities(activities) {
+  return (activities || []).filter((a) => readLatLng(a)).length
 }
 
 /**
@@ -67,19 +76,19 @@ function MapInvalidateSize({ watch }) {
 }
 
 function getNumberedIcon(order, isHighlighted) {
+  const size = isHighlighted ? 30 : 26
+  const fontSize = isHighlighted ? 12 : 11
   const ring = isHighlighted
-    ? '0 0 0 5px rgba(254,198,65,0.9)'
-    : '0 0 0 3px rgba(254,198,65,0.45)'
+    ? '0 0 0 3px #fff, 0 0 0 7px #FEC641, 0 0 18px 4px rgba(254,198,65,0.85)'
+    : '0 0 0 2px #fff, 0 0 0 4px rgba(254,198,65,0.45)'
   return L.divIcon({
-    className: 'goofly-itinerary-marker',
+    className: isHighlighted ? 'goofly-itinerary-marker goofly-itinerary-marker--tracked' : 'goofly-itinerary-marker',
     html:
-      '<div style="width:26px;height:26px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#1c1c0d;background:#FEC641;box-shadow:0 0 0 2px #fff,' +
-      ring +
-      ';">' +
+      `<div style="width:${size}px;height:${size}px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:800;color:#1c1c0d;background:#FEC641;box-shadow:${ring};">` +
       String(order) +
       '</div>',
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -10],
   })
 }
@@ -125,6 +134,7 @@ export function ItineraryDayMap({
   activities = [],
   disabled = false,
   highlightedIndex = null,
+  preferLocalRoute = false,
   className = '',
   ariaLabel = 'Mapa do roteiro do dia',
   mapLayoutWatch,
@@ -153,7 +163,15 @@ export function ItineraryDayMap({
       return undefined
     }
 
-    const key = cacheKey(tripId, dayNum)
+    if (countGeolocatedActivities(activities) < 2) {
+      setRouteData(null)
+      setRouteDay(null)
+      setLoading(false)
+      setError(null)
+      return undefined
+    }
+
+    const key = preferLocalRoute ? draftCacheKey(tripId, dayNum) : cacheKey(tripId, dayNum)
     const cached = routeCacheByKey.get(key)
     if (
       cached &&
@@ -171,41 +189,59 @@ export function ItineraryDayMap({
     }
 
     const gen = ++fetchGenRef.current
-    setRouteData(null)
-    setRouteDay(null)
-    setLoading(true)
-    setError(null)
+    let cancelled = false
 
-    tripService
-      .getItineraryRoute(tripId, { day: dayNum, profile: ROUTE_PROFILE })
-      .then((data) => {
-        if (fetchGenRef.current !== gen) return
-        if (!routeDataMatchesDay(data, dayNum)) {
-          routeCacheByKey.delete(key)
+    const runFetch = () => {
+      if (cancelled || fetchGenRef.current !== gen) return
+
+      setRouteData(null)
+      setRouteDay(null)
+      setLoading(true)
+      setError(null)
+
+      const request = preferLocalRoute
+        ? tripService.previewItineraryRoute(tripId, {
+            day: dayNum,
+            profile: ROUTE_PROFILE,
+            activities,
+          })
+        : tripService.getItineraryRoute(tripId, { day: dayNum, profile: ROUTE_PROFILE })
+
+      request
+        .then((data) => {
+          if (cancelled || fetchGenRef.current !== gen) return
+          if (!routeDataMatchesDay(data, dayNum)) {
+            routeCacheByKey.delete(key)
+            setRouteData(null)
+            setRouteDay(null)
+            return
+          }
+          routeCacheByKey.set(key, { data, activitySig })
+          setRouteData(data)
+          setRouteDay(dayNum)
+        })
+        .catch((err) => {
+          if (cancelled || fetchGenRef.current !== gen) return
+          setError(err?.message || 'Não foi possível carregar a rota')
           setRouteData(null)
           setRouteDay(null)
-          return
-        }
-        routeCacheByKey.set(key, { data, activitySig })
-        setRouteData(data)
-        setRouteDay(dayNum)
-      })
-      .catch((err) => {
-        if (fetchGenRef.current !== gen) return
-        setError(err?.message || 'Não foi possível carregar a rota')
-        setRouteData(null)
-        setRouteDay(null)
-      })
-      .finally(() => {
-        if (fetchGenRef.current === gen) setLoading(false)
-      })
+        })
+        .finally(() => {
+          if (!cancelled && fetchGenRef.current === gen) setLoading(false)
+        })
+    }
 
-    return undefined
-  }, [tripId, dayNum, activitySig, disabled])
+    const delay = preferLocalRoute ? ROUTE_PREVIEW_DEBOUNCE_MS : 0
+    const timer = setTimeout(runFetch, delay)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [tripId, dayNum, activitySig, disabled, preferLocalRoute, activities])
 
   const routePayloadValid =
     routeData != null && routeDay === dayNum && routeDataMatchesDay(routeData, dayNum)
-  const routeReady = routePayloadValid && !loading
 
   const localMarkers = useMemo(() => buildLocalMarkers(activities), [activities])
   const apiMarkers = useMemo(
@@ -213,10 +249,9 @@ export function ItineraryDayMap({
     [routePayloadValid, routeData]
   )
 
-  const useApiLayer = routeReady && apiMarkers.length > 0
   const markers = localMarkers.length > 0 ? localMarkers : apiMarkers
-  const usingLocalFallback =
-    localMarkers.length > 0 && (!useApiLayer || apiMarkers.length === 0) && !loading && !disabled
+  const usingMarkerPolylineFallback =
+    !routePayloadValid && markers.length >= 2 && !loading && !disabled
 
   const polylinePositions = useMemo(() => {
     if (routePayloadValid) {
@@ -243,7 +278,9 @@ export function ItineraryDayMap({
     : null
 
   const showStraightHint =
-    routeSource === 'straight_line' || warnings.includes('ors_not_configured')
+    routeSource === 'straight_line' ||
+    warnings.includes('ors_not_configured') ||
+    usingMarkerPolylineFallback
 
   const mapInstanceKey = `${tripId}-${dayNum ?? 'none'}`
 
@@ -295,7 +332,9 @@ export function ItineraryDayMap({
           </Marker>
         ))}
         <FitBoundsToPoints coords={allCoords} />
-        <MapInvalidateSize watch={`${mapInstanceKey}-${markers.length}-${mapLayoutWatch ?? ''}`} />
+        <MapInvalidateSize
+          watch={`${mapInstanceKey}-${markers.length}-${activitySig}-${mapLayoutWatch ?? ''}`}
+        />
       </MapContainer>
 
       {dayNum != null && !disabled ? (
@@ -359,11 +398,8 @@ export function ItineraryDayMap({
               <p className="text-[10px] text-amber-700 dark:text-amber-300 mt-0.5 m-0">
                 Trajeto aproximado (linha reta)
               </p>
-            ) : null}
-            {usingLocalFallback && !showStraightHint ? (
-              <p className="text-[10px] text-text-secondary mt-0.5 m-0">
-                Trajeto pelas paradas do dia
-              </p>
+            ) : routePayloadValid && routeSource === 'openrouteservice' ? (
+              <p className="text-[10px] text-text-secondary mt-0.5 m-0">Rota a pé (OpenRouteService)</p>
             ) : null}
           </div>
           {warnings.includes('duplicate_coordinates') ? (

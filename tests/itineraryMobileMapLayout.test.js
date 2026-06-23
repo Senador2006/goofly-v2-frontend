@@ -98,4 +98,10 @@ describe('ItineraryDayMap pin source contract', () => {
   it('suporta mapLayoutWatch para invalidateSize', () => {
     assert.match(dayMapSource, /mapLayoutWatch/)
   })
+
+  it('suporta preferLocalRoute para rota ORS via preview do draft', () => {
+    assert.match(dayMapSource, /preferLocalRoute/)
+    assert.match(dayMapSource, /previewItineraryRoute/)
+    assert.match(dayMapSource, /draftCacheKey/)
+  })
 })

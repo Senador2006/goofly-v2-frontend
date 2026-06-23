@@ -185,6 +185,8 @@ export function ItineraryActivityCard({
   act,
   index,
   isLast,
+  displayIndex = null,
+  displayIsLast = null,
   editing = false,
   draft,
   onDraftPatch,
@@ -196,9 +198,14 @@ export function ItineraryActivityCard({
   dayPickerValue,
   dayPickerOptions = [],
   onDayChange,
+  isTracked = false,
+  cardRef,
 }) {
   const panelId = useId()
   const [open, setOpen] = useState(false)
+
+  const markerIndex = displayIndex ?? index
+  const showAsLast = displayIsLast ?? isLast
 
   const effective = editing ? draft : act
 
@@ -206,7 +213,8 @@ export function ItineraryActivityCard({
   const end = effective?.endTime || effective?.end_time
   const scheduleLabel =
     typeof end === 'string' && end.trim() ? `${start}–${String(end).trim()}` : start
-  const title = effective?.title || effective?.name || effective?.placeName || `Atividade ${index + 1}`
+  const title =
+    effective?.title || effective?.name || effective?.placeName || `Atividade ${markerIndex + 1}`
   const description = resolveActivityDescription(effective)
   const badge = sourceBadgeLabel(effective)
   const ticket = resolveTicketInfo(effective || act)
@@ -216,12 +224,23 @@ export function ItineraryActivityCard({
   }, [])
 
   return (
-    <div className={`relative pl-10 ${isLast ? '' : 'pb-8'}`}>
-      {!isLast && (
+    <div className={`relative pl-10 ${showAsLast ? '' : 'pb-8'}${isTracked ? ' scroll-mt-4' : ''}`}>
+      {!showAsLast && (
         <div className="absolute left-0 top-7 bottom-0 w-px border-l-2 border-dashed border-primary/70" aria-hidden />
       )}
-      <ItineraryStopMarker order={index + 1} className="left-[-12px] top-1" />
-      <article className="rounded-2xl border border-border-light dark:border-border-dark bg-background-light dark:bg-[#23220f] overflow-hidden shadow-sm ring-inset ring-primary/25">
+      <ItineraryStopMarker
+        order={markerIndex + 1}
+        className={`left-[-12px] top-1 transition-transform duration-200${isTracked ? ' scale-110 z-10' : ''}`}
+      />
+      <article
+        ref={cardRef}
+        className={
+          'rounded-2xl border-2 bg-background-light dark:bg-[#23220f] overflow-hidden transition-[box-shadow,border-color] duration-300 ' +
+          (isTracked
+            ? 'border-primary shadow-[0_0_0_4px_rgba(254,198,65,0.45),0_12px_32px_-12px_rgba(254,198,65,0.55)] ring-2 ring-primary/80'
+            : 'border-border-light dark:border-border-dark shadow-sm ring-inset ring-primary/25')
+        }
+      >
         {(effective?.image_url || act?.image_url) ? (
           <div
             className="h-36 sm:h-40 w-full bg-cover bg-center"
@@ -230,39 +249,41 @@ export function ItineraryActivityCard({
             aria-label={title}
           />
         ) : null}
-        {editing ? (
-          <CardEditFields
-            index={index}
-            title={title}
-            scheduleLabelHint={scheduleLabel}
-            ticket={ticket}
-            badge={badge}
-            draft={draft}
-            onDraftPatch={onDraftPatch}
-            onRemove={onRemove}
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            disableMoveUp={disableMoveUp}
-            disableMoveDown={disableMoveDown}
-            dayPickerValue={dayPickerValue}
-            dayPickerOptions={dayPickerOptions}
-            onDayChange={onDayChange}
-          />
-        ) : (
-          <CardBody
-            scheduleLabel={scheduleLabel}
-            act={act}
-            title={title}
-            description={description}
-            startResolved={start}
-            endResolved={typeof end === 'string' ? end.trim() : null}
-            badge={badge}
-            ticket={ticket}
-            open={open}
-            onToggle={toggle}
-            panelId={panelId}
-          />
-        )}
+        <div key={editing ? 'edit' : 'view'} className="itinerary-card-mode-in">
+          {editing ? (
+            <CardEditFields
+              index={markerIndex}
+              title={title}
+              scheduleLabelHint={scheduleLabel}
+              ticket={ticket}
+              badge={badge}
+              draft={draft}
+              onDraftPatch={onDraftPatch}
+              onRemove={onRemove}
+              onMoveUp={onMoveUp}
+              onMoveDown={onMoveDown}
+              disableMoveUp={disableMoveUp}
+              disableMoveDown={disableMoveDown}
+              dayPickerValue={dayPickerValue}
+              dayPickerOptions={dayPickerOptions}
+              onDayChange={onDayChange}
+            />
+          ) : (
+            <CardBody
+              scheduleLabel={scheduleLabel}
+              act={act}
+              title={title}
+              description={description}
+              startResolved={start}
+              endResolved={typeof end === 'string' ? end.trim() : null}
+              badge={badge}
+              ticket={ticket}
+              open={open}
+              onToggle={toggle}
+              panelId={panelId}
+            />
+          )}
+        </div>
       </article>
     </div>
   )

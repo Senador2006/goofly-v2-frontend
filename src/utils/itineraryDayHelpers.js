@@ -71,6 +71,37 @@ export function sortDayActivities(list) {
   })
 }
 
+/**
+ * Troca uma atividade com a vizinha (mesmo dia) e reindexa `order` para refletir
+ * a nova ordem exibida por `sortDayActivities`.
+ *
+ * @param {any[]} all
+ * @param {Map<string, number>} dateToDayMap
+ * @param {number} dayNum
+ * @param {string | number} activityId
+ * @param {-1 | 1} direction
+ */
+export function reorderActivityInSameDay(all, dateToDayMap, dayNum, activityId, direction) {
+  const onDay = sortDayActivities(
+    all.filter((a) => getActivityDayNumber(a, dateToDayMap) === dayNum),
+  )
+  const indexInSortedDay = onDay.findIndex((a) => String(a.id) === String(activityId))
+  if (indexInSortedDay < 0) return all
+
+  const swapIdx = indexInSortedDay + direction
+  if (swapIdx < 0 || swapIdx >= onDay.length) return all
+
+  ;[onDay[indexInSortedDay], onDay[swapIdx]] = [onDay[swapIdx], onDay[indexInSortedDay]]
+
+  const orderById = new Map(onDay.map((a, i) => [String(a.id), i]))
+
+  return all.map((a) => {
+    if (getActivityDayNumber(a, dateToDayMap) !== dayNum) return a
+    const nextOrder = orderById.get(String(a.id))
+    return nextOrder != null ? { ...a, order: nextOrder } : a
+  })
+}
+
 /** Agrupa atividades por número do dia (1-based), ordenadas dentro de cada dia. */
 export function groupActivitiesByDay(activities, dateToDayMap, dayNumbers = []) {
   const byDay = new Map()

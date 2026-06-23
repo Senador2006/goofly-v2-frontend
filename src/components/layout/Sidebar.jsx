@@ -10,7 +10,7 @@ export function Sidebar({ className = '' }) {
 
   return (
     <aside className={`w-64 flex flex-col bg-white dark:bg-card-dark border-r border-border-light dark:border-border-dark p-6 h-full hidden lg:flex ${className}`.trim()}>
-      <Link to="/dashboard" className="flex items-center justify-start self-start mb-10 shrink-0 -ml-3">
+      <Link to="/dashboard" className="flex items-center justify-start self-start mb-10 shrink-0 -ml-3 overflow-visible">
         <GooflyLogo heightClass="h-14 md:h-16" className="max-w-[min(100%,17rem)]" />
       </Link>
       <nav className="flex flex-col gap-1 flex-grow" aria-label="Navegação principal">
