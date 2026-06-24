@@ -1,6 +1,7 @@
 import { useCallback, useId, useState } from 'react'
 import { Icon } from '../common/Icon'
 import { ItineraryStopMarker } from './ItineraryStopMarker'
+import { ItineraryActivityCardCompact } from './ItineraryActivityCardCompact'
 import {
   googleMapsPlaceUrl,
   resolveActivityCoordinates,
@@ -200,6 +201,13 @@ export function ItineraryActivityCard({
   onDayChange,
   isTracked = false,
   cardRef,
+  compactMode = false,
+  isDragSource = false,
+  isDragHidden = false,
+  isExpandingCard = false,
+  isDragPending = false,
+  canDragReorder = false,
+  onDragHandlePointerDown,
 }) {
   const panelId = useId()
   const [open, setOpen] = useState(false)
@@ -223,8 +231,20 @@ export function ItineraryActivityCard({
     setOpen((v) => !v)
   }, [])
 
+  const durationLabel = formatDuration(
+    effective || act,
+    start,
+    typeof end === 'string' ? end.trim() : null,
+  )
+
+  const timelinePad = compactMode ? 'pb-3' : showAsLast ? '' : 'pb-8'
+
   return (
-    <div className={`relative pl-10 ${showAsLast ? '' : 'pb-8'}${isTracked ? ' scroll-mt-4' : ''}`}>
+    <div
+      className={`relative pl-10 ${timelinePad}${isTracked ? ' scroll-mt-4' : ''}${
+        isDragPending ? ' roteiro-card-pending' : ''
+      }`}
+    >
       {!showAsLast && (
         <div className="absolute left-0 top-7 bottom-0 w-px border-l-2 border-dashed border-primary/70" aria-hidden />
       )}
@@ -235,13 +255,19 @@ export function ItineraryActivityCard({
       <article
         ref={cardRef}
         className={
-          'rounded-2xl border-2 bg-background-light dark:bg-[#23220f] overflow-hidden transition-[box-shadow,border-color] duration-300 ' +
+          'roteiro-activity-card rounded-2xl border-2 bg-background-light dark:bg-[#23220f] overflow-hidden ' +
+          (compactMode ? 'roteiro-activity-card--compact ' : '') +
+          (isExpandingCard ? 'roteiro-activity-card--expanding ' : '') +
+          (isDragSource
+            ? 'roteiro-activity-card--placeholder border-dashed border-primary/45 bg-primary/5 dark:bg-primary/10 '
+            : '') +
+          (isDragHidden ? 'roteiro-activity-card--hidden-during-landing ' : '') +
           (isTracked
             ? 'border-primary shadow-[0_0_0_4px_rgba(254,198,65,0.45),0_12px_32px_-12px_rgba(254,198,65,0.55)] ring-2 ring-primary/80'
             : 'border-border-light dark:border-border-dark shadow-sm ring-inset ring-primary/25')
         }
       >
-        {(effective?.image_url || act?.image_url) ? (
+        {!compactMode && (effective?.image_url || act?.image_url) ? (
           <div
             className="h-36 sm:h-40 w-full bg-cover bg-center"
             style={{ backgroundImage: `url(${effective?.image_url || act.image_url})` }}
@@ -251,23 +277,46 @@ export function ItineraryActivityCard({
         ) : null}
         <div key={editing ? 'edit' : 'view'} className="itinerary-card-mode-in">
           {editing ? (
-            <CardEditFields
-              index={markerIndex}
-              title={title}
-              scheduleLabelHint={scheduleLabel}
-              ticket={ticket}
-              badge={badge}
-              draft={draft}
-              onDraftPatch={onDraftPatch}
-              onRemove={onRemove}
-              onMoveUp={onMoveUp}
-              onMoveDown={onMoveDown}
-              disableMoveUp={disableMoveUp}
-              disableMoveDown={disableMoveDown}
-              dayPickerValue={dayPickerValue}
-              dayPickerOptions={dayPickerOptions}
-              onDayChange={onDayChange}
-            />
+            compactMode ? (
+              isDragSource ? (
+                <div
+                  className="roteiro-card-compact h-[4.5rem] flex items-center justify-center"
+                  aria-hidden
+                >
+                  <span className="text-[11px] font-semibold text-text-secondary/70">
+                    Solte para reposicionar
+                  </span>
+                </div>
+              ) : (
+                <ItineraryActivityCardCompact
+                  index={markerIndex}
+                  scheduleLabel={scheduleLabel}
+                  title={title}
+                  durationLabel={durationLabel}
+                  className={isDragHidden ? 'opacity-0' : ''}
+                />
+              )
+            ) : (
+              <CardEditFields
+                index={markerIndex}
+                title={title}
+                scheduleLabelHint={scheduleLabel}
+                ticket={ticket}
+                badge={badge}
+                draft={draft}
+                onDraftPatch={onDraftPatch}
+                onRemove={onRemove}
+                onMoveUp={onMoveUp}
+                onMoveDown={onMoveDown}
+                disableMoveUp={disableMoveUp}
+                disableMoveDown={disableMoveDown}
+                dayPickerValue={dayPickerValue}
+                dayPickerOptions={dayPickerOptions}
+                onDayChange={onDayChange}
+                canDragReorder={canDragReorder}
+                onDragHandlePointerDown={onDragHandlePointerDown}
+              />
+            )
           ) : (
             <CardBody
               scheduleLabel={scheduleLabel}
@@ -305,6 +354,8 @@ function CardEditFields({
   dayPickerValue,
   dayPickerOptions,
   onDayChange,
+  canDragReorder = false,
+  onDragHandlePointerDown,
 }) {
   const rawDesc =
     draft.description ??
@@ -320,19 +371,56 @@ function CardEditFields({
 
   return (
     <div className="p-4 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Parada {index + 1}</span>
-        {badge ? (
-          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
-            {badge}
+      {canDragReorder ? (
+        <button
+          type="button"
+          className="roteiro-drag-handle -mx-1 -mt-1 mb-1 flex w-[calc(100%+0.5rem)] cursor-grab touch-none select-none items-center gap-2 rounded-xl border border-border-light/80 bg-background-light/90 px-3 py-2.5 text-left transition-[background-color,transform] duration-200 active:cursor-grabbing active:scale-[0.99] dark:border-border-dark dark:bg-white/[0.05]"
+          onPointerDown={onDragHandlePointerDown}
+          aria-label={`Segure para arrastar parada ${index + 1}`}
+        >
+          <Icon name="drag_indicator" className="text-xl text-text-secondary shrink-0" aria-hidden />
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">
+            Parada {index + 1}
           </span>
-        ) : null}
-        {ticket.required ? (
-          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
-            Ingresso
+          <span className="text-[10px] font-semibold text-text-secondary/80 truncate">
+            {scheduleLabelHint}
           </span>
-        ) : null}
-      </div>
+          <span className="ml-auto text-[10px] font-semibold text-primary/90 shrink-0">
+            Arrastar
+          </span>
+        </button>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">
+            Parada {index + 1}
+          </span>
+          {badge ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
+              {badge}
+            </span>
+          ) : null}
+          {ticket.required ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
+              Ingresso
+            </span>
+          ) : null}
+        </div>
+      )}
+
+      {canDragReorder ? (
+        <div className="flex flex-wrap items-center gap-2 -mt-1">
+          {badge ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
+              {badge}
+            </span>
+          ) : null}
+          {ticket.required ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
+              Ingresso
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
         <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-text-secondary">

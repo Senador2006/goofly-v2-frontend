@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   getActivityDayNumber,
+  moveActivityToIndexInSameDay,
   reorderActivityInSameDay,
   sortDayActivities,
 } from '../src/utils/itineraryDayHelpers.js'
@@ -46,6 +47,12 @@ describe('reorderActivityInSameDay', () => {
     assert.equal(reorderActivityInSameDay(base, emptyMap, 1, 'a', -1), base)
     assert.equal(reorderActivityInSameDay(base, emptyMap, 1, 'c', 1), base)
     assert.equal(reorderActivityInSameDay(base, emptyMap, 1, 'missing', 1), base)
+  })
+
+  it('moveActivityToIndexInSameDay reindexa order', () => {
+    const next = moveActivityToIndexInSameDay(base, emptyMap, 1, 'a', 2)
+    assert.equal(next.find((a) => a.id === 'a')?.order, 2)
+    assert.equal(next.find((a) => a.id === 'c')?.order, 1)
   })
 
   it('reindexa order mesmo quando atividades tinham order igual', () => {

@@ -28,6 +28,10 @@ body {
   min-height: 100vh;
 }
 
+:root {
+  --z-roteiro-drag-overlay: 1200;
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -391,5 +395,130 @@ body.site-tour-active .guide-button-fab {
   .break-inside-avoid-page {
     break-inside: avoid-page;
     page-break-inside: avoid;
+  }
+}
+
+/* Modo edição — drag-and-drop de paradas */
+body.roteiro-drag-active {
+  user-select: none;
+  cursor: grabbing;
+}
+
+body.roteiro-drag-active .roteiro-map-surface {
+  z-index: 0 !important;
+  pointer-events: none;
+}
+
+body.roteiro-drag-active .roteiro-mobile-map-drag-suppressed {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.roteiro-drag-overlay {
+  z-index: var(--z-roteiro-drag-overlay);
+}
+
+.roteiro-list-drag-active {
+  isolation: isolate;
+}
+
+.roteiro-list-scroll--drag-active {
+  overflow-anchor: none;
+}
+
+.roteiro-activity-card {
+  transition:
+    box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.roteiro-activity-card--compact .itinerary-card-mode-in {
+  animation: roteiro-card-collapse-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.roteiro-activity-card--hidden-during-landing {
+  opacity: 0.35;
+}
+
+.roteiro-activity-card--expanding .itinerary-card-mode-in {
+  animation: roteiro-card-expand-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.roteiro-card-pending .roteiro-activity-card {
+  transform: scale(0.992);
+  opacity: 0.94;
+}
+
+.roteiro-drag-insert-line {
+  transition: top 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 35;
+}
+
+.roteiro-drag-ghost {
+  will-change: top, left, width;
+}
+
+.roteiro-drag-ghost--out-of-list {
+  border-style: dashed;
+  box-shadow:
+    0 16px 40px -12px rgba(0, 0, 0, 0.35),
+    0 0 0 3px rgba(245, 158, 11, 0.35);
+  opacity: 0.92;
+}
+
+.roteiro-drag-ghost--animate {
+  transition:
+    top 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    left 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+  transform: scale(1);
+}
+
+@keyframes roteiro-card-collapse-in {
+  from {
+    opacity: 0.72;
+    transform: scaleY(0.92);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes roteiro-card-expand-in {
+  from {
+    opacity: 0.88;
+    transform: scaleY(0.94);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roteiro-activity-card,
+  .roteiro-activity-card--compact .itinerary-card-mode-in,
+  .roteiro-activity-card--expanding .itinerary-card-mode-in,
+  .roteiro-drag-insert-line,
+  .roteiro-drag-ghost--animate {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .roteiro-card-pending .roteiro-activity-card {
+    transform: none;
+    opacity: 1;
+  }
+
+  .roteiro-activity-card--hidden-during-landing {
+    opacity: 1;
   }
 }

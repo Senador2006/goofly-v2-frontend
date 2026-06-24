@@ -23,6 +23,7 @@ export function ItineraryMobileMapDrawer({
   disabled,
   highlightedIndex = null,
   preferLocalRoute = false,
+  hideDuringRoteiroDrag = false,
 }) {
   const dragRef = useRef({ active: false, startX: 0, startOpen: false })
   const [dragOffset, setDragOffset] = useState(0)
@@ -84,6 +85,7 @@ export function ItineraryMobileMapDrawer({
   const handleWidthPx = resolveHandleWidthPx({ open, isDragging })
   const handleCompact = open && !isDragging
   const transitionStyle = isDragging ? 'none' : mobileMapDrawerTransitionStyle()
+  const dragSuppressed = hideDuringRoteiroDrag
 
   const handleStyle = {
     width: handleWidthPx,
@@ -103,12 +105,15 @@ export function ItineraryMobileMapDrawer({
     <>
       <div
         ref={panelRef}
-        className="absolute inset-y-0 right-0 z-20 w-full overflow-hidden bg-gray-200 dark:bg-gray-900/50 shadow-[-4px_0_24px_-8px_rgba(0,0,0,0.25)] lg:hidden"
+        className={
+          'roteiro-map-surface absolute inset-y-0 right-0 z-20 w-full overflow-hidden bg-gray-200 dark:bg-gray-900/50 shadow-[-4px_0_24px_-8px_rgba(0,0,0,0.25)] lg:hidden' +
+          (dragSuppressed ? ' roteiro-mobile-map-drag-suppressed' : '')
+        }
         style={{
           transform: mapTranslate,
           transition: transitionStyle,
-          opacity: open || dragOffset < -8 ? 1 : 0,
-          pointerEvents: open || dragOffset < -20 ? 'auto' : 'none',
+          opacity: dragSuppressed ? 0 : open || dragOffset < -8 ? 1 : 0,
+          pointerEvents: dragSuppressed ? 'none' : open || dragOffset < -20 ? 'auto' : 'none',
         }}
         aria-hidden={!open}
       >
@@ -131,6 +136,7 @@ export function ItineraryMobileMapDrawer({
         aria-label={open ? 'Fechar mapa' : 'Abrir mapa do dia'}
         className={
           'absolute z-30 flex flex-col items-center justify-center touch-none select-none lg:hidden ' +
+          (dragSuppressed ? 'roteiro-mobile-map-drag-suppressed ' : '') +
           (handleCompact
             ? 'rounded-r-xl border border-l-0 border-border-light/90 bg-white text-[#1c1c0d] ' +
               'shadow-[2px_0_16px_rgba(0,0,0,0.18)] ring-1 ring-black/10 active:bg-gray-50'
@@ -139,6 +145,7 @@ export function ItineraryMobileMapDrawer({
               'shadow-[-4px_0_16px_-6px_rgba(0,0,0,0.12)] active:bg-primary/15')
         }
         style={handleStyle}
+        disabled={dragSuppressed}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

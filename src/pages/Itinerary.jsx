@@ -16,10 +16,14 @@ import {
 import { ItineraryMobileMapDrawer } from '../components/itinerary/ItineraryMobileMapDrawer'
 import { ItineraryDayChips } from '../components/itinerary/ItineraryDayChips'
 import { ItineraryPrintView } from '../components/itinerary/ItineraryPrintView'
+import { ItineraryDragInsertLine } from '../components/itinerary/ItineraryDragInsertLine'
+import { ItineraryDragGhost } from '../components/itinerary/ItineraryDragGhost'
+import { RoteiroDragOverlay } from '../components/itinerary/RoteiroDragOverlay'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useRoteiroDragReorder } from '../hooks/useRoteiroDragReorder'
 import {
   buildDateToDayMap,
   getActivityDayNumber,
@@ -212,6 +216,7 @@ export function Itinerary() {
   const deleteInFlightRef = useRef(false)
   const stopCardRefs = useRef(new Map())
   const roteiroListScrollRef = useRef(null)
+  const roteiroCardsListRef = useRef(null)
   const flipBeforeReorderRef = useRef(null)
   const reorderFrozenLayoutRef = useRef(null)
   const [, setReorderLayoutEpoch] = useState(0)
@@ -360,6 +365,45 @@ export function Itinerary() {
 
   const dateToDayMap = useMemo(() => buildDateToDayMap(trip), [trip])
 
+  const dragListContext = useMemo(() => {
+    const acts =
+      roteiroEditOpen && Array.isArray(draftActivities)
+        ? draftActivities
+        : itinerary?.activities || []
+    const tripDayCount = getTripDayCount(trip)
+    const chronologicalDays = Array.from({ length: tripDayCount }, (_, i) => i + 1)
+    const numericDaysFromActs = [
+      ...new Set(
+        acts.map((a) => getActivityDayNumber(a, dateToDayMap)).filter((d) => d != null),
+      ),
+    ]
+    const days =
+      numericDaysFromActs.length > 0
+        ? [...new Set([...chronologicalDays, ...numericDaysFromActs])].sort((a, b) => a - b)
+        : chronologicalDays
+    const effectiveDay = days.includes(selectedDay) ? selectedDay : (days[0] ?? 1)
+    const dayActs = sortDayActivities(
+      acts.filter((a) => getActivityDayNumber(a, dateToDayMap) === effectiveDay),
+    )
+    return { dayNum: effectiveDay, dayActivities: dayActs }
+  }, [roteiroEditOpen, draftActivities, itinerary, trip, selectedDay, dateToDayMap])
+
+  const dragReorder = useRoteiroDragReorder({
+    enabled: roteiroEditOpen && !loading && Boolean(trip),
+    dayActivities: dragListContext.dayActivities,
+    dateToDayMap,
+    dayNum: dragListContext.dayNum,
+    setDraftActivities,
+    scrollRef: roteiroListScrollRef,
+    listRef: roteiroCardsListRef,
+    itemRefs: stopCardRefs,
+  })
+
+  const dragReorderCancelRef = useRef(dragReorder.cancelDrag)
+  dragReorderCancelRef.current = dragReorder.cancelDrag
+  const dragInteractionBlockedRef = useRef(dragReorder.isInteractionBlocked)
+  dragInteractionBlockedRef.current = dragReorder.isInteractionBlocked
+
   useEffect(() => {
     setRoteiroEditOpen(false)
     setDraftActivities(null)
@@ -375,12 +419,15 @@ export function Itinerary() {
   }, [trackedStopId, draftActivities])
 
   const handleSelectDay = useCallback((day) => {
+    dragReorderCancelRef.current?.()
     trackedFollowRef.current = { id: null, reason: null }
     setSelectedDay(day)
   }, [])
 
   useLayoutEffect(() => {
     if (loading || !trip || !roteiroEditOpen || !trackedStopId || !Array.isArray(draftActivities)) return
+    if (dragInteractionBlockedRef.current) return
+    if (dragReorder.phase !== 'idle') return
 
     const act = draftActivities.find((a) => String(a.id) === String(trackedStopId))
     if (!act) {
@@ -418,6 +465,7 @@ export function Itinerary() {
     draftActivities,
     selectedDay,
     dateToDayMap,
+    dragReorder.phase,
   ])
 
   useLayoutEffect(() => {
@@ -561,6 +609,7 @@ export function Itinerary() {
   }
 
   const handleCancelRoteiroEdit = () => {
+    dragReorderCancelRef.current?.()
     setRoteiroEditOpen(false)
     setDraftActivities(null)
     setSavingRoteiro(false)
@@ -861,13 +910,20 @@ export function Itinerary() {
           <section
             className={
               'relative flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark ' +
+              (dragReorder.isOverlayActive ? 'roteiro-list-drag-active z-40 ' : '') +
               (mode === MODE_ROTEIRO
                 ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-8 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
                 : 'w-full max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5')
             }
             aria-label="Paradas do dia"
           >
-            <div ref={roteiroListScrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
+            <div
+              ref={roteiroListScrollRef}
+              className={
+                'roteiro-list-scroll flex-1 min-h-0 overflow-y-auto p-4 sm:p-6' +
+                (dragReorder.isOverlayActive ? ' relative z-50 roteiro-list-scroll--drag-active' : '')
+              }
+            >
               {isPlanning ? (
                 <div className="mb-5 rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/[0.08] to-transparent dark:from-primary/15 p-4 sm:p-5">
                   <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Concluir planejamento</p>
@@ -962,7 +1018,11 @@ export function Itinerary() {
                       </p>
                     </div>
                   ) : null}
-                  <div className="space-y-0">
+                  <div ref={roteiroCardsListRef} className="relative space-y-0">
+                    <ItineraryDragInsertLine
+                      top={dragReorder.ghostStyle?.lineTop}
+                      visible={dragReorder.phase === 'dragging' && dragReorder.showInsertLine}
+                    />
                     {dayActivities.map((act, idx) => {
                       const frozen = reorderFrozenLayoutRef.current
                       const actId = String(act.id)
@@ -1006,6 +1066,7 @@ export function Itinerary() {
                           )
                         }}
                         onMoveUp={() => {
+                          if (dragReorder.isInteractionBlocked) return
                           if (!prefersReducedFlipMotion()) {
                             reorderFrozenLayoutRef.current = captureDayFrozenLayout(
                               dayActivities,
@@ -1035,6 +1096,7 @@ export function Itinerary() {
                           )
                         }}
                         onMoveDown={() => {
+                          if (dragReorder.isInteractionBlocked) return
                           if (!prefersReducedFlipMotion()) {
                             reorderFrozenLayoutRef.current = captureDayFrozenLayout(
                               dayActivities,
@@ -1065,8 +1127,32 @@ export function Itinerary() {
                               : prev,
                           )
                         }}
-                        disableMoveUp={idx === 0}
-                        disableMoveDown={idx === dayActivities.length - 1}
+                        disableMoveUp={idx === 0 || dragReorder.isInteractionBlocked}
+                        disableMoveDown={
+                          idx === dayActivities.length - 1 || dragReorder.isInteractionBlocked
+                        }
+                        compactMode={dragReorder.isCardCompact(act.id)}
+                        isDragSource={
+                          dragReorder.phase === 'dragging' &&
+                          String(act.id) === String(dragReorder.draggingId)
+                        }
+                        isDragHidden={
+                          (dragReorder.phase === 'landing' ||
+                            dragReorder.phase === 'reverting') &&
+                          String(act.id) === String(dragReorder.draggingId)
+                        }
+                        isExpandingCard={
+                          dragReorder.phase === 'expanding' &&
+                          dragReorder.expandRevealed &&
+                          String(act.id) === String(dragReorder.droppedId)
+                        }
+                        isDragPending={String(act.id) === String(dragReorder.pendingDragId)}
+                        canDragReorder={
+                          dragReorder.canDrag && !dragReorder.isInteractionBlocked
+                        }
+                        onDragHandlePointerDown={(event) =>
+                          dragReorder.onDragHandlePointerDown(act.id, event)
+                        }
                         dayPickerValue={getActivityDayNumber(act, dateToDayMap) ?? effectiveSelectedDay}
                         dayPickerOptions={days}
                         onDayChange={(dn) => {
@@ -1184,6 +1270,7 @@ export function Itinerary() {
                 disabled={isSelectedDayPremiumLockedUi}
                 highlightedIndex={trackedMapHighlight}
                 preferLocalRoute={roteiroEditOpen}
+                hideDuringRoteiroDrag={dragReorder.isOverlayActive}
               />
             ) : null}
           </section>
@@ -1226,7 +1313,7 @@ export function Itinerary() {
             />
           </div>
           {mode === MODE_ROTEIRO ? (
-            <div className="relative flex-1 min-h-0 w-full h-full">
+            <div className="roteiro-map-surface relative flex-1 min-h-0 w-full h-full">
               <ItineraryDayMap
                 tripId={tripId}
                 day={effectiveSelectedDay}
@@ -1249,6 +1336,31 @@ export function Itinerary() {
         deleting={deleting}
         tripLabel={destLabel}
       />
+      <RoteiroDragOverlay active={dragReorder.isOverlayActive}>
+        <ItineraryDragGhost
+          activity={dragReorder.ghostActivity}
+          index={
+            dragReorder.ghostActivity
+              ? dayActivities.findIndex((a) => String(a.id) === String(dragReorder.ghostActivity.id))
+              : 0
+          }
+          style={
+            dragReorder.ghostStyle &&
+            (dragReorder.phase === 'dragging' ||
+              dragReorder.phase === 'landing' ||
+              dragReorder.phase === 'reverting')
+              ? {
+                  left: dragReorder.ghostStyle.left,
+                  top: dragReorder.ghostStyle.top,
+                  width: dragReorder.ghostStyle.width,
+                  animate: dragReorder.ghostStyle.animate,
+                  visible: dragReorder.ghostStyle.visible !== false,
+                  outOfList: Boolean(dragReorder.ghostStyle.outOfList),
+                }
+              : null
+          }
+        />
+      </RoteiroDragOverlay>
     </div>
     <ItineraryPrintView
       trip={trip}
