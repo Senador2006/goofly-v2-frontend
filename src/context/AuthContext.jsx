@@ -9,19 +9,25 @@ const REFRESH_TOKEN_KEY = 'refreshToken'
 const USER_KEY = 'user'
 
 /**
- * Pluga `token`, `refreshToken` e `user` no `localStorage` seguindo o
- * contrato documentado em `API.md`:
- *   - login/register/refresh → `{ data: { user, token, refreshToken } }`
- * Audit nota C2: a persistência em `localStorage` deve migrar para cookie
- * `httpOnly`. Mantemos aqui durante a Fase 0/1; o refresh-token já foi
- * canalizado pelo interceptor de `services/api.js` para refazer requests
- * 401 sem deslogar o usuário.
+ * Auth via cookie httpOnly (padrão BFF — ver `services/api.js`).
+ *
+ * O access/refresh token NÃO ficam mais acessíveis ao JS: vivem em cookies
+ * httpOnly setados pelo gateway (resolve C2/XSS). Logo, o `localStorage` guarda
+ * apenas o **cache do `user`** (dado não sensível) como hint de "talvez logado"
+ * — a fonte da verdade da sessão é o cookie, validado via `GET /users/me`.
  */
-function persistAuthPayload(payload) {
-  if (!payload || typeof window === 'undefined') return null
-  if (payload.token) localStorage.setItem(TOKEN_KEY, payload.token)
-  if (payload.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, payload.refreshToken)
-  return payload.user || payload
+function cacheUser(userData) {
+  if (typeof window === 'undefined') return userData || null
+  if (userData) localStorage.setItem(USER_KEY, JSON.stringify(userData))
+  return userData || null
+}
+
+function clearLocalAuthCache() {
+  if (typeof window === 'undefined') return
+  // USER_KEY é o cache atual; TOKEN/REFRESH limpam resquícios pré-cookie.
+  localStorage.removeItem(USER_KEY)
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
 }
 
 export function AuthProvider({ children }) {
@@ -33,8 +39,7 @@ export function AuthProvider({ children }) {
       const res = await api.get('/users/me')
       const userData = res.body?.data || res.data?.data || res.data
       setUser(userData)
-      if (userData) localStorage.setItem(USER_KEY, JSON.stringify(userData))
-      return userData
+      return cacheUser(userData)
     } catch (_) {
       return null
     }
@@ -50,59 +55,67 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY)
+    // O token agora é cookie httpOnly (invisível ao JS). Usamos o cache do
+    // `user` como hint: só validamos a sessão via /users/me se já houve login
+    // nesta máquina — evita disparar 401/refresh em visitante anônimo.
     const savedUser = localStorage.getItem(USER_KEY)
-    if (token) {
-      if (savedUser) {
-        try {
-          setUser(JSON.parse(savedUser))
-        } catch (_) {
-          // localStorage corrompido — segue tentando o /users/me abaixo
-        }
-      }
-      api
-        .get('/users/me')
-        .then((res) => {
-          const userData = res.body?.data || res.data?.data || res.data
-          setUser(userData)
-          if (userData) localStorage.setItem(USER_KEY, JSON.stringify(userData))
-        })
-        .catch(() => {
-          // Refresh interceptor já cobriu o 401; se ainda assim falhou,
-          // limpamos apenas se não havia cache local.
-          if (!savedUser) {
-            localStorage.removeItem(TOKEN_KEY)
-            localStorage.removeItem(REFRESH_TOKEN_KEY)
-          }
-        })
-        .finally(() => setLoading(false))
-    } else {
+    if (!savedUser) {
       setLoading(false)
+      return
     }
+
+    try {
+      setUser(JSON.parse(savedUser))
+    } catch (_) {
+      // cache corrompido — segue validando via /users/me abaixo
+    }
+
+    api
+      .get('/users/me')
+      .then((res) => {
+        const userData = res.body?.data || res.data?.data || res.data
+        setUser(userData)
+        cacheUser(userData)
+      })
+      .catch(() => {
+        // Cookie ausente/expirado e refresh falhou → sessão inválida.
+        clearLocalAuthCache()
+        setUser(null)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const login = async (email, password) => {
+    // O gateway seta os cookies httpOnly nesta resposta; o body traz só `user`.
     const res = await api.post('/auth/login', { email, password })
     const payload = res.body?.data || res.data?.data || res.data || {}
-    persistAuthPayload(payload)
     const userData = (await refreshUser()) || payload.user || payload
-    if (userData) setUser(userData)
+    if (userData) {
+      setUser(userData)
+      cacheUser(userData)
+    }
     return res.data
   }
 
   const register = async (name, email, password, captchaToken) => {
     const res = await gatewayApi.post('/auth/register', { name, email, password, captchaToken })
     const payload = res.body?.data || res.data?.data || res.data || {}
-    persistAuthPayload(payload)
     const userData = (await refreshUser()) || payload.user || payload
-    if (userData) setUser(userData)
+    if (userData) {
+      setUser(userData)
+      cacheUser(userData)
+    }
     return res.data
   }
 
-  const logout = () => {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(REFRESH_TOKEN_KEY)
-    localStorage.removeItem(USER_KEY)
+  const logout = async () => {
+    // Limpa os cookies httpOnly no gateway (best-effort) e o estado local.
+    try {
+      await api.post('/auth/logout', null, { _skipAuthRetry: true })
+    } catch (_) {
+      // Ignora — limpa o estado local de qualquer forma.
+    }
+    clearLocalAuthCache()
     setUser(null)
   }
 

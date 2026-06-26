@@ -1,19 +1,11 @@
-/** Lê `role` do JWT no localStorage (fallback se o cache do user estiver desatualizado). */
-export function getRoleFromStoredToken() {
-  if (typeof window === 'undefined') return null
-  const token = localStorage.getItem('token')
-  if (!token) return null
-  try {
-    const segment = token.split('.')[1]
-    if (!segment) return null
-    const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/')))
-    return payload.role === 'admin' ? 'admin' : payload.role === 'user' ? 'user' : null
-  } catch {
-    return null
-  }
-}
-
+/**
+ * Resolução de papel (role) do usuário no frontend.
+ *
+ * Com a auth via cookie httpOnly (padrão BFF), o JWT não é mais acessível ao
+ * JS — não dá (nem deve) decodificar o token no cliente. A fonte da verdade do
+ * `role` é o objeto `user` carregado de `GET /users/me` (já sanitizado pelo
+ * backend com `role: 'admin' | 'user'`).
+ */
 export function resolveIsAdmin(user) {
-  if (user?.role === 'admin') return true
-  return getRoleFromStoredToken() === 'admin'
+  return user?.role === 'admin'
 }
