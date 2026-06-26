@@ -17,11 +17,12 @@ import axios from 'axios'
  *    de um refactor destrutivo na backend (M5), normalizamos no cliente e
  *    expomos `response.body` com o contrato único; `response.data` continua
  *    intacto para callers antigos durante a migração.
- * 4. **Refresh-token**: API.md documenta `POST /auth/refresh` mas o front
- *    fazia logout duro no 401. Aqui um interceptor tenta refresh **uma vez**
- *    com deduplicação de chamadas concorrentes e refaz o request original.
- *    Persistência do refresh-token ainda em `localStorage` (C2 fica para a
- *    Fase 1 — migração para cookie httpOnly).
+ * 4. **Auth via cookie httpOnly (BFF)**: o access/refresh token vivem em
+ *    cookies httpOnly setados pelo gateway (resolve C2 — XSS não lê mais o
+ *    token). Todas as chamadas usam `withCredentials` para enviar o cookie.
+ *    O interceptor tenta refresh **uma vez** (com dedup) chamando
+ *    `POST /auth/refresh` sem body — o refresh-token vai no cookie — e refaz
+ *    o request original (que carrega o novo cookie automaticamente).
  * 5. **Timeouts** (A15): default 30s; chamadas de IA usam `AI_TIMEOUT_MS`
  *    via override por request.
  */
@@ -46,8 +47,10 @@ if (directFlag && isProd && typeof console !== 'undefined') {
   )
 }
 
+// Same-site com o frontend (goofly.com.br) para os cookies httpOnly de auth
+// funcionarem first-party. Sobrescrevível por VITE_API_GATEWAY_URL.
 const DEFAULT_PRODUCTION_GATEWAY =
-  'https://goofly-v2-api-gateway.onrender.com/api/v1'
+  'https://api.goofly.com.br/api/v1'
 
 function normalizeGatewayURL(url) {
   const base = String(url || '').trim().replace(/\/$/, '')
@@ -114,15 +117,8 @@ function createApiClient(clientBaseURL) {
     baseURL: clientBaseURL,
     timeout: DEFAULT_TIMEOUT_MS,
     headers: { 'Content-Type': 'application/json' },
-  })
-
-  client.interceptors.request.use((config) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
-    if (token) {
-      config.headers = config.headers || {}
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
+    // Envia/recebe os cookies httpOnly de auth (padrão BFF).
+    withCredentials: true,
   })
 
   // Normalização do body — não substitui `response.data` para não quebrar
@@ -148,8 +144,15 @@ export const gatewayApi = createApiClient(gatewayBaseURL)
  */
 let inFlightRefresh = null
 
-function hardLogout() {
+async function hardLogout() {
   if (typeof window === 'undefined') return
+  // Best-effort: pede ao gateway para limpar os cookies httpOnly.
+  try {
+    await api.post('/auth/logout', {}, { _skipAuthRetry: true })
+  } catch (_) {
+    // Ignora — segue limpando o estado local de qualquer forma.
+  }
+  // Limpa resquícios de sessões antigas (pré-cookie) e o cache do user.
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
@@ -162,22 +165,17 @@ async function performRefresh(client) {
   if (typeof window === 'undefined') {
     throw new Error('Refresh indisponível fora do browser')
   }
-  const storedRefresh = localStorage.getItem(REFRESH_TOKEN_KEY)
-  if (!storedRefresh) {
-    throw new Error('Sem refresh-token armazenado')
-  }
+  // O refresh-token vai no cookie httpOnly — sem body. Dedup de chamadas
+  // concorrentes via `inFlightRefresh`.
   if (!inFlightRefresh) {
     inFlightRefresh = client
-      .post('/auth/refresh', { refreshToken: storedRefresh }, { _skipAuthRetry: true })
+      .post('/auth/refresh', {}, { _skipAuthRetry: true })
       .finally(() => {
         inFlightRefresh = null
       })
   }
-  const resp = await inFlightRefresh
-  const payload = resp.body?.data || resp.data?.data || resp.data || {}
-  if (payload.token) localStorage.setItem(TOKEN_KEY, payload.token)
-  if (payload.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, payload.refreshToken)
-  return payload.token
+  await inFlightRefresh
+  return true
 }
 
 function attachAuthRetry(client) {
@@ -204,10 +202,8 @@ function attachAuthRetry(client) {
 
       original._retry = true
       try {
-        const newToken = await performRefresh(client)
-        if (!newToken) throw new Error('Refresh não devolveu token')
-        original.headers = original.headers || {}
-        original.headers.Authorization = `Bearer ${newToken}`
+        await performRefresh(client)
+        // O novo access token já está no cookie httpOnly; o retry o carrega.
         return client.request(original)
       } catch (refreshErr) {
         if (refreshErr.response?.status !== 429) {
