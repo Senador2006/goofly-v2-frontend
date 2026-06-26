@@ -8,6 +8,12 @@ import {
 } from '../../utils/activityCoordinates'
 import { GooglePlaceAutocompleteField } from '../planning/GooglePlaceAutocompleteField'
 import { hasGoogleMapsApiKey } from '../../services/googleMapsPlacesLoader'
+import { TimeInput } from '../common/TimeInput'
+import {
+  defaultActivityTitle,
+  resolveActivityTitle,
+  resolveActivityTitleForEdit,
+} from '../../utils/itineraryPrintFormat'
 
 function minutesBetweenStarts(startStr, endStr) {
   if (!startStr || !endStr) return null
@@ -30,6 +36,16 @@ function formatDuration(act, startResolved, endResolved) {
     return `${h}h`
   }
   return '2h'
+}
+
+/** @param {Record<string, unknown> | null | undefined} act */
+function activityNeedsTicket(act) {
+  return (
+    act?.ticketRequired === true ||
+    act?.requiresTicket === true ||
+    act?.ticket_required === true ||
+    act?.needs_ticket === true
+  )
 }
 
 /** @param {{ source?: string }} act */
@@ -138,11 +154,7 @@ function resolveTicketInfo(act) {
   if (!act || typeof act !== 'object')
     return { required: false, hint: '', links: [] }
 
-  const required =
-    act.ticketRequired === true ||
-    act.requiresTicket === true ||
-    act.ticket_required === true ||
-    act.needs_ticket === true
+  const required = activityNeedsTicket(act)
 
   const hint = String(act.ticketPurchaseHint || act.ticket_purchase_hint || '').trim()
 
@@ -221,8 +233,7 @@ export function ItineraryActivityCard({
   const end = effective?.endTime || effective?.end_time
   const scheduleLabel =
     typeof end === 'string' && end.trim() ? `${start}–${String(end).trim()}` : start
-  const title =
-    effective?.title || effective?.name || effective?.placeName || `Atividade ${markerIndex + 1}`
+  const title = resolveActivityTitle(effective, markerIndex)
   const description = resolveActivityDescription(effective)
   const badge = sourceBadgeLabel(effective)
   const ticket = resolveTicketInfo(effective || act)
@@ -368,6 +379,27 @@ function CardEditFields({
 
   const st = draft.startTime || draft.start_time || draft.time || '09:00'
   const et = draft.endTime || draft.end_time || ''
+  const needsTicket = activityNeedsTicket(draft)
+  const titleEditValue = resolveActivityTitleForEdit(draft)
+
+  const handleTitleBlur = () => {
+    if (resolveActivityTitleForEdit(draft).trim()) return
+    const fallback = defaultActivityTitle(index)
+    onDraftPatch({ title: fallback, name: fallback, placeName: fallback })
+  }
+
+  const handleTicketToggle = () => {
+    if (needsTicket) {
+      onDraftPatch({
+        ticketRequired: false,
+        ticket_required: false,
+        requiresTicket: false,
+        needs_ticket: false,
+      })
+    } else {
+      onDraftPatch({ ticketRequired: true, ticket_required: true })
+    }
+  }
 
   return (
     <div className="p-4 space-y-3">
@@ -425,26 +457,24 @@ function CardEditFields({
       <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
         <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-text-secondary">
           Início
-          <input
-            type="text"
+          <TimeInput
             className="rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-2.5 py-2 text-sm font-semibold text-[#1c1c0d] dark:text-white"
             value={st}
-            onChange={(e) =>
-              onDraftPatch({ startTime: e.target.value, start_time: e.target.value, time: e.target.value })
+            onChange={(next) =>
+              onDraftPatch({ startTime: next, start_time: next, time: next })
             }
             placeholder="09:00"
-            autoComplete="off"
+            fallback="09:00"
           />
         </label>
         <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-text-secondary">
           Fim (opcional)
-          <input
-            type="text"
+          <TimeInput
             className="rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-2.5 py-2 text-sm font-semibold text-[#1c1c0d] dark:text-white"
             value={et}
-            onChange={(e) => onDraftPatch({ endTime: e.target.value, end_time: e.target.value })}
+            onChange={(next) => onDraftPatch({ endTime: next, end_time: next })}
             placeholder="—"
-            autoComplete="off"
+            allowEmpty
           />
         </label>
         {dayPickerOptions.length > 0 ? (
@@ -475,13 +505,14 @@ function CardEditFields({
             <GooglePlaceAutocompleteField
               id={`activity-title-ac-${draft.id ?? index}`}
               resultKind="place"
-              value={title}
+              value={titleEditValue}
               disabled={false}
               placeholder="Busque um lugar (ex.: Torre Eiffel)…"
               className="itinerary-activity-ac-frame relative z-[30] w-full min-h-[2.75rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910]"
               onDraftChange={(text) =>
                 onDraftPatch({ title: text, name: text, placeName: text })
               }
+              onBlur={handleTitleBlur}
               onResolved={(patch) => {
                 const next = {}
                 const resolvedName = patch.name || patch.city
@@ -502,7 +533,7 @@ function CardEditFields({
           <input
             type="text"
             className="w-full rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-3 py-2.5 text-sm font-bold text-[#1c1c0d] dark:text-white"
-            value={title}
+            value={titleEditValue}
             onChange={(e) =>
               onDraftPatch({
                 title: e.target.value,
@@ -510,6 +541,7 @@ function CardEditFields({
                 placeName: e.target.value,
               })
             }
+            onBlur={handleTitleBlur}
           />
         )}
       </label>
@@ -523,6 +555,35 @@ function CardEditFields({
           placeholder="O que você quer fazer nesta parada?"
         />
       </label>
+
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light/60 dark:bg-white/[0.04] px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">
+            Precisa de ingresso?
+          </p>
+          <p className="text-[10px] text-text-secondary/80 mt-0.5 leading-snug">
+            Marque se esta parada exige bilhete ou reserva antecipada.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={needsTicket}
+          aria-label="Esta parada precisa de ingresso"
+          onClick={handleTicketToggle}
+          className={`relative w-14 h-8 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+            needsTicket
+              ? 'border-amber-500 bg-amber-500'
+              : 'border-border-light bg-border-light dark:border-border-dark dark:bg-surface-dark'
+          }`}
+        >
+          <span
+            className={`absolute top-1/2 size-6 -translate-y-1/2 rounded-full bg-white shadow-md ring-1 transition-all duration-200 ${
+              needsTicket ? 'right-1 ring-white/30' : 'left-1 ring-foreground/15'
+            }`}
+          />
+        </button>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <button

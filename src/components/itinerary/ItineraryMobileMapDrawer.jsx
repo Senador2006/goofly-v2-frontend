@@ -20,10 +20,14 @@ export function ItineraryMobileMapDrawer({
   tripId,
   day,
   activities,
+  accommodations = [],
   disabled,
+  routeRestricted = false,
   highlightedIndex = null,
   preferLocalRoute = false,
   hideDuringRoteiroDrag = false,
+  showAccommodationRoutes = true,
+  onShowAccommodationRoutesChange,
 }) {
   const dragRef = useRef({ active: false, startX: 0, startOpen: false })
   const [dragOffset, setDragOffset] = useState(0)
@@ -121,12 +125,16 @@ export function ItineraryMobileMapDrawer({
           tripId={tripId}
           day={day}
           activities={activities}
+          accommodations={accommodations}
           disabled={disabled}
+          routeRestricted={routeRestricted}
           highlightedIndex={highlightedIndex}
           preferLocalRoute={preferLocalRoute}
           className="absolute inset-0 h-full w-full"
           ariaLabel={`Mapa do roteiro — dia ${day}`}
           mapLayoutWatch={open ? `open-${day}` : 'closed'}
+          showAccommodationRoutes={showAccommodationRoutes}
+          onShowAccommodationRoutesChange={onShowAccommodationRoutesChange}
         />
       </div>
 

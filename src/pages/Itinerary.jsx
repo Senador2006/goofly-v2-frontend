@@ -14,6 +14,10 @@ import {
   clearItineraryRouteCache,
 } from '../components/itinerary/ItineraryDayMap'
 import { ItineraryMobileMapDrawer } from '../components/itinerary/ItineraryMobileMapDrawer'
+import {
+  readShowAccommodationRoutesPreference,
+  writeShowAccommodationRoutesPreference,
+} from '../utils/mapAccommodationRoutesPreference'
 import { ItineraryDayChips } from '../components/itinerary/ItineraryDayChips'
 import { ItineraryPrintView } from '../components/itinerary/ItineraryPrintView'
 import { ItineraryDragInsertLine } from '../components/itinerary/ItineraryDragInsertLine'
@@ -30,6 +34,7 @@ import {
   reorderActivityInSameDay,
   sortDayActivities,
 } from '../utils/itineraryDayHelpers'
+import { resolveAccommodationsForDay } from '../utils/accommodationDayResolver'
 import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
 import {
   captureReorderSnapshot,
@@ -71,6 +76,26 @@ function ensureActivitiesHaveStableIds(activityList) {
   })
 }
 
+/** Normaliza flags de ingresso para o contrato persistido (camelCase + snake_case ou ausência). */
+function normalizeActivityTicketForPersist(act) {
+  const required =
+    act.ticketRequired === true ||
+    act.requiresTicket === true ||
+    act.ticket_required === true ||
+    act.needs_ticket === true
+  const out = { ...act }
+  delete out.requiresTicket
+  delete out.needs_ticket
+  if (required) {
+    out.ticketRequired = true
+    out.ticket_required = true
+  } else {
+    delete out.ticketRequired
+    delete out.ticket_required
+  }
+  return out
+}
+
 /** Reagrupa todos os dias, ordena dentro de cada dia e normaliza day/dayNumber/order para persistência. */
 function normalizeActivitiesForPersist(activities, dateToDayMap, fallbackDay = 1) {
   const fb = Math.max(1, Math.floor(Number(fallbackDay) || 1))
@@ -98,7 +123,7 @@ function normalizeActivitiesForPersist(activities, dateToDayMap, fallbackDay = 1
   const out = []
   for (const d of sortedDays) {
     const list = sortDayActivities(map.get(d))
-    list.forEach((a, i) => out.push({ ...a, order: i }))
+    list.forEach((a, i) => out.push(normalizeActivityTicketForPersist({ ...a, order: i })))
   }
   return out
 }
@@ -212,6 +237,9 @@ export function Itinerary() {
   const [draftActivities, setDraftActivities] = useState(null)
   const [savingRoteiro, setSavingRoteiro] = useState(false)
   const [mobileMapOpen, setMobileMapOpen] = useState(false)
+  const [showAccommodationRoutes, setShowAccommodationRoutes] = useState(
+    () => readShowAccommodationRoutesPreference(),
+  )
   const [trackedStopId, setTrackedStopId] = useState(null)
   const deleteInFlightRef = useRef(false)
   const stopCardRefs = useRef(new Map())
@@ -221,6 +249,11 @@ export function Itinerary() {
   const reorderFrozenLayoutRef = useRef(null)
   const [, setReorderLayoutEpoch] = useState(0)
   const trackedFollowRef = useRef({ id: null, reason: null })
+
+  const handleShowAccommodationRoutesChange = useCallback((next) => {
+    setShowAccommodationRoutes(next)
+    writeShowAccommodationRoutesPreference(next)
+  }, [])
 
   const isPlanning = trip?.status === 'planejando'
   const hasFullAccess = hasItineraryFullAccess(itinerary, trip)
@@ -563,6 +596,7 @@ export function Itinerary() {
   const dayActivities = sortDayActivities(
     activities.filter((a) => getActivityDayNumber(a, dateToDayMap) === effectiveSelectedDay)
   )
+  const dayAccommodations = resolveAccommodationsForDay(trip, effectiveSelectedDay, dateToDayMap)
   const trackedMapIndex = trackedStopId
     ? dayActivities.findIndex((a) => String(a.id) === String(trackedStopId))
     : -1
@@ -594,6 +628,9 @@ export function Itinerary() {
     selectedDayPremium.totalOnDay > selectedDayPremium.visibleOnDay
       ? selectedDayPremium.totalOnDay - selectedDayPremium.visibleOnDay
       : 0
+
+  const isRouteRestricted =
+    !hasFullAccess && Boolean(premiumRestriction) && !isPlanning
 
   const showRoteiroSidebar = mode === MODE_ROTEIRO
 
@@ -662,6 +699,7 @@ export function Itinerary() {
           dayNumber: nextDay,
           order: 999,
           startTime: '10:00',
+          ticketRequired: false,
           source: 'user_edit',
         },
       ]
@@ -1267,10 +1305,14 @@ export function Itinerary() {
                 tripId={tripId}
                 day={effectiveSelectedDay}
                 activities={dayActivities}
+                accommodations={dayAccommodations}
                 disabled={isSelectedDayPremiumLockedUi}
+                routeRestricted={isRouteRestricted}
                 highlightedIndex={trackedMapHighlight}
                 preferLocalRoute={roteiroEditOpen}
                 hideDuringRoteiroDrag={dragReorder.isOverlayActive}
+                showAccommodationRoutes={showAccommodationRoutes}
+                onShowAccommodationRoutesChange={handleShowAccommodationRoutesChange}
               />
             ) : null}
           </section>
@@ -1318,11 +1360,15 @@ export function Itinerary() {
                 tripId={tripId}
                 day={effectiveSelectedDay}
                 activities={dayActivities}
+                accommodations={dayAccommodations}
                 disabled={isSelectedDayPremiumLockedUi}
+                routeRestricted={isRouteRestricted}
                 highlightedIndex={trackedMapHighlight}
                 preferLocalRoute={roteiroEditOpen}
                 className="absolute inset-0 h-full w-full"
                 ariaLabel={`Mapa do roteiro — dia ${effectiveSelectedDay}`}
+                showAccommodationRoutes={showAccommodationRoutes}
+                onShowAccommodationRoutesChange={handleShowAccommodationRoutesChange}
               />
             </div>
           ) : null}

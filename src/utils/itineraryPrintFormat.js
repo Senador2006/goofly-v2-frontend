@@ -3,6 +3,19 @@ export function resolveActivityTitle(act, fallbackIndex = 0) {
   return act?.title || act?.name || act?.placeName || `Atividade ${fallbackIndex + 1}`
 }
 
+/** Valor bruto do título para edição — sem fallback de exibição (permite campo vazio).
+ *  @param {Record<string, any> | null | undefined} act */
+export function resolveActivityTitleForEdit(act) {
+  if (!act) return ''
+  const raw = act.title ?? act.name ?? act.placeName ?? ''
+  return typeof raw === 'string' ? raw : String(raw)
+}
+
+/** @param {number} fallbackIndex */
+export function defaultActivityTitle(fallbackIndex = 0) {
+  return `Atividade ${fallbackIndex + 1}`
+}
+
 /** @param {Record<string, any>} act */
 export function resolveActivitySchedule(act) {
   const start = act?.startTime || act?.start_time || act?.time || ''

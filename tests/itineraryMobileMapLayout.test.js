@@ -91,8 +91,9 @@ describe('ItineraryMobileMapDrawer contracts', () => {
 })
 
 describe('ItineraryDayMap pin source contract', () => {
-  it('prioriza localMarkers para pins quando há atividades locais', () => {
-    assert.match(dayMapSource, /localMarkers\.length > 0 \? localMarkers : apiMarkers/)
+  it('prioriza localMarkers para pins quando há atividades locais (exceto prévia premium)', () => {
+    assert.match(dayMapSource, /resolveMapMarkers/)
+    assert.match(dayMapSource, /routeRestricted/)
   })
 
   it('suporta mapLayoutWatch para invalidateSize', () => {

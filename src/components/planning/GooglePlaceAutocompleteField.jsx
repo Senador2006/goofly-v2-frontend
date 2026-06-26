@@ -79,6 +79,7 @@ function coordinatesFromPlace(place) {
  *   disabled?: boolean,
  *   value?: string,
  *   onDraftChange?: (text: string) => void,
+ *   onBlur?: () => void,
  *   onResolved: (patch: PlaceResolvedPatch) => void,
  *   includedRegionCodes?: string[],
  *   resultKind?: 'city' | 'place',
@@ -91,6 +92,7 @@ export function GooglePlaceAutocompleteField({
   disabled = false,
   value = '',
   onDraftChange,
+  onBlur,
   onResolved,
   includedRegionCodes,
   resultKind = 'city',
@@ -101,6 +103,7 @@ export function GooglePlaceAutocompleteField({
   const syncingRef = useRef(false)
   const onResolvedRef = useRef(onResolved)
   const onDraftRef = useRef(onDraftChange)
+  const onBlurRef = useRef(onBlur)
   const latestPropsRef = useRef({ value, placeholder, disabled, includedRegionCodes, resultKind })
   latestPropsRef.current = { value, placeholder, disabled, includedRegionCodes, resultKind }
 
@@ -111,6 +114,10 @@ export function GooglePlaceAutocompleteField({
   useEffect(() => {
     onDraftRef.current = onDraftChange
   }, [onDraftChange])
+
+  useEffect(() => {
+    onBlurRef.current = onBlur
+  }, [onBlur])
 
   /* Monta uma única vez por `id`; evita remover o Web Component a cada render do pai. */
   useEffect(() => {
@@ -162,6 +169,11 @@ export function GooglePlaceAutocompleteField({
       onDraftRef.current?.(ac.value || '')
     }
 
+    /** @type {EventListener} */
+    const onBlurInternal = () => {
+      onBlurRef.current?.()
+    }
+
     ;(async () => {
       try {
         const placesMod =
@@ -188,6 +200,7 @@ export function GooglePlaceAutocompleteField({
 
         ac.addEventListener('gmp-select', onSelect)
         ac.addEventListener('input', onInputInternal)
+        ac.addEventListener('blur', onBlurInternal)
 
         wrapRef.current.replaceChildren(ac)
         acRef.current = ac
@@ -202,6 +215,7 @@ export function GooglePlaceAutocompleteField({
       if (ac) {
         ac.removeEventListener('gmp-select', onSelect)
         ac.removeEventListener('input', onInputInternal)
+        ac.removeEventListener('blur', onBlurInternal)
       }
       acRef.current = null
       wrapRef.current?.replaceChildren()

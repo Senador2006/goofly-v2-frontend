@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Header } from '../components/layout/Header'
 import { Icon } from '../components/common/Icon'
@@ -90,23 +90,56 @@ function generateId() {
   return 'dest-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9)
 }
 
-/** Garante 1 estadia por destino (ex.: usuário pulou o passo 2 pelas abas). */
-function getPaddedAccommodations(destinations, accommodations) {
-  const dests = destinations || []
-  const accs = [...(accommodations || [])]
-  for (let i = accs.length; i < dests.length; i++) {
-    const dest = dests[i]
-    accs.push({
-      destinationId: dest?.id,
-      type: 'hotel',
-      name: '',
-      address: '',
-      checkIn: dest?.arrivalDate || '',
-      checkOut: dest?.departureDate || '',
-      nights: 0,
-    })
+function generateAccommodationId() {
+  return 'acc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9)
+}
+
+/** Indica se o usuário preencheu algum dado de hospedagem (nome ou endereço). */
+function accommodationHasContent(acc) {
+  return Boolean(String(acc?.name || acc?.address || '').trim())
+}
+
+function createEmptyAccommodation(dest) {
+  return {
+    id: generateAccommodationId(),
+    destinationId: dest?.id,
+    type: 'hotel',
+    name: '',
+    address: '',
+    checkIn: dest?.arrivalDate || '',
+    checkOut: dest?.departureDate || '',
+    nights: 0,
   }
-  return accs.slice(0, dests.length)
+}
+
+function getAccommodationsForDestination(accommodations, destinationId) {
+  return (accommodations || []).filter((a) => a.destinationId === destinationId)
+}
+
+function toIsoDate(raw) {
+  if (!raw) return null
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(raw).trim())
+  return m ? m[1] : null
+}
+
+function validateAccommodationOverlaps(destinations, accommodations) {
+  for (const dest of destinations || []) {
+    const destAccs = (accommodations || []).filter(
+      (a) => accommodationHasContent(a) && a.destinationId === dest.id,
+    )
+    for (let i = 0; i < destAccs.length; i += 1) {
+      for (let j = i + 1; j < destAccs.length; j += 1) {
+        const aStart = toIsoDate(destAccs[i].checkIn)
+        const aEnd = toIsoDate(destAccs[i].checkOut)
+        const bStart = toIsoDate(destAccs[j].checkIn)
+        const bEnd = toIsoDate(destAccs[j].checkOut)
+        if (aStart && aEnd && bStart && bEnd && aStart <= bEnd && bStart <= aEnd) {
+          return `As datas das hospedagens em ${dest.city || 'um destino'} não podem se sobrepor`
+        }
+      }
+    }
+  }
+  return null
 }
 
 export function NewTrip() {
@@ -158,41 +191,36 @@ export function NewTrip() {
 
   const removeDestination = (index) => {
     if (formData.destinations.length <= 1) return
+    const removedId = formData.destinations[index]?.id
     setFormData((prev) => ({
       ...prev,
       destinations: prev.destinations.filter((_, i) => i !== index).map((d, i) => ({ ...d, order: i + 1 })),
+      accommodations: (prev.accommodations || []).filter((a) => a.destinationId !== removedId),
     }))
   }
 
-  useEffect(() => {
-    if (step !== 2) return
-    setFormData((prev) => {
-      const dests = prev.destinations
-      const accs = prev.accommodations || []
-      if (accs.length >= dests.length) return prev
-      const next = [...accs]
-      for (let i = next.length; i < dests.length; i++) {
-        const dest = dests[i]
-        next[i] = {
-          destinationId: dest?.id,
-          type: 'hotel',
-          name: '',
-          address: '',
-          checkIn: dest?.arrivalDate || '',
-          checkOut: dest?.departureDate || '',
-          nights: 0,
-        }
-      }
-      return { ...prev, accommodations: next }
-    })
-  }, [step])
+  const updateAccommodation = (accId, updates) => {
+    setFormData((prev) => ({
+      ...prev,
+      accommodations: (prev.accommodations || []).map((a) =>
+        a.id === accId ? { ...a, ...updates } : a,
+      ),
+    }))
+  }
 
-  const updateAccommodation = (index, updates) => {
-    setFormData((prev) => {
-      const accs = [...(prev.accommodations || [])]
-      accs[index] = { ...accs[index], ...updates }
-      return { ...prev, accommodations: accs }
-    })
+  const addAccommodation = (destinationId) => {
+    const dest = formData.destinations.find((d) => d.id === destinationId)
+    setFormData((prev) => ({
+      ...prev,
+      accommodations: [...(prev.accommodations || []), createEmptyAccommodation(dest)],
+    }))
+  }
+
+  const removeAccommodation = (accId) => {
+    setFormData((prev) => ({
+      ...prev,
+      accommodations: (prev.accommodations || []).filter((a) => a.id !== accId),
+    }))
   }
 
   const toggleMulti = (field, value) => {
@@ -225,12 +253,14 @@ export function NewTrip() {
     }
     if (s === 2) {
       const dests = formData.destinations
-      const accs = getPaddedAccommodations(dests, formData.accommodations)
-      if (accs.length < dests.length) return 'Preencha a estadia para cada destino'
-      for (let i = 0; i < accs.length; i++) {
-        const a = accs[i]
-        if (!a.type || !a.checkIn || !a.checkOut) return `Preencha check-in e check-out da estadia ${i + 1}`
-        const dest = dests[i]
+      const accs = formData.accommodations || []
+      for (const a of accs) {
+        if (!accommodationHasContent(a)) continue
+        const dest = dests.find((d) => d.id === a.destinationId)
+        if (!dest) return 'Hospedagem sem destino associado'
+        if (!a.type || !a.checkIn || !a.checkOut) {
+          return `Preencha check-in e check-out da hospedagem em ${dest.city || 'um destino'}`
+        }
         const checkIn = new Date(a.checkIn)
         const checkOut = new Date(a.checkOut)
         const arr = new Date(dest.arrivalDate)
@@ -238,7 +268,7 @@ export function NewTrip() {
         if (checkIn < arr) return `Check-in deve ser após a chegada em ${dest.city}`
         if (checkOut > dep) return `Check-out deve ser antes da saída de ${dest.city}`
       }
-      return null
+      return validateAccommodationOverlaps(dests, accs)
     }
     if (s === 3) {
       if (!formData.interests?.length) return 'Selecione pelo menos 1 interesse'
@@ -277,15 +307,19 @@ export function NewTrip() {
       departureDate: d.departureDate,
       order: i + 1,
     }))
-    const accs = getPaddedAccommodations(formData.destinations, formData.accommodations).map((a, i) => ({
-      destinationId: dests[i]?.id,
-      type: a.type || 'hotel',
-      name: a.name?.trim() || '',
-      address: a.address?.trim() || '',
-      checkIn: a.checkIn,
-      checkOut: a.checkOut,
-      nights: a.nights || 0,
-    }))
+    const accs = (formData.accommodations || [])
+      .filter(accommodationHasContent)
+      .map((a) => ({
+        id: a.id || generateAccommodationId(),
+        destinationId: a.destinationId,
+        type: a.type || 'hotel',
+        name: a.name?.trim() || a.address?.trim() || '',
+        address: a.address?.trim() || a.name?.trim() || '',
+        ...(a.coordinates ? { coordinates: a.coordinates } : {}),
+        checkIn: a.checkIn,
+        checkOut: a.checkOut,
+        nights: a.nights || 0,
+      }))
     const prior = [...(formData.prioritizePreferences || [])]
     if (formData.prioritizeCustom?.trim()) prior.push('custom: ' + formData.prioritizeCustom.trim())
     return {
@@ -475,54 +509,141 @@ export function NewTrip() {
           {step === 2 && (
             <div className="space-y-6">
               <h3 className="text-lg font-bold">Locais de Estadia</h3>
-              <p className="text-sm text-text-secondary">Informe a hospedagem para cada destino.</p>
-              {(formData.accommodations || []).slice(0, formData.destinations.length).map((acc, i) => {
-                const dest = formData.destinations[i]
+              <p className="text-sm text-text-secondary">
+                Opcional. Adicione quantas hospedagens quiser por destino — cada uma com datas
+                próprias aparecerá no mapa do roteiro (com endereço válido).
+              </p>
+              {formData.destinations.map((dest) => {
+                const destAccs = getAccommodationsForDestination(formData.accommodations, dest.id)
                 return (
-                  <div key={dest?.id || i} className="p-4 rounded-xl border border-border-light dark:border-border-dark space-y-4">
-                    <span className="text-sm font-bold text-text-secondary">{dest?.city || `Destino ${i + 1}`}</span>
-                    <div>
-                      <label className="block text-sm font-semibold mb-2">Tipo *</label>
-                      <select
-                        value={acc.type || 'hotel'}
-                        onChange={(e) => updateAccommodation(i, { type: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                  <div
+                    key={dest.id}
+                    className="p-4 rounded-xl border border-border-light dark:border-border-dark space-y-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold text-text-secondary">
+                        {dest.city || 'Destino'} — hospedagens
+                      </span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="!py-2 !px-3 text-xs"
+                        onClick={() => addAccommodation(dest.id)}
                       >
-                        {ACCOMMODATION_TYPES.map((t) => (
-                          <option key={t.value} value={t.value}>{t.label}</option>
-                        ))}
-                      </select>
+                        <Icon name="add" />
+                        Adicionar hospedagem
+                      </Button>
                     </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-2">Nome / Endereço</label>
-                      <input
-                        type="text"
-                        value={acc.name || ''}
-                        onChange={(e) => updateAccommodation(i, { name: e.target.value })}
-                        placeholder="Ex: Hotel Plaza Athénée"
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold mb-2">Check-in *</label>
-                        <input
-                          type="date"
-                          value={acc.checkIn || ''}
-                          onChange={(e) => updateAccommodation(i, { checkIn: e.target.value })}
-                          className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                        />
+                    {destAccs.length === 0 ? (
+                      <p className="text-xs text-text-secondary m-0">
+                        Nenhuma hospedagem neste destino. Use o botão acima se quiser informar uma.
+                      </p>
+                    ) : null}
+                    {destAccs.map((acc, accIndex) => (
+                      <div
+                        key={acc.id}
+                        className="p-4 rounded-xl border border-dashed border-border-light dark:border-border-dark space-y-4 bg-background-light/40 dark:bg-background-dark/40"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">
+                            Hospedagem {accIndex + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeAccommodation(acc.id)}
+                            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold mb-2">Tipo</label>
+                          <select
+                            value={acc.type || 'hotel'}
+                            onChange={(e) => updateAccommodation(acc.id, { type: e.target.value })}
+                            className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                          >
+                            {ACCOMMODATION_TYPES.map((t) => (
+                              <option key={t.value} value={t.value}>
+                                {t.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold mb-2">Nome / Endereço</label>
+                          {hasGoogleMapsApiKey() ? (
+                            <>
+                              <GooglePlaceAutocompleteField
+                                key={`acc-ac-${acc.id}`}
+                                id={`planning-acc-ac-${acc.id}`}
+                                resultKind="place"
+                                value={acc.name || acc.address || ''}
+                                placeholder="Ex.: Hotel Plaza Athénée"
+                                disabled={loading}
+                                onDraftChange={(text) =>
+                                  updateAccommodation(acc.id, {
+                                    name: text,
+                                    address: text,
+                                    coordinates: null,
+                                  })
+                                }
+                                onResolved={(patch) =>
+                                  updateAccommodation(acc.id, {
+                                    ...(patch.name != null ? { name: patch.name } : {}),
+                                    ...(patch.formattedAddress != null
+                                      ? { address: patch.formattedAddress }
+                                      : {}),
+                                    ...(patch.coordinates ? { coordinates: patch.coordinates } : {}),
+                                  })
+                                }
+                              />
+                              <p className="mt-2 text-[11px] text-text-secondary/90 leading-snug">
+                                Opcional. Escolha uma sugestão do Google para fixar a hospedagem no
+                                mapa do roteiro.
+                              </p>
+                            </>
+                          ) : (
+                            <input
+                              type="text"
+                              value={acc.name || ''}
+                              onChange={(e) =>
+                                updateAccommodation(acc.id, {
+                                  name: e.target.value,
+                                  address: e.target.value,
+                                })
+                              }
+                              placeholder="Ex: Hotel Plaza Athénée"
+                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                            />
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-semibold mb-2">Check-in</label>
+                            <input
+                              type="date"
+                              value={acc.checkIn || ''}
+                              onChange={(e) =>
+                                updateAccommodation(acc.id, { checkIn: e.target.value })
+                              }
+                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold mb-2">Check-out</label>
+                            <input
+                              type="date"
+                              value={acc.checkOut || ''}
+                              onChange={(e) =>
+                                updateAccommodation(acc.id, { checkOut: e.target.value })
+                              }
+                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-sm font-semibold mb-2">Check-out *</label>
-                        <input
-                          type="date"
-                          value={acc.checkOut || ''}
-                          onChange={(e) => updateAccommodation(i, { checkOut: e.target.value })}
-                          className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                        />
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 )
               })}
