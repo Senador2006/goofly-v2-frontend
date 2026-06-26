@@ -47,8 +47,10 @@ if (directFlag && isProd && typeof console !== 'undefined') {
   )
 }
 
+// Same-site com o frontend (goofly.com.br) para os cookies httpOnly de auth
+// funcionarem first-party. Sobrescrevível por VITE_API_GATEWAY_URL.
 const DEFAULT_PRODUCTION_GATEWAY =
-  'https://goofly-v2-api-gateway.onrender.com/api/v1'
+  'https://api.goofly.com.br/api/v1'
 
 function normalizeGatewayURL(url) {
   const base = String(url || '').trim().replace(/\/$/, '')
