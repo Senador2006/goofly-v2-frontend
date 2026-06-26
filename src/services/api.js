@@ -146,7 +146,7 @@ async function hardLogout() {
   if (typeof window === 'undefined') return
   // Best-effort: pede ao gateway para limpar os cookies httpOnly.
   try {
-    await api.post('/auth/logout', null, { _skipAuthRetry: true })
+    await api.post('/auth/logout', {}, { _skipAuthRetry: true })
   } catch (_) {
     // Ignora — segue limpando o estado local de qualquer forma.
   }
@@ -167,7 +167,7 @@ async function performRefresh(client) {
   // concorrentes via `inFlightRefresh`.
   if (!inFlightRefresh) {
     inFlightRefresh = client
-      .post('/auth/refresh', null, { _skipAuthRetry: true })
+      .post('/auth/refresh', {}, { _skipAuthRetry: true })
       .finally(() => {
         inFlightRefresh = null
       })

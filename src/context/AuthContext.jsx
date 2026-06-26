@@ -111,7 +111,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     // Limpa os cookies httpOnly no gateway (best-effort) e o estado local.
     try {
-      await api.post('/auth/logout', null, { _skipAuthRetry: true })
+      await api.post('/auth/logout', {}, { _skipAuthRetry: true })
     } catch (_) {
       // Ignora — limpa o estado local de qualquer forma.
     }
