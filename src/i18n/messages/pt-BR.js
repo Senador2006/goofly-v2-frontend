@@ -62,7 +62,6 @@ export default {
 
   tdv: {
     title: 'Tinder de Viagens',
-    day_label: 'Dia {{day}}',
     likes_one: '{{count}} curtida',
     likes_other: '{{count}} curtidas',
     history_section: 'Histórico e finalizar',
@@ -73,6 +72,12 @@ export default {
     finalize_cta: 'Estou satisfeito — gerar roteiro',
     finalize_generating: 'Gerando roteiro...',
     finalize_hint: 'Sem curtidas, o roteiro será gerado apenas com os dados do formulário.',
+    mock_banner: 'Modo demonstração — recomendações de exemplo (não são sugestões reais da IA).',
+    empty_title: 'Sem mais lugares',
+    fetching: 'Buscando lugares...',
+    retry: 'Tentar de novo',
+    agent_unavailable:
+      'Não foi possível carregar recomendações. Verifique sua conexão ou tente novamente em instantes.',
     already_liked: 'Este lugar já recebeu seu like',
     skip: 'Pular',
     like: 'Adicionar ao roteiro',

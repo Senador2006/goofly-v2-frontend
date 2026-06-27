@@ -442,8 +442,8 @@ export function NewTrip() {
                           />
                           <p className="mt-2 text-[11px] text-text-secondary/90 leading-snug flex items-start gap-1.5">
                             <Icon name="travel_explore" className="text-sm shrink-0 mt-px opacity-80" aria-hidden />
-                            Pesquise com o Place Autocomplete (novo) do Google e escolha uma sugestão — preenchemos país e
-                            coordenadas quando disponíveis ({' '}
+                            Pesquise uma cidade e escolha uma sugestão — preenchemos país e coordenadas
+                            automaticamente ({' '}
                             <a
                               href="https://developers.google.com/maps/documentation/javascript/place-autocomplete-new?hl=pt-br"
                               target="_blank"

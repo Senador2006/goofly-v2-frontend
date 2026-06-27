@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useTheme } from '../../context/ThemeContext'
 import { ensurePlacesLibrary } from '../../services/googleMapsPlacesLoader'
 
 /**
@@ -69,6 +70,68 @@ function coordinatesFromPlace(place) {
   return null
 }
 
+/** Coleção de tipos da Places API (novo) — apenas cidades. */
+const CITY_PRIMARY_TYPES = ['(cities)']
+
+/**
+ * @param {'city' | 'place'} resultKind
+ * @param {string[] | undefined} explicit
+ * @returns {string[] | null}
+ */
+function resolveIncludedPrimaryTypes(resultKind, explicit) {
+  if (explicit?.length) return [...explicit]
+  if (resultKind === 'city') return [...CITY_PRIMARY_TYPES]
+  return null
+}
+
+/** Tokens alinhados a `tailwind.config.js` — aplicados no Web Component para sync em runtime. */
+const GOOFLY_AC_THEME = {
+  light: {
+    colorScheme: 'light',
+    backgroundColor: '#ffffff',
+    vars: {
+      '--gmp-mat-color-surface': '#ffffff',
+      '--gmp-mat-color-on-surface': '#111111',
+      '--gmp-mat-color-on-surface-variant': '#6b6b6b',
+      '--gmp-mat-color-outline-decorative': '#e5e5e5',
+      '--gmp-mat-color-primary': '#fec641',
+      '--gmp-mat-color-neutral-container': '#ffffff',
+      '--gmp-mat-color-on-neutral-container': '#111111',
+      '--gmp-mat-color-secondary-container': '#f5f5f5',
+    },
+  },
+  dark: {
+    colorScheme: 'dark',
+    backgroundColor: '#1a1a1a',
+    vars: {
+      '--gmp-mat-color-surface': '#1a1a1a',
+      '--gmp-mat-color-on-surface': 'rgba(249, 250, 251, 0.96)',
+      '--gmp-mat-color-on-surface-variant': 'rgba(180, 180, 180, 0.95)',
+      '--gmp-mat-color-outline-decorative': '#2a2a2a',
+      '--gmp-mat-color-primary': '#fec641',
+      '--gmp-mat-color-neutral-container': '#232323',
+      '--gmp-mat-color-on-neutral-container': 'rgba(249, 250, 251, 0.96)',
+      '--gmp-mat-color-secondary-container': '#161616',
+    },
+  },
+}
+
+/**
+ * @param {google.maps.places.PlaceAutocompleteElement} ac
+ * @param {boolean} isDark
+ */
+function applyGooglePlaceAcTheme(ac, isDark) {
+  const theme = isDark ? GOOFLY_AC_THEME.dark : GOOFLY_AC_THEME.light
+  ac.style.colorScheme = theme.colorScheme
+  ac.style.backgroundColor = theme.backgroundColor
+  for (const [key, value] of Object.entries(theme.vars)) {
+    ac.style.setProperty(key, value)
+  }
+}
+
+const DEFAULT_AC_CLASSNAME =
+  'goofly-google-place-ac-frame relative z-[42] w-full min-h-[3.125rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark'
+
 /**
  * Place Autocomplete (novo): `PlaceAutocompleteElement` (`gmp-place-autocomplete`).
  * @see {@link https://developers.google.com/maps/documentation/javascript/place-autocomplete-new}
@@ -82,6 +145,7 @@ function coordinatesFromPlace(place) {
  *   onBlur?: () => void,
  *   onResolved: (patch: PlaceResolvedPatch) => void,
  *   includedRegionCodes?: string[],
+ *   includedPrimaryTypes?: string[],
  *   resultKind?: 'city' | 'place',
  *   className?: string,
  * }} props
@@ -95,17 +159,36 @@ export function GooglePlaceAutocompleteField({
   onBlur,
   onResolved,
   includedRegionCodes,
+  includedPrimaryTypes,
   resultKind = 'city',
-  className = 'planning-google-place-ac-frame relative z-[42] w-full min-h-[3.125rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-transparent',
+  className = DEFAULT_AC_CLASSNAME,
 }) {
+  const { isDark } = useTheme()
+  const isDarkRef = useRef(isDark)
+  isDarkRef.current = isDark
+
   const wrapRef = useRef(/** @type {HTMLDivElement | null} */ (null))
   const acRef = useRef(/** @type {google.maps.places.PlaceAutocompleteElement | null} */ (null))
   const syncingRef = useRef(false)
   const onResolvedRef = useRef(onResolved)
   const onDraftRef = useRef(onDraftChange)
   const onBlurRef = useRef(onBlur)
-  const latestPropsRef = useRef({ value, placeholder, disabled, includedRegionCodes, resultKind })
-  latestPropsRef.current = { value, placeholder, disabled, includedRegionCodes, resultKind }
+  const latestPropsRef = useRef({
+    value,
+    placeholder,
+    disabled,
+    includedRegionCodes,
+    includedPrimaryTypes,
+    resultKind,
+  })
+  latestPropsRef.current = {
+    value,
+    placeholder,
+    disabled,
+    includedRegionCodes,
+    includedPrimaryTypes,
+    resultKind,
+  }
 
   useEffect(() => {
     onResolvedRef.current = onResolved
@@ -181,8 +264,12 @@ export function GooglePlaceAutocompleteField({
           await ensurePlacesLibrary()
         if (cancelled || !wrapRef.current) return
 
-        ac = new placesMod.PlaceAutocompleteElement({})
         const snap = latestPropsRef.current
+        const primaryTypes = resolveIncludedPrimaryTypes(snap.resultKind, snap.includedPrimaryTypes)
+
+        ac = new placesMod.PlaceAutocompleteElement({
+          ...(primaryTypes ? { includedPrimaryTypes: primaryTypes } : {}),
+        })
 
         ac.id = id
         ac.placeholder = snap.placeholder ?? ''
@@ -191,6 +278,8 @@ export function GooglePlaceAutocompleteField({
 
         if (snap.includedRegionCodes?.length) ac.includedRegionCodes = [...snap.includedRegionCodes]
         else ac.includedRegionCodes = null
+
+        ac.includedPrimaryTypes = primaryTypes ? [...primaryTypes] : null
 
         syncingRef.current = true
         if (typeof snap.value === 'string' && snap.value.trim()) ac.value = snap.value.trim()
@@ -204,6 +293,7 @@ export function GooglePlaceAutocompleteField({
 
         wrapRef.current.replaceChildren(ac)
         acRef.current = ac
+        applyGooglePlaceAcTheme(ac, isDarkRef.current)
       } catch {
         if (!cancelled && wrapRef.current) wrapRef.current.replaceChildren()
         acRef.current = null
@@ -227,9 +317,22 @@ export function GooglePlaceAutocompleteField({
   useEffect(() => {
     const ac = acRef.current
     if (!ac) return
+    applyGooglePlaceAcTheme(ac, isDark)
+  }, [isDark])
+
+  useEffect(() => {
+    const ac = acRef.current
+    if (!ac) return
     if (includedRegionCodes?.length) ac.includedRegionCodes = [...includedRegionCodes]
     else ac.includedRegionCodes = null
   }, [includedRegionCodes])
+
+  useEffect(() => {
+    const ac = acRef.current
+    if (!ac) return
+    const types = resolveIncludedPrimaryTypes(resultKind, includedPrimaryTypes)
+    ac.includedPrimaryTypes = types ? [...types] : null
+  }, [resultKind, includedPrimaryTypes])
 
   useEffect(() => {
     const ac = acRef.current

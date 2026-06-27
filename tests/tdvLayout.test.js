@@ -26,8 +26,17 @@ test('TinderView: card maior e finalize antes do histórico', () => {
   assert.match(belowFoldBlock, /\{finalizePanel\}[\s\S]*\{choicesPanel\}/)
 })
 
-test('TinderView: separação entre bloco do card e finalizar/histórico', () => {
-  assert.match(tinderViewSource, /gap-10/)
-  assert.match(tinderViewSource, /border-t border-border-light/)
-  assert.doesNotMatch(tinderViewSource, /-mt-2/)
+test('TinderView: sem badge de dia nem botão próximo dia', () => {
+  assert.doesNotMatch(tinderViewSource, /day_label/)
+  assert.doesNotMatch(tinderViewSource, /handleNextDay/)
+  assert.doesNotMatch(tinderViewSource, /Próximo dia/)
+  assert.match(tinderViewSource, /deckUnavailable/)
+  assert.match(tinderViewSource, /EMPTY_DECK_PREFETCH_MAX_ATTEMPTS = 3/)
+  assert.match(tinderViewSource, /PREFETCH_WHEN_REMAINING_AT_MOST = 5/)
+  assert.match(tinderViewSource, /DECK_MAX_PLACES = 15/)
+})
+
+test('TinderView: prefetch libera inFlight ao cancelar (evita spinner preso)', () => {
+  assert.match(tinderViewSource, /prefetchInFlightRef\.current = false/)
+  assert.match(tinderViewSource, /if \(cancelled \|\| ac\.signal\.aborted\) return/)
 })

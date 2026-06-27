@@ -18,7 +18,7 @@ import ptBR from './messages/pt-BR'
  *   return <h1>{t('auth.login.title')}</h1>
  *
  * Com interpolação:
- *   t('tdv.day_label', { day: 3 }) // "Dia 3"
+ *   t('tdv.likes_one', { count: 1 }) // "1 curtida"
  */
 
 const messagesByLocale = {
