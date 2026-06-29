@@ -33,7 +33,7 @@ export function LandingNavbar() {
       <header className={headerClass}>
         <div className="mx-auto w-full max-w-[1200px] px-6 lg:px-8 flex items-center gap-8">
           <Link to="/" className="flex items-center shrink-0">
-            <GooflyLogo heightClass="h-14 sm:h-16" className="max-w-[min(100%,18rem)]" />
+            <GooflyLogo forceLight heightClass="h-14 sm:h-16" className="max-w-[min(100%,18rem)]" />
           </Link>
 
           <nav className="hidden lg:flex mx-auto">

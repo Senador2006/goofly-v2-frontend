@@ -1,6 +1,6 @@
 export function Button({ children, variant = 'primary', size = 'md', className = '', type = 'button', ...props }) {
   const base =
-    'rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2'
+    'rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-45 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none disabled:hover:opacity-45'
   const variants = {
     primary:
       'bg-primary text-foreground shadow-primary-glow dark:shadow-primary-glow-dark hover:opacity-90 hover:shadow-primary-glow-hover dark:hover:shadow-primary-glow-hover-dark focus-visible:ring-primary/50 focus-visible:ring-offset-background-light dark:focus-visible:ring-offset-background-dark',

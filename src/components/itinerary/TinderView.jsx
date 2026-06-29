@@ -28,10 +28,12 @@ function videoLinkLabel(url) {
   }
 }
 
-/** Só antecipa próximo lote quando restam poucas cartas (evita conflito com o 1º fetch da sessão). */
-const PREFETCH_WHEN_REMAINING_AT_MOST = 3
-/** Retentativas automáticas quando o baralho esvazia antes do próximo batch chegar. */
-const EMPTY_DECK_PREFETCH_MAX_ATTEMPTS = 5
+/** Antecipa prefetch com ~1 lote de folga (3–5 cartas); nunca esperar baralho zerar. */
+const PREFETCH_WHEN_REMAINING_AT_MOST = 5
+/** Teto de cartas no baralho local (espelha TDV_CACHE_MAX do servidor). */
+const DECK_MAX_PLACES = 15
+/** Retentativas quando o baralho esvazia aguardando resposta do agente (máx. 3; n8n já retornou vazio → sem retry). */
+const EMPTY_DECK_PREFETCH_MAX_ATTEMPTS = 3
 const EMPTY_DECK_PREFETCH_RETRY_MS = 2000
 
 /**
@@ -42,7 +44,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const t = useT()
   const [places, setPlaces] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [currentDay, setCurrentDay] = useState(1)
   const [totalLikes, setTotalLikes] = useState(0)
   const [likedPlaces, setLikedPlaces] = useState([])
   const [dislikedPlaces, setDislikedPlaces] = useState([])
@@ -57,7 +58,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const undoBusyRef = useRef(false)
 
   const prefetchInFlightRef = useRef(false)
-  const prefetchReturnedEmptyRef = useRef(false)
   /** Tamanho do baralho logo após o último `discoverSession` (ignora append de prefetch). */
   const sessionDeckBaselineRef = useRef(0)
   /** Após like/dislike que remove carta; volta a false no próximo session load ou undo que restaura o baseline. */
@@ -68,14 +68,30 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const prefetchAbortRef = useRef(null)
   const prefetchEmptyAttemptsRef = useRef(0)
   const [emptyDeckRetryTick, setEmptyDeckRetryTick] = useState(0)
+  const [placesSource, setPlacesSource] = useState(null)
+  const [deckUnavailable, setDeckUnavailable] = useState(false)
 
+  const placesRef = useRef(places)
+  const tripIdRef = useRef(tripId)
+  placesRef.current = places
+  tripIdRef.current = tripId
+
+  const releaseDeckToServer = useCallback(async (targetTripId = tripIdRef.current) => {
+    const deck = placesRef.current
+    if (!targetTripId || deck.length === 0) return
+    try {
+      await placeService.cacheSkippedPlaces(targetTripId, deck)
+    } catch {
+      // best-effort: cartas não consumidas voltam ao cache no servidor
+    }
+  }, [])
   const currentPlace = places[currentIndex]
   const placeVideoLinks = useMemo(
     () => (currentPlace ? getPlaceVideoUrls(currentPlace) : []),
     [currentPlace]
   )
 
-  const loadPlaces = useCallback(async (day) => {
+  const loadPlaces = useCallback(async () => {
     if (!tripId) {
       setLoading(false)
       return
@@ -86,11 +102,11 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     const gen = ++loadGenRef.current
     setLoading(true)
     setError(null)
+    prefetchEmptyAttemptsRef.current = 0
     try {
-      const res = await placeService.discoverSession(tripId, day, undefined, { signal: ac.signal })
+      const res = await placeService.discoverSession(tripId, undefined, { signal: ac.signal })
       if (gen !== loadGenRef.current) return
       const p = res.places ?? []
-      const cd = res.currentDay ?? 1
       const list = Array.isArray(p) ? p : []
       sessionDeckBaselineRef.current = list.length
       consumedSinceSessionRef.current = false
@@ -99,7 +115,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setTotalLikes(res.totalLikes ?? 0)
       setLikedPlaces(res.likedPlaces || [])
       setDislikedPlaces(res.dislikedPlaces || [])
-      setCurrentDay(day != null ? day : cd)
+      setPlacesSource(res.placesSource ?? null)
+      setDeckUnavailable(list.length === 0 && res.placesSource === 'none')
       setCurrentIndex(0)
     } catch (err) {
       if (gen !== loadGenRef.current) return
@@ -118,19 +135,40 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const lastTripIdRef = useRef(null)
   useEffect(() => {
     if (lastTripIdRef.current !== tripId) {
+      const prevTripId = lastTripIdRef.current
+      if (prevTripId != null && placesRef.current.length > 0) {
+        releaseDeckToServer(prevTripId)
+      }
       lastTripIdRef.current = tripId
       setPlaces([])
-      setCurrentDay(1)
       setCurrentIndex(0)
       setLikedPlaces([])
       setDislikedPlaces([])
       setTotalLikes(0)
+      setPlacesSource(null)
+      setDeckUnavailable(false)
       setError(null)
       setUndoStack([])
       sessionDeckBaselineRef.current = 0
       consumedSinceSessionRef.current = false
     }
-  }, [tripId])
+  }, [tripId, releaseDeckToServer])
+
+  // Devolve cartas não consumidas ao cache quando o usuário sai da aba TDV.
+  useEffect(() => {
+    if (!isActive || !tripId) return undefined
+    return () => {
+      releaseDeckToServer(tripId)
+    }
+  }, [isActive, tripId, releaseDeckToServer])
+
+  useEffect(() => {
+    const onPageHide = () => {
+      releaseDeckToServer()
+    }
+    window.addEventListener('pagehide', onPageHide)
+    return () => window.removeEventListener('pagehide', onPageHide)
+  }, [releaseDeckToServer])
 
   const deckKey = places
     .map((p) => getPlaceId(p))
@@ -138,9 +176,14 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     .sort()
     .join('|')
   useEffect(() => {
-    prefetchReturnedEmptyRef.current = false
     prefetchEmptyAttemptsRef.current = 0
   }, [deckKey])
+
+  const handleRetryDeck = useCallback(() => {
+    prefetchEmptyAttemptsRef.current = 0
+    setDeckUnavailable(false)
+    loadPlaces()
+  }, [loadPlaces])
 
   // Carrega ao ativar a aba / mudar viagem. Não incluir places.length nem loading nas deps:
   // com lista vazia (API ok) ou erro (ex.: 429), isso re-disparava o efeito em loop.
@@ -151,13 +194,13 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   // Antecipa o próximo lote quando o baralho encolheu (inclui baralho vazio — continuidade TDV).
   useEffect(() => {
-    if (!isActive || !tripId || loading) return
+    if (!isActive || !tripId || loading || deckUnavailable) return
     const n = places.length
+    if (n >= DECK_MAX_PLACES) return
     if (n > PREFETCH_WHEN_REMAINING_AT_MOST) return
     const baseline = sessionDeckBaselineRef.current
     if (n > 0 && baseline > 0 && n === baseline && !consumedSinceSessionRef.current) return
     if (prefetchInFlightRef.current) return
-    if (n > 0 && prefetchReturnedEmptyRef.current) return
 
     const excludePlaceIds = places.map(getPlaceId).filter(Boolean)
     const existingIds = new Set(excludePlaceIds.map((id) => String(id)))
@@ -171,24 +214,36 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     prefetchInFlightRef.current = true
     setPrefetchLoading(true)
 
+    const scheduleEmptyRetry = () => {
+      if (n !== 0 || prefetchEmptyAttemptsRef.current >= EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
+        if (n === 0) setDeckUnavailable(true)
+        return
+      }
+      prefetchEmptyAttemptsRef.current += 1
+      window.setTimeout(() => {
+        if (!cancelled && prefetchGen === prefetchGenRef.current) {
+          setEmptyDeckRetryTick((t) => t + 1)
+        }
+      }, EMPTY_DECK_PREFETCH_RETRY_MS)
+    }
+
     ;(async () => {
       try {
-        const res = await placeService.discover(tripId, currentDay, excludePlaceIds, { signal: ac.signal })
+        const res = await placeService.discover(tripId, excludePlaceIds, { signal: ac.signal })
         if (cancelled || prefetchGen !== prefetchGenRef.current) return
         const incoming = Array.isArray(res.places) ? res.places : []
-        if (incoming.length === 0) {
-          if (n === 0 && prefetchEmptyAttemptsRef.current < EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
-            prefetchEmptyAttemptsRef.current += 1
-            window.setTimeout(() => {
-              if (!cancelled && prefetchGen === prefetchGenRef.current) {
-                setEmptyDeckRetryTick((t) => t + 1)
-              }
-            }, EMPTY_DECK_PREFETCH_RETRY_MS)
-            return
-          }
-          prefetchReturnedEmptyRef.current = true
+        if (res.placesSource) setPlacesSource(res.placesSource)
+
+        if (res.placesSource === 'none') {
+          if (n === 0) setDeckUnavailable(true)
           return
         }
+
+        if (incoming.length === 0) {
+          scheduleEmptyRetry()
+          return
+        }
+
         prefetchEmptyAttemptsRef.current = 0
         let wouldAdd = 0
         for (const p of incoming) {
@@ -197,24 +252,19 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           if (sid && !existingIds.has(sid)) wouldAdd += 1
         }
         if (wouldAdd === 0) {
-          if (n === 0 && prefetchEmptyAttemptsRef.current < EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
-            prefetchEmptyAttemptsRef.current += 1
-            window.setTimeout(() => {
-              if (!cancelled && prefetchGen === prefetchGenRef.current) {
-                setEmptyDeckRetryTick((t) => t + 1)
-              }
-            }, EMPTY_DECK_PREFETCH_RETRY_MS)
-            return
-          }
-          prefetchReturnedEmptyRef.current = true
+          scheduleEmptyRetry()
           return
         }
+        setDeckUnavailable(false)
         setPlaces((prev) => {
+          const room = DECK_MAX_PLACES - prev.length
+          if (room <= 0) return prev
           const seen = new Set(
             prev.map(getPlaceId).filter(Boolean).map((id) => String(id))
           )
           const out = [...prev]
           for (const p of incoming) {
+            if (out.length >= DECK_MAX_PLACES) break
             const id = getPlaceId(p)
             const sid = id != null ? String(id) : ''
             if (sid && !seen.has(sid)) {
@@ -225,19 +275,12 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           return out
         })
         if (typeof res.totalLikes === 'number') setTotalLikes(res.totalLikes)
-      } catch {
-        // silencioso (abort ou rede): utilizador ainda tem cartas no baralho
-        if (n === 0 && prefetchEmptyAttemptsRef.current < EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
-          prefetchEmptyAttemptsRef.current += 1
-          window.setTimeout(() => {
-            if (!cancelled && prefetchGen === prefetchGenRef.current) {
-              setEmptyDeckRetryTick((t) => t + 1)
-            }
-          }, EMPTY_DECK_PREFETCH_RETRY_MS)
-        }
+      } catch (err) {
+        if (cancelled || ac.signal.aborted) return
+        if (n === 0) scheduleEmptyRetry()
       } finally {
+        prefetchInFlightRef.current = false
         if (prefetchGen === prefetchGenRef.current) {
-          prefetchInFlightRef.current = false
           setPrefetchLoading(false)
         }
       }
@@ -246,23 +289,9 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     return () => {
       cancelled = true
       ac.abort()
+      prefetchInFlightRef.current = false
     }
-  }, [isActive, tripId, loading, places, currentDay, emptyDeckRetryTick])
-
-  const handleNextDay = useCallback(async () => {
-    if (!tripId) return
-    const nextDay = currentDay + 1
-    if (places.length > 0) {
-      try {
-        await placeService.cacheSkippedPlaces(tripId, places)
-      } catch (err) {
-        setError(getRequestErrorMessage(err, 'Erro ao avançar'))
-        return
-      }
-    }
-    await loadPlaces(nextDay)
-    onItineraryUpdate?.()
-  }, [tripId, places, currentDay, loadPlaces, onItineraryUpdate])
+  }, [isActive, tripId, loading, places, deckUnavailable, emptyDeckRetryTick])
 
   const handleLike = useCallback(async () => {
     if (!currentPlace || !tripId) return
@@ -286,10 +315,9 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           ? { coordinates: { latitude: latLng[0], longitude: latLng[1] } }
           : {}),
       }
-      const res = await placeService.like(tripId, placeId, currentDay, placeData)
+      const res = await placeService.like(tripId, placeId, placeData)
       setTotalLikes(typeof res?.likesUsedTotal === 'number' ? res.likesUsedTotal : totalLikes + 1)
-      setCurrentDay(res?.currentDay ?? currentDay)
-      setLikedPlaces((prev) => [{ placeId, name: currentPlace.name, day: res?.currentDay ?? currentDay }, ...prev])
+      setLikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev])
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
       consumedSinceSessionRef.current = true
       setCurrentIndex(0)
@@ -299,7 +327,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setSwipeFeedback(null)
       setError(getRequestErrorMessage(err, 'Erro ao dar like'))
     }
-  }, [currentPlace, tripId, currentDay, totalLikes, onItineraryUpdate])
+  }, [currentPlace, tripId, totalLikes, onItineraryUpdate])
 
   const handleDislike = useCallback(async () => {
     if (!currentPlace || !tripId) return
@@ -313,7 +341,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     setTimeout(() => setSwipeFeedback(null), 400)
     try {
       await placeService.dislike(tripId, placeId, currentPlace)
-      setDislikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev].slice(0, 30))
+      setDislikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev])
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
       consumedSinceSessionRef.current = true
       setCurrentIndex(0)
@@ -350,7 +378,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       if (entry.type === 'like') {
         const res = await placeService.undoLike(tripId, pid)
         if (typeof res?.likesUsedTotal === 'number') setTotalLikes(res.likesUsedTotal)
-        if (typeof res?.currentDay === 'number') setCurrentDay(res.currentDay)
         setLikedPlaces((prev) => {
           const i = prev.findIndex((p) => String(p.placeId) === String(pid))
           if (i === -1) return prev
@@ -508,7 +535,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           className="mt-4 rounded-full"
           onClick={() => {
             setError(null)
-            loadPlaces(currentDay)
+            loadPlaces()
           }}
         >
           Tentar de novo
@@ -531,10 +558,6 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           </div>
           <div className="flex flex-wrap items-center gap-1.5 shrink-0">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark">
-              <Icon name="calendar_today" className="text-xs text-primary" />
-              {t('tdv.day_label', { day: currentDay })}
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark">
               <Icon name="favorite" className="text-xs text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
               {totalLikes === 1
                 ? t('tdv.likes_one', { count: totalLikes })
@@ -543,6 +566,14 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
           </div>
         </div>
       </div>
+
+      {placesSource === 'mock' && (
+        <div className="flex-shrink-0 px-3 sm:px-4 py-2 bg-amber-500/10 border-b border-amber-500/20">
+          <p className="text-[11px] sm:text-xs text-amber-800 dark:text-amber-200 text-center max-w-3xl mx-auto">
+            {t('tdv.mock_banner')}
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0 flex-col pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-6">
         <div className="mx-auto w-full max-w-lg px-3 pt-4 sm:px-5 sm:pt-4 lg:max-w-[90rem] xl:max-w-[96rem] 2xl:max-w-[110rem] lg:px-6 xl:px-8 lg:pt-4">
@@ -660,33 +691,28 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                 {belowFoldContent}
               </aside>
             </div>
-          ) : prefetchLoading ? (
-          <div className="w-full py-12 flex flex-col items-center justify-center gap-3" role="status" aria-live="polite">
-            <LoadingSpinner />
-            <p className="text-sm text-text-secondary">Buscando mais lugares...</p>
-          </div>
-          ) : (
+          ) : deckUnavailable ? (
           <div className="w-full py-4">
             <EmptyState
-              icon="explore"
-              title="Sem mais lugares agora"
-              description="Avance o dia ou recarregue. Quando quiser, finalize para gerar o roteiro."
+              icon="cloud_off"
+              title={t('tdv.empty_title')}
+              description={t('tdv.agent_unavailable')}
               action={
-                <div className="flex gap-2 flex-wrap justify-center">
-                  <Button onClick={handleNextDay} className="rounded-full">
-                    Próximo dia
-                  </Button>
-                  <Button variant="outline" onClick={() => loadPlaces(currentDay)} className="rounded-full">
-                    Recarregar
-                  </Button>
-                </div>
+                <Button onClick={handleRetryDeck} className="rounded-full">
+                  {t('tdv.retry')}
+                </Button>
               }
             />
             <div className="flex flex-col gap-4 mt-8 pt-4 border-t border-border-light/50 dark:border-border-dark/60">
               {belowFoldContent}
             </div>
           </div>
-        )}
+          ) : (
+          <div className="w-full py-12 flex flex-col items-center justify-center gap-3" role="status" aria-live="polite">
+            <LoadingSpinner />
+            <p className="text-sm text-text-secondary">{t('tdv.fetching')}</p>
+          </div>
+          )}
         </div>
       </div>
     </div>

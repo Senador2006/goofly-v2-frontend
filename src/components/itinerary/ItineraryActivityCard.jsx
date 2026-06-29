@@ -1,11 +1,19 @@
 import { useCallback, useId, useState } from 'react'
 import { Icon } from '../common/Icon'
+import { ItineraryStopMarker } from './ItineraryStopMarker'
+import { ItineraryActivityCardCompact } from './ItineraryActivityCardCompact'
 import {
   googleMapsPlaceUrl,
   resolveActivityCoordinates,
 } from '../../utils/activityCoordinates'
 import { GooglePlaceAutocompleteField } from '../planning/GooglePlaceAutocompleteField'
 import { hasGoogleMapsApiKey } from '../../services/googleMapsPlacesLoader'
+import { TimeInput } from '../common/TimeInput'
+import {
+  defaultActivityTitle,
+  resolveActivityTitle,
+  resolveActivityTitleForEdit,
+} from '../../utils/itineraryPrintFormat'
 
 function minutesBetweenStarts(startStr, endStr) {
   if (!startStr || !endStr) return null
@@ -28,6 +36,16 @@ function formatDuration(act, startResolved, endResolved) {
     return `${h}h`
   }
   return '2h'
+}
+
+/** @param {Record<string, unknown> | null | undefined} act */
+function activityNeedsTicket(act) {
+  return (
+    act?.ticketRequired === true ||
+    act?.requiresTicket === true ||
+    act?.ticket_required === true ||
+    act?.needs_ticket === true
+  )
 }
 
 /** @param {{ source?: string }} act */
@@ -136,11 +154,7 @@ function resolveTicketInfo(act) {
   if (!act || typeof act !== 'object')
     return { required: false, hint: '', links: [] }
 
-  const required =
-    act.ticketRequired === true ||
-    act.requiresTicket === true ||
-    act.ticket_required === true ||
-    act.needs_ticket === true
+  const required = activityNeedsTicket(act)
 
   const hint = String(act.ticketPurchaseHint || act.ticket_purchase_hint || '').trim()
 
@@ -184,6 +198,8 @@ export function ItineraryActivityCard({
   act,
   index,
   isLast,
+  displayIndex = null,
+  displayIsLast = null,
   editing = false,
   draft,
   onDraftPatch,
@@ -195,9 +211,21 @@ export function ItineraryActivityCard({
   dayPickerValue,
   dayPickerOptions = [],
   onDayChange,
+  isTracked = false,
+  cardRef,
+  compactMode = false,
+  isDragSource = false,
+  isDragHidden = false,
+  isExpandingCard = false,
+  isDragPending = false,
+  canDragReorder = false,
+  onDragHandlePointerDown,
 }) {
   const panelId = useId()
   const [open, setOpen] = useState(false)
+
+  const markerIndex = displayIndex ?? index
+  const showAsLast = displayIsLast ?? isLast
 
   const effective = editing ? draft : act
 
@@ -205,7 +233,7 @@ export function ItineraryActivityCard({
   const end = effective?.endTime || effective?.end_time
   const scheduleLabel =
     typeof end === 'string' && end.trim() ? `${start}–${String(end).trim()}` : start
-  const title = effective?.title || effective?.name || effective?.placeName || `Atividade ${index + 1}`
+  const title = resolveActivityTitle(effective, markerIndex)
   const description = resolveActivityDescription(effective)
   const badge = sourceBadgeLabel(effective)
   const ticket = resolveTicketInfo(effective || act)
@@ -214,14 +242,43 @@ export function ItineraryActivityCard({
     setOpen((v) => !v)
   }, [])
 
+  const durationLabel = formatDuration(
+    effective || act,
+    start,
+    typeof end === 'string' ? end.trim() : null,
+  )
+
+  const timelinePad = compactMode ? 'pb-3' : showAsLast ? '' : 'pb-8'
+
   return (
-    <div className={`relative pl-8 ${isLast ? '' : 'pb-8'}`}>
-      {!isLast && (
-        <div className="absolute left-0 top-3 bottom-0 w-px border-l-2 border-dashed border-primary/70" aria-hidden />
+    <div
+      className={`relative pl-10 ${timelinePad}${isTracked ? ' scroll-mt-4' : ''}${
+        isDragPending ? ' roteiro-card-pending' : ''
+      }`}
+    >
+      {!showAsLast && (
+        <div className="absolute left-0 top-7 bottom-0 w-px border-l-2 border-dashed border-primary/70" aria-hidden />
       )}
-      <div className="absolute left-[-5px] top-1 size-3 rounded-full bg-primary border-4 border-white dark:border-card-dark ring-2 ring-primary z-10" />
-      <article className="rounded-2xl border border-border-light dark:border-border-dark bg-background-light dark:bg-[#23220f] overflow-hidden shadow-sm ring-inset ring-primary/25">
-        {(effective?.image_url || act?.image_url) ? (
+      <ItineraryStopMarker
+        order={markerIndex + 1}
+        className={`left-[-12px] top-1 transition-transform duration-200${isTracked ? ' scale-110 z-10' : ''}`}
+      />
+      <article
+        ref={cardRef}
+        className={
+          'roteiro-activity-card rounded-2xl border-2 bg-background-light dark:bg-[#23220f] overflow-hidden ' +
+          (compactMode ? 'roteiro-activity-card--compact ' : '') +
+          (isExpandingCard ? 'roteiro-activity-card--expanding ' : '') +
+          (isDragSource
+            ? 'roteiro-activity-card--placeholder border-dashed border-primary/45 bg-primary/5 dark:bg-primary/10 '
+            : '') +
+          (isDragHidden ? 'roteiro-activity-card--hidden-during-landing ' : '') +
+          (isTracked
+            ? 'border-primary shadow-[0_0_0_4px_rgba(254,198,65,0.45),0_12px_32px_-12px_rgba(254,198,65,0.55)] ring-2 ring-primary/80'
+            : 'border-border-light dark:border-border-dark shadow-sm ring-inset ring-primary/25')
+        }
+      >
+        {!compactMode && (effective?.image_url || act?.image_url) ? (
           <div
             className="h-36 sm:h-40 w-full bg-cover bg-center"
             style={{ backgroundImage: `url(${effective?.image_url || act.image_url})` }}
@@ -229,39 +286,64 @@ export function ItineraryActivityCard({
             aria-label={title}
           />
         ) : null}
-        {editing ? (
-          <CardEditFields
-            index={index}
-            title={title}
-            scheduleLabelHint={scheduleLabel}
-            ticket={ticket}
-            badge={badge}
-            draft={draft}
-            onDraftPatch={onDraftPatch}
-            onRemove={onRemove}
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            disableMoveUp={disableMoveUp}
-            disableMoveDown={disableMoveDown}
-            dayPickerValue={dayPickerValue}
-            dayPickerOptions={dayPickerOptions}
-            onDayChange={onDayChange}
-          />
-        ) : (
-          <CardBody
-            scheduleLabel={scheduleLabel}
-            act={act}
-            title={title}
-            description={description}
-            startResolved={start}
-            endResolved={typeof end === 'string' ? end.trim() : null}
-            badge={badge}
-            ticket={ticket}
-            open={open}
-            onToggle={toggle}
-            panelId={panelId}
-          />
-        )}
+        <div key={editing ? 'edit' : 'view'} className="itinerary-card-mode-in">
+          {editing ? (
+            compactMode ? (
+              isDragSource ? (
+                <div
+                  className="roteiro-card-compact h-[4.5rem] flex items-center justify-center"
+                  aria-hidden
+                >
+                  <span className="text-[11px] font-semibold text-text-secondary/70">
+                    Solte para reposicionar
+                  </span>
+                </div>
+              ) : (
+                <ItineraryActivityCardCompact
+                  index={markerIndex}
+                  scheduleLabel={scheduleLabel}
+                  title={title}
+                  durationLabel={durationLabel}
+                  className={isDragHidden ? 'opacity-0' : ''}
+                />
+              )
+            ) : (
+              <CardEditFields
+                index={markerIndex}
+                title={title}
+                scheduleLabelHint={scheduleLabel}
+                ticket={ticket}
+                badge={badge}
+                draft={draft}
+                onDraftPatch={onDraftPatch}
+                onRemove={onRemove}
+                onMoveUp={onMoveUp}
+                onMoveDown={onMoveDown}
+                disableMoveUp={disableMoveUp}
+                disableMoveDown={disableMoveDown}
+                dayPickerValue={dayPickerValue}
+                dayPickerOptions={dayPickerOptions}
+                onDayChange={onDayChange}
+                canDragReorder={canDragReorder}
+                onDragHandlePointerDown={onDragHandlePointerDown}
+              />
+            )
+          ) : (
+            <CardBody
+              scheduleLabel={scheduleLabel}
+              act={act}
+              title={title}
+              description={description}
+              startResolved={start}
+              endResolved={typeof end === 'string' ? end.trim() : null}
+              badge={badge}
+              ticket={ticket}
+              open={open}
+              onToggle={toggle}
+              panelId={panelId}
+            />
+          )}
+        </div>
       </article>
     </div>
   )
@@ -283,6 +365,8 @@ function CardEditFields({
   dayPickerValue,
   dayPickerOptions,
   onDayChange,
+  canDragReorder = false,
+  onDragHandlePointerDown,
 }) {
   const rawDesc =
     draft.description ??
@@ -295,46 +379,102 @@ function CardEditFields({
 
   const st = draft.startTime || draft.start_time || draft.time || '09:00'
   const et = draft.endTime || draft.end_time || ''
+  const needsTicket = activityNeedsTicket(draft)
+  const titleEditValue = resolveActivityTitleForEdit(draft)
+
+  const handleTitleBlur = () => {
+    if (resolveActivityTitleForEdit(draft).trim()) return
+    const fallback = defaultActivityTitle(index)
+    onDraftPatch({ title: fallback, name: fallback, placeName: fallback })
+  }
+
+  const handleTicketToggle = () => {
+    if (needsTicket) {
+      onDraftPatch({
+        ticketRequired: false,
+        ticket_required: false,
+        requiresTicket: false,
+        needs_ticket: false,
+      })
+    } else {
+      onDraftPatch({ ticketRequired: true, ticket_required: true })
+    }
+  }
 
   return (
     <div className="p-4 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Parada {index + 1}</span>
-        {badge ? (
-          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
-            {badge}
+      {canDragReorder ? (
+        <button
+          type="button"
+          className="roteiro-drag-handle -mx-1 -mt-1 mb-1 flex w-[calc(100%+0.5rem)] cursor-grab touch-none select-none items-center gap-2 rounded-xl border border-border-light/80 bg-background-light/90 px-3 py-2.5 text-left transition-[background-color,transform] duration-200 active:cursor-grabbing active:scale-[0.99] dark:border-border-dark dark:bg-white/[0.05]"
+          onPointerDown={onDragHandlePointerDown}
+          aria-label={`Segure para arrastar parada ${index + 1}`}
+        >
+          <Icon name="drag_indicator" className="text-xl text-text-secondary shrink-0" aria-hidden />
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">
+            Parada {index + 1}
           </span>
-        ) : null}
-        {ticket.required ? (
-          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
-            Ingresso
+          <span className="text-[10px] font-semibold text-text-secondary/80 truncate">
+            {scheduleLabelHint}
           </span>
-        ) : null}
-      </div>
+          <span className="ml-auto text-[10px] font-semibold text-primary/90 shrink-0">
+            Arrastar
+          </span>
+        </button>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">
+            Parada {index + 1}
+          </span>
+          {badge ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
+              {badge}
+            </span>
+          ) : null}
+          {ticket.required ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
+              Ingresso
+            </span>
+          ) : null}
+        </div>
+      )}
+
+      {canDragReorder ? (
+        <div className="flex flex-wrap items-center gap-2 -mt-1">
+          {badge ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
+              {badge}
+            </span>
+          ) : null}
+          {ticket.required ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded">
+              Ingresso
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
         <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-text-secondary">
           Início
-          <input
-            type="text"
+          <TimeInput
             className="rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-2.5 py-2 text-sm font-semibold text-[#1c1c0d] dark:text-white"
             value={st}
-            onChange={(e) =>
-              onDraftPatch({ startTime: e.target.value, start_time: e.target.value, time: e.target.value })
+            onChange={(next) =>
+              onDraftPatch({ startTime: next, start_time: next, time: next })
             }
             placeholder="09:00"
-            autoComplete="off"
+            fallback="09:00"
           />
         </label>
         <label className="flex flex-col gap-1 text-[10px] font-bold uppercase text-text-secondary">
           Fim (opcional)
-          <input
-            type="text"
+          <TimeInput
             className="rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-2.5 py-2 text-sm font-semibold text-[#1c1c0d] dark:text-white"
             value={et}
-            onChange={(e) => onDraftPatch({ endTime: e.target.value, end_time: e.target.value })}
+            onChange={(next) => onDraftPatch({ endTime: next, end_time: next })}
             placeholder="—"
-            autoComplete="off"
+            allowEmpty
           />
         </label>
         {dayPickerOptions.length > 0 ? (
@@ -365,13 +505,14 @@ function CardEditFields({
             <GooglePlaceAutocompleteField
               id={`activity-title-ac-${draft.id ?? index}`}
               resultKind="place"
-              value={title}
+              value={titleEditValue}
               disabled={false}
               placeholder="Busque um lugar (ex.: Torre Eiffel)…"
-              className="itinerary-activity-ac-frame relative z-[30] w-full min-h-[2.75rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910]"
+              className="goofly-google-place-ac-frame goofly-google-place-ac-frame--compact relative z-[30] w-full overflow-visible rounded-xl border border-border-light dark:border-border-dark"
               onDraftChange={(text) =>
                 onDraftPatch({ title: text, name: text, placeName: text })
               }
+              onBlur={handleTitleBlur}
               onResolved={(patch) => {
                 const next = {}
                 const resolvedName = patch.name || patch.city
@@ -392,7 +533,7 @@ function CardEditFields({
           <input
             type="text"
             className="w-full rounded-xl border border-border-light dark:border-border-dark bg-white dark:bg-[#1a1910] px-3 py-2.5 text-sm font-bold text-[#1c1c0d] dark:text-white"
-            value={title}
+            value={titleEditValue}
             onChange={(e) =>
               onDraftPatch({
                 title: e.target.value,
@@ -400,6 +541,7 @@ function CardEditFields({
                 placeName: e.target.value,
               })
             }
+            onBlur={handleTitleBlur}
           />
         )}
       </label>
@@ -413,6 +555,35 @@ function CardEditFields({
           placeholder="O que você quer fazer nesta parada?"
         />
       </label>
+
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light/60 dark:bg-white/[0.04] px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">
+            Precisa de ingresso?
+          </p>
+          <p className="text-[10px] text-text-secondary/80 mt-0.5 leading-snug">
+            Marque se esta parada exige bilhete ou reserva antecipada.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={needsTicket}
+          aria-label="Esta parada precisa de ingresso"
+          onClick={handleTicketToggle}
+          className={`relative w-14 h-8 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+            needsTicket
+              ? 'border-amber-500 bg-amber-500'
+              : 'border-border-light bg-border-light dark:border-border-dark dark:bg-surface-dark'
+          }`}
+        >
+          <span
+            className={`absolute top-1/2 size-6 -translate-y-1/2 rounded-full bg-white shadow-md ring-1 transition-all duration-200 ${
+              needsTicket ? 'right-1 ring-white/30' : 'left-1 ring-foreground/15'
+            }`}
+          />
+        </button>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <button
