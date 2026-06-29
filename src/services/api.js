@@ -47,10 +47,9 @@ if (directFlag && isProd && typeof console !== 'undefined') {
   )
 }
 
-// Same-site com o frontend (goofly.com.br) para os cookies httpOnly de auth
-// funcionarem first-party. Sobrescrevível por VITE_API_GATEWAY_URL.
+// Fallback de produção (só usado se VITE_API_GATEWAY_URL não for definida).
 const DEFAULT_PRODUCTION_GATEWAY =
-  'https://api.goofly.com.br/api/v1'
+  'https://goofly-v2-api-gateway.onrender.com/api/v1'
 
 function normalizeGatewayURL(url) {
   const base = String(url || '').trim().replace(/\/$/, '')
@@ -67,10 +66,18 @@ function resolveGatewayBaseURL() {
     return normalizeGatewayURL(configured)
   }
 
+  // Caminho relativo (ex.: '/api/v1') → same-origin. Em produção isso requer
+  // uma regra de rewrite no host estático (Render) que faça proxy de /api/*
+  // para o gateway — assim os cookies httpOnly ficam first-party no domínio
+  // do frontend, sem precisar de domínio customizado.
+  if (configured.startsWith('/')) {
+    return configured
+  }
+
   if (isProd) {
-    if (configured && typeof console !== 'undefined') {
+    if (typeof console !== 'undefined') {
       console.warn(
-        '[api] VITE_API_GATEWAY_URL relativa ou ausente em produção; usando gateway Render:',
+        '[api] VITE_API_GATEWAY_URL ausente em produção; usando gateway Render:',
         DEFAULT_PRODUCTION_GATEWAY
       )
     }
