@@ -57,6 +57,8 @@ const AVOID_OPTIONS = [
 ]
 
 const PRIORITIZE_OPTIONS = [
+  { slug: 'lugares-famosos', label: 'Lugares Famosos' },
+  { slug: 'landmarks', label: 'Landmarks' },
   { slug: 'lugares-escondidos', label: 'Lugares Escondidos' },
   { slug: 'cultura-local', label: 'Cultura Local' },
   { slug: 'gastronomia-local', label: 'Gastronomia Local' },
