@@ -410,9 +410,48 @@ body.site-tour-active .guide-button-fab {
 }
 
 /* Modo edição — drag-and-drop de paradas */
-body.roteiro-drag-active {
+body.roteiro-drag-active,
+body.roteiro-day-swap-active {
   user-select: none;
   cursor: grabbing;
+}
+
+body.roteiro-day-swap-active .roteiro-map-surface {
+  z-index: 0 !important;
+  pointer-events: none;
+}
+
+.roteiro-day-chips--swap-mode .roteiro-day-chip {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+
+.roteiro-day-chips--dragging .roteiro-day-chip:not(.roteiro-day-chip--swap-target):not(.roteiro-day-chip--dragging) {
+  opacity: 0.72;
+}
+
+.roteiro-day-chip--swap-pending {
+  transform: scale(0.97);
+}
+
+.roteiro-day-chip--swap-target {
+  transform: scale(1.04);
+  z-index: 4;
+}
+
+/* Slot vazio do dia em swap: outline tracejado legível, sem “apagar” o rótulo */
+.roteiro-day-chip--dragging {
+  z-index: 3;
+  min-width: 4.5rem;
+}
+
+.roteiro-day-chip--dragging > button {
+  opacity: 1;
+}
+
+.roteiro-day-swap-ghost {
+  will-change: top, left, width;
 }
 
 body.roteiro-drag-active .roteiro-map-surface {
@@ -519,7 +558,10 @@ body.roteiro-drag-active .roteiro-mobile-map-drag-suppressed {
   .roteiro-activity-card--compact .itinerary-card-mode-in,
   .roteiro-activity-card--expanding .itinerary-card-mode-in,
   .roteiro-drag-insert-line,
-  .roteiro-drag-ghost--animate {
+  .roteiro-drag-ghost--animate,
+  .roteiro-day-chips--swap-mode .roteiro-day-chip,
+  .roteiro-day-chip--swap-pending,
+  .roteiro-day-chip--swap-target {
     animation: none !important;
     transition: none !important;
   }

@@ -28,11 +28,15 @@ import { userService } from '../services/userService'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useRoteiroDragReorder } from '../hooks/useRoteiroDragReorder'
+import { useRoteiroDaySwap } from '../hooks/useRoteiroDaySwap'
 import {
+  assignActivityToDay,
   buildDateToDayMap,
   getActivityDayNumber,
+  getIsoDateForDay,
   reorderActivityInSameDay,
   sortDayActivities,
+  swapActivitiesBetweenDays,
 } from '../utils/itineraryDayHelpers'
 import { resolveAccommodationsForDay } from '../utils/accommodationDayResolver'
 import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
@@ -96,7 +100,7 @@ function normalizeActivityTicketForPersist(act) {
   return out
 }
 
-/** Reagrupa todos os dias, ordena dentro de cada dia e normaliza day/dayNumber/order para persistência. */
+/** Reagrupa todos os dias, ordena dentro de cada dia e normaliza day/dayNumber/order/datas para persistência. */
 function normalizeActivitiesForPersist(activities, dateToDayMap, fallbackDay = 1) {
   const fb = Math.max(1, Math.floor(Number(fallbackDay) || 1))
   const withDay = activities.map((a) => {
@@ -110,7 +114,13 @@ function normalizeActivitiesForPersist(activities, dateToDayMap, fallbackDay = 1
       dayNum = Math.floor(dayNum)
     }
     dayNum = Math.max(1, dayNum)
-    return { ...a, day: dayNum, dayNumber: dayNum, day_number: dayNum }
+    const assigned = assignActivityToDay(
+      { ...a, day: dayNum, dayNumber: dayNum, day_number: dayNum },
+      dayNum,
+      dateToDayMap,
+    )
+    const iso = getIsoDateForDay(dateToDayMap, dayNum)
+    return iso ? assigned : { ...a, day: dayNum, dayNumber: dayNum, day_number: dayNum }
   })
   /** @type {Map<number, any[]>} */
   const map = new Map()
@@ -243,6 +253,8 @@ export function Itinerary() {
   const [trackedStopId, setTrackedStopId] = useState(null)
   const deleteInFlightRef = useRef(false)
   const stopCardRefs = useRef(new Map())
+  const dayChipRefs = useRef(new Map())
+  const dayChipsScrollRef = useRef(null)
   const roteiroListScrollRef = useRef(null)
   const roteiroCardsListRef = useRef(null)
   const flipBeforeReorderRef = useRef(null)
@@ -436,12 +448,76 @@ export function Itinerary() {
   dragReorderCancelRef.current = dragReorder.cancelDrag
   const dragInteractionBlockedRef = useRef(dragReorder.isInteractionBlocked)
   dragInteractionBlockedRef.current = dragReorder.isInteractionBlocked
+  const daySwapCancelRef = useRef(null)
+
+  const handleSelectDay = useCallback((day) => {
+    dragReorderCancelRef.current?.()
+    daySwapCancelRef.current?.()
+    trackedFollowRef.current = { id: null, reason: null }
+    setSelectedDay(day)
+  }, [])
+
+  const handleDaySwap = useCallback(
+    (fromDay, toDay) => {
+      setDraftActivities((prev) => {
+        if (!prev) return prev
+        return swapActivitiesBetweenDays(prev, dateToDayMap, fromDay, toDay)
+      })
+      setSelectedDay(toDay)
+    },
+    [dateToDayMap],
+  )
+
+  const daysForSwap = useMemo(() => {
+    const acts =
+      roteiroEditOpen && Array.isArray(draftActivities)
+        ? draftActivities
+        : itinerary?.activities || []
+    return computeDaysList(acts, dateToDayMap, trip)
+  }, [roteiroEditOpen, draftActivities, itinerary, trip, dateToDayMap])
+
+  const daySwap = useRoteiroDaySwap({
+    enabled: roteiroEditOpen && !loading && Boolean(trip) && hasFullAccess,
+    days: daysForSwap,
+    selectedDay,
+    chipRefs: dayChipRefs,
+    scrollRef: dayChipsScrollRef,
+    onSwap: handleDaySwap,
+    onSelectDay: handleSelectDay,
+    onFocusSwapDay: (day) => {
+      trackedFollowRef.current = { id: null, reason: null }
+      setSelectedDay(day)
+    },
+    onSwapGestureStart: () => {
+      dragReorderCancelRef.current?.()
+    },
+  })
+  daySwapCancelRef.current = daySwap.cancelSwap
+
+  const onActivityDragHandlePointerDown = useCallback(
+    (activityId, event) => {
+      daySwapCancelRef.current?.()
+      dragReorder.onDragHandlePointerDown(activityId, event)
+    },
+    [dragReorder],
+  )
+
+  const onDayChipPointerDown = useCallback(
+    (day, event) => {
+      if (dragReorder.phase !== 'idle') {
+        dragReorderCancelRef.current?.()
+      }
+      daySwap.onChipPointerDown(day, event)
+    },
+    [dragReorder.phase, daySwap],
+  )
 
   useEffect(() => {
     setRoteiroEditOpen(false)
     setDraftActivities(null)
     setTrackedStopId(null)
     stopCardRefs.current.clear()
+    dayChipRefs.current.clear()
     trackedFollowRef.current = { id: null, reason: null }
   }, [tripId])
 
@@ -450,12 +526,6 @@ export function Itinerary() {
     const act = draftActivities.find((a) => String(a.id) === String(trackedStopId))
     return act != null && isPendingNewStop(act)
   }, [trackedStopId, draftActivities])
-
-  const handleSelectDay = useCallback((day) => {
-    dragReorderCancelRef.current?.()
-    trackedFollowRef.current = { id: null, reason: null }
-    setSelectedDay(day)
-  }, [])
 
   useLayoutEffect(() => {
     if (loading || !trip || !roteiroEditOpen || !trackedStopId || !Array.isArray(draftActivities)) return
@@ -647,6 +717,7 @@ export function Itinerary() {
 
   const handleCancelRoteiroEdit = () => {
     dragReorderCancelRef.current?.()
+    daySwapCancelRef.current?.()
     setRoteiroEditOpen(false)
     setDraftActivities(null)
     setSavingRoteiro(false)
@@ -910,11 +981,25 @@ export function Itinerary() {
           </div>
         </div>
         {showRoteiroSidebar && (
-          <div className="mt-3 pt-3 pb-2 sm:pb-2.5 border-t border-border-light dark:border-white/10">
+          <div className="mt-3 pt-3 pb-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
             <ItineraryDayChips
               days={days}
               selectedDay={effectiveSelectedDay}
               onSelectDay={handleSelectDay}
+              swapEnabled={roteiroEditOpen && hasFullAccess && !loading}
+              daySwap={{
+                phase: daySwap.phase,
+                isSwapMode: daySwap.isSwapMode,
+                isDragging: daySwap.isDragging,
+                draggingDay: daySwap.draggingDay,
+                pendingDay: daySwap.pendingDay,
+                targetDay: daySwap.targetDay,
+                ghostStyle: daySwap.ghostStyle,
+                focusReady: daySwap.focusReady,
+                onChipPointerDown: onDayChipPointerDown,
+                chipRefs: dayChipRefs,
+                scrollRef: dayChipsScrollRef,
+              }}
               getDayState={(day) => {
                 const peek =
                   previewDayMapsReady && premiumRestriction && !hasFullAccess && !isPlanning
@@ -1189,14 +1274,16 @@ export function Itinerary() {
                           dragReorder.canDrag && !dragReorder.isInteractionBlocked
                         }
                         onDragHandlePointerDown={(event) =>
-                          dragReorder.onDragHandlePointerDown(act.id, event)
+                          onActivityDragHandlePointerDown(act.id, event)
                         }
                         dayPickerValue={getActivityDayNumber(act, dateToDayMap) ?? effectiveSelectedDay}
                         dayPickerOptions={days}
                         onDayChange={(dn) => {
                           setDraftActivities((prev) =>
                             (prev ?? []).map((item) =>
-                              String(item.id) === String(act.id) ? { ...item, day: dn, dayNumber: dn } : item,
+                              String(item.id) === String(act.id)
+                                ? assignActivityToDay(item, dn, dateToDayMap)
+                                : item,
                             ),
                           )
                           if (String(act.id) === String(trackedStopId)) {
