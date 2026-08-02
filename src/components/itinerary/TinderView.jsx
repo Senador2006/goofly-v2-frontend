@@ -180,10 +180,11 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   }, [deckKey])
 
   const handleRetryDeck = useCallback(() => {
+    if (finalizingTdv) return
     prefetchEmptyAttemptsRef.current = 0
     setDeckUnavailable(false)
     loadPlaces()
-  }, [loadPlaces])
+  }, [finalizingTdv, loadPlaces])
 
   // Carrega ao ativar a aba / mudar viagem. Não incluir places.length nem loading nas deps:
   // com lista vazia (API ok) ou erro (ex.: 429), isso re-disparava o efeito em loop.
@@ -194,7 +195,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   // Antecipa o próximo lote quando o baralho encolheu (inclui baralho vazio — continuidade TDV).
   useEffect(() => {
-    if (!isActive || !tripId || loading || deckUnavailable) return
+    if (!isActive || !tripId || loading || deckUnavailable || finalizingTdv) return
     const n = places.length
     if (n >= DECK_MAX_PLACES) return
     if (n > PREFETCH_WHEN_REMAINING_AT_MOST) return
@@ -291,10 +292,19 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       ac.abort()
       prefetchInFlightRef.current = false
     }
-  }, [isActive, tripId, loading, places, deckUnavailable, emptyDeckRetryTick])
+  }, [isActive, tripId, loading, places, deckUnavailable, emptyDeckRetryTick, finalizingTdv])
+
+  // Congela o TDV durante finalize: aborta discover/prefetch em voo (não compete com n8n).
+  useEffect(() => {
+    if (!finalizingTdv) return
+    loadAbortRef.current?.abort()
+    prefetchAbortRef.current?.abort()
+    prefetchInFlightRef.current = false
+    setPrefetchLoading(false)
+  }, [finalizingTdv])
 
   const handleLike = useCallback(async () => {
-    if (!currentPlace || !tripId) return
+    if (finalizingTdv || !currentPlace || !tripId) return
     const placeId = getPlaceId(currentPlace)
     if (!placeId) {
       setError('Lugar sem ID válido')
@@ -317,10 +327,10 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setSwipeFeedback(null)
       setError(getRequestErrorMessage(err, 'Erro ao dar like'))
     }
-  }, [currentPlace, tripId, totalLikes, onItineraryUpdate])
+  }, [finalizingTdv, currentPlace, tripId, totalLikes, onItineraryUpdate])
 
   const handleDislike = useCallback(async () => {
-    if (!currentPlace || !tripId) return
+    if (finalizingTdv || !currentPlace || !tripId) return
     const placeId = getPlaceId(currentPlace)
     if (!placeId) {
       setError('Lugar sem ID válido')
@@ -340,10 +350,10 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setSwipeFeedback(null)
       setError(getRequestErrorMessage(err, 'Erro ao descartar'))
     }
-  }, [currentPlace, tripId])
+  }, [finalizingTdv, currentPlace, tripId])
 
   const handleUndo = useCallback(async () => {
-    if (!tripId || undoBusyRef.current) return
+    if (finalizingTdv || !tripId || undoBusyRef.current) return
 
     let entry
     setUndoStack((prev) => {
@@ -397,9 +407,10 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       undoBusyRef.current = false
       setUndoLoading(false)
     }
-  }, [tripId, onItineraryUpdate])
+  }, [finalizingTdv, tripId, onItineraryUpdate])
 
   useEffect(() => {
+    if (finalizingTdv) return undefined
     const onKeyDown = (e) => {
       if (!currentPlace) return
       if (e.key === 'ArrowLeft') {
@@ -413,7 +424,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [currentPlace, handleLike, handleDislike])
+  }, [finalizingTdv, currentPlace, handleLike, handleDislike])
 
   const firstDest = trip?.destinations?.[0]
   const destTitle = firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Sua viagem'
@@ -489,7 +500,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
             type="button"
             variant="outline"
             size="sm"
-            disabled={undoStack.length === 0 || undoLoading}
+            disabled={finalizingTdv || undoStack.length === 0 || undoLoading}
             className="rounded-full"
             onClick={handleUndo}
             aria-label="Desfazer última ação no TDV"
@@ -661,7 +672,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                   <button
                     type="button"
                     onClick={handleDislike}
-                    className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-full border border-border-light bg-white text-text-secondary shadow-lg ring-1 ring-border-light/90 active:scale-95 motion-safe:transition-[transform,colors] hover:text-red-500 dark:border-border-dark dark:bg-card-dark dark:ring-white/15 hover:shadow-xl sm:size-14"
+                    disabled={finalizingTdv}
+                    className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-full border border-border-light bg-white text-text-secondary shadow-lg ring-1 ring-border-light/90 active:scale-95 motion-safe:transition-[transform,colors] hover:text-red-500 dark:border-border-dark dark:bg-card-dark dark:ring-white/15 hover:shadow-xl sm:size-14 disabled:opacity-50 disabled:pointer-events-none"
                     aria-label="Descartar"
                   >
                     <Icon name="close" className="text-2xl sm:text-3xl" />
@@ -669,7 +681,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
                   <button
                     type="button"
                     onClick={handleLike}
-                    className="flex size-[3.625rem] shrink-0 items-center justify-center rounded-full bg-primary text-foreground shadow-primary-glow dark:shadow-primary-glow-dark ring-2 ring-primary/15 active:scale-95 motion-safe:transition-transform sm:size-16"
+                    disabled={finalizingTdv}
+                    className="flex size-[3.625rem] shrink-0 items-center justify-center rounded-full bg-primary text-foreground shadow-primary-glow dark:shadow-primary-glow-dark ring-2 ring-primary/15 active:scale-95 motion-safe:transition-transform sm:size-16 disabled:opacity-50 disabled:pointer-events-none"
                     aria-label="Curtir"
                   >
                     <Icon name="favorite" className="text-3xl sm:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
@@ -688,7 +701,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
               title={t('tdv.empty_title')}
               description={t('tdv.agent_unavailable')}
               action={
-                <Button onClick={handleRetryDeck} className="rounded-full">
+                <Button onClick={handleRetryDeck} disabled={finalizingTdv} className="rounded-full">
                   {t('tdv.retry')}
                 </Button>
               }

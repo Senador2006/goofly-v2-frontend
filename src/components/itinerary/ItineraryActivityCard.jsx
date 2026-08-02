@@ -16,29 +16,7 @@ import {
   resolveActivityTitleForEdit,
 } from '../../utils/itineraryPrintFormat'
 import { shouldShowTdvRoteiroGallery } from '../../utils/placeImages'
-
-function minutesBetweenStarts(startStr, endStr) {
-  if (!startStr || !endStr) return null
-  const [sh, sm] = String(startStr).split(':').map(Number)
-  const [eh, em] = String(endStr).split(':').map(Number)
-  if (![sh, sm, eh, em].every(Number.isFinite)) return null
-  const mins = eh * 60 + em - (sh * 60 + sm)
-  return mins > 0 ? mins : null
-}
-
-function formatDuration(act, startResolved, endResolved) {
-  const fromWindow = minutesBetweenStarts(startResolved, endResolved)
-  if (fromWindow != null) {
-    const h = Math.round((fromWindow / 60) * 10) / 10
-    return `${h}h`
-  }
-  if (act.duration) return act.duration
-  if (act.duration_minutes) {
-    const h = Math.round((act.duration_minutes / 60) * 10) / 10
-    return `${h}h`
-  }
-  return '2h'
-}
+import { formatActivityDuration } from '../../utils/formatActivityDuration'
 
 /** @param {Record<string, unknown> | null | undefined} act */
 function activityNeedsTicket(act) {
@@ -252,7 +230,7 @@ export function ItineraryActivityCard({
     setOpen((v) => !v)
   }, [])
 
-  const durationLabel = formatDuration(
+  const durationLabel = formatActivityDuration(
     effective || act,
     start,
     typeof end === 'string' ? end.trim() : null,
@@ -685,7 +663,7 @@ function CardBody({
               </span>
             ) : null}
             <span className="text-[11px] font-semibold text-text-secondary">
-              {formatDuration(act, startResolved, endResolved)}
+              {formatActivityDuration(act, startResolved, endResolved)}
             </span>
             <Icon
               name={open ? 'expand_less' : 'expand_more'}

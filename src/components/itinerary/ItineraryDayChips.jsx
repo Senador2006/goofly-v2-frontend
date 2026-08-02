@@ -336,7 +336,7 @@ export function ItineraryDayChips({
         ref={containerRef}
         className={
           'relative isolate flex items-center gap-2 overflow-x-auto no-scrollbar [-webkit-overflow-scrolling:touch] w-full ' +
-          'py-2.5 px-1.5 sm:py-3 sm:px-2 ' +
+          'py-1 px-1.5 sm:py-2.5 sm:px-2 ' +
           (isSwapMode ? 'roteiro-day-chips--swap-mode ' : '') +
           (isDragging ? 'roteiro-day-chips--dragging ' : '')
         }

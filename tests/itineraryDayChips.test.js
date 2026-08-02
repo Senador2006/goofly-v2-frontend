@@ -43,7 +43,7 @@ describe('ItineraryDayChips — swap de dias', () => {
     assert.match(chipsSource, /border-dashed border-primary/)
     assert.match(chipsSource, /DaySwapGhost/)
     assert.match(chipsSource, /swap_horiz/)
-    assert.match(chipsSource, /py-2\.5 px-1\.5/)
+    assert.match(chipsSource, /py-1 px-1\.5/)
     assert.match(chipsSource, /sm:py-2\.5/)
   })
 })

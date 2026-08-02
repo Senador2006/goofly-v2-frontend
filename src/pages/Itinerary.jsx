@@ -9,6 +9,7 @@ import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivity
 import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
+import { FinalizeItineraryOverlay } from '../components/itinerary/FinalizeItineraryOverlay'
 import {
   ItineraryDayMap,
   clearItineraryRouteCache,
@@ -45,6 +46,13 @@ import {
   playReorderSwapAnimation,
   prefersReducedFlipMotion,
 } from '../utils/flipListAnimation'
+import {
+  clearFinalizeTdvSession,
+  finalizeTdvSessionDeadline,
+  isFinalizeRequestAbort,
+  markFinalizeTdvSession,
+  readFinalizeTdvSession,
+} from '../utils/finalizeTdvSession'
 
 const MODE_ROTEIRO = 'roteiro'
 
@@ -242,7 +250,10 @@ export function Itinerary() {
   const tripDestCity = trip?.destinations?.[0]?.city
   useDocumentTitle(tripDestCity ? `Roteiro · ${tripDestCity}` : 'Roteiro')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [finalizingTdv, setFinalizingTdv] = useState(false)
+  const [finalizingTdv, setFinalizingTdv] = useState(() => Boolean(readFinalizeTdvSession(tripId)))
+  const [finalizeError, setFinalizeError] = useState(null)
+  /** Incrementado para (re)disparar o poll quando o POST cai por rede sem response. */
+  const [finalizeResumeKey, setFinalizeResumeKey] = useState(0)
   const [roteiroEditOpen, setRoteiroEditOpen] = useState(false)
   const [draftActivities, setDraftActivities] = useState(null)
   const [savingRoteiro, setSavingRoteiro] = useState(false)
@@ -252,6 +263,7 @@ export function Itinerary() {
   )
   const [trackedStopId, setTrackedStopId] = useState(null)
   const deleteInFlightRef = useRef(false)
+  const finalizeInFlightRef = useRef(false)
   const stopCardRefs = useRef(new Map())
   const dayChipRefs = useRef(new Map())
   const dayChipsScrollRef = useRef(null)
@@ -385,28 +397,125 @@ export function Itinerary() {
     }
   }
 
-  const handleFinalizeTdv = useCallback(async () => {
-    if (!tripId) return
-    setFinalizingTdv(true)
-    setError(null)
-    try {
-      const result = await tripService.finalizeTdvPlanning(tripId)
-      if (result?.trip) setTrip(result.trip)
-      const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
-      clearItineraryRouteCache(tripId)
-      setItinerary(itineraryData)
-      const firstDay = itineraryData?.activities?.[0]?.day
-      if (firstDay != null && firstDay !== '') {
-        const asNum = Number(firstDay)
-        setSelectedDay(Number.isFinite(asNum) && asNum >= 1 ? asNum : firstDay)
+  const applyFinalizeSuccess = useCallback(
+    (tripData, itineraryData) => {
+      clearFinalizeTdvSession(tripId)
+      if (tripData) setTrip(tripData)
+      if (itineraryData) {
+        clearItineraryRouteCache(tripId)
+        setItinerary(itineraryData)
+        const firstDay = itineraryData?.activities?.[0]?.day
+        if (firstDay != null && firstDay !== '') {
+          const asNum = Number(firstDay)
+          setSelectedDay(Number.isFinite(asNum) && asNum >= 1 ? asNum : firstDay)
+        }
       }
       setMode(MODE_ROTEIRO)
+      setFinalizeError(null)
+      finalizeInFlightRef.current = false
+      setFinalizingTdv(false)
+    },
+    [tripId],
+  )
+
+  const handleFinalizeTdv = useCallback(async () => {
+    if (!tripId || finalizeInFlightRef.current) return
+    finalizeInFlightRef.current = true
+    setShowDeleteConfirm(false)
+    markFinalizeTdvSession(tripId)
+    setFinalizingTdv(true)
+    setFinalizeError(null)
+    try {
+      const result = await tripService.finalizeTdvPlanning(tripId)
+      const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
+      applyFinalizeSuccess(result?.trip, itineraryData)
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Não foi possível finalizar o TDV')
-    } finally {
+      // Abort/rede sem response (ex.: refresh): mantém session para retomar overlay + poll.
+      if (isFinalizeRequestAbort(err) || !err.response) {
+        finalizeInFlightRef.current = false
+        setFinalizeResumeKey((k) => k + 1)
+        return
+      }
+      clearFinalizeTdvSession(tripId)
+      setFinalizeError(
+        err.response?.data?.error?.message || 'Não foi possível finalizar o TDV',
+      )
+      finalizeInFlightRef.current = false
       setFinalizingTdv(false)
     }
-  }, [tripId])
+  }, [tripId, applyFinalizeSuccess])
+
+  /**
+   * Pós-refresh: o POST original não existe mais no browser, mas o backend pode
+   * ainda estar gerando. Observa até status `ativa` ou deadline da session.
+   */
+  useEffect(() => {
+    if (!tripId || loading || !trip) return
+    const session = readFinalizeTdvSession(tripId)
+    if (!session) return
+
+    if (trip.status === 'ativa') {
+      let cancelled = false
+      ;(async () => {
+        try {
+          const itineraryData =
+            itinerary || (await tripService.getItinerary(tripId, { refresh: true }))
+          if (cancelled) return
+          applyFinalizeSuccess(trip, itineraryData)
+        } catch {
+          if (!cancelled) {
+            clearFinalizeTdvSession(tripId)
+            setFinalizingTdv(false)
+          }
+        }
+      })()
+      return () => {
+        cancelled = true
+      }
+    }
+
+    // POST ainda em voo nesta montagem — não duplicar com poll.
+    if (finalizeInFlightRef.current) return
+
+    let cancelled = false
+    setFinalizingTdv(true)
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+    ;(async () => {
+      while (!cancelled) {
+        const deadline = finalizeTdvSessionDeadline(session)
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) {
+          clearFinalizeTdvSession(tripId)
+          setFinalizingTdv(false)
+          setFinalizeError(
+            'A geração está demorando mais do que o esperado. Atualize a página ou tente gerar novamente.',
+          )
+          return
+        }
+        try {
+          const tripData = await tripService.getTrip(tripId)
+          if (cancelled) return
+          if (tripData?.status === 'ativa') {
+            const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
+            if (cancelled) return
+            applyFinalizeSuccess(tripData, itineraryData)
+            return
+          }
+        } catch {
+          /* mantém poll */
+        }
+        await sleep(Math.min(2500, Math.max(500, remaining)))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // itinerary só como cache no atalho `ativa`; poll é guiado por session + status.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId, trip, loading, applyFinalizeSuccess, finalizeResumeKey])
 
   const dateToDayMap = useMemo(() => buildDateToDayMap(trip), [trip])
 
@@ -625,19 +734,29 @@ export function Itinerary() {
     setMobileMapOpen(false)
   }, [mode])
 
-  if (loading) return <LoadingSpinner />
+  if (loading) {
+    return (
+      <>
+        {finalizingTdv ? null : <LoadingSpinner />}
+        <FinalizeItineraryOverlay open={finalizingTdv} />
+      </>
+    )
+  }
   if (error || !trip) {
     return (
-      <div className="p-4">
-        <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl">
-          {error || 'Viagem não encontrada'}
+      <>
+        <div className="p-4">
+          <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl">
+            {error || 'Viagem não encontrada'}
+          </div>
+          <Link to="/trips">
+            <Button variant="secondary" className="mt-4">
+              Voltar
+            </Button>
+          </Link>
         </div>
-        <Link to="/trips">
-          <Button variant="secondary" className="mt-4">
-            Voltar
-          </Button>
-        </Link>
-      </div>
+        <FinalizeItineraryOverlay open={finalizingTdv} />
+      </>
     )
   }
 
@@ -782,6 +901,7 @@ export function Itinerary() {
   }
 
   const guardedSwitchModeFromRoteiro = (nextMode) => {
+    if (finalizingTdv) return
     if (!roteiroEditOpen) {
       setMode(nextMode)
       return
@@ -797,13 +917,19 @@ export function Itinerary() {
   }
 
   const modeTabs = (
-    <div className="flex gap-1.5 sm:gap-2 flex-wrap p-1 rounded-2xl bg-surface-light dark:bg-white/[0.06] w-fit max-w-full">
+    <div
+      className={`flex gap-1.5 sm:gap-2 flex-wrap p-1 rounded-2xl bg-surface-light dark:bg-white/[0.06] w-fit max-w-full ${
+        finalizingTdv ? 'pointer-events-none opacity-60' : ''
+      }`}
+      aria-disabled={finalizingTdv || undefined}
+    >
       {isPlanning ? (
         <>
           <button
             type="button"
+            disabled={finalizingTdv}
             onClick={() => setMode(MODE_ROTEIRO)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all disabled:cursor-not-allowed ${
               mode === MODE_ROTEIRO
                 ? 'bg-primary text-black shadow-md'
                 : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
@@ -813,8 +939,9 @@ export function Itinerary() {
           </button>
           <button
             type="button"
+            disabled={finalizingTdv}
             onClick={() => guardedSwitchModeFromRoteiro(MODE_TDV)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all disabled:cursor-not-allowed ${
               mode === MODE_TDV
                 ? 'bg-primary text-black shadow-md'
                 : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
@@ -824,8 +951,9 @@ export function Itinerary() {
           </button>
           <button
             type="button"
+            disabled={finalizingTdv}
             onClick={() => guardedSwitchModeFromRoteiro(MODE_DOCUMENTOS)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all ${
+            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all disabled:cursor-not-allowed ${
               mode === MODE_DOCUMENTOS
                 ? 'bg-primary text-black shadow-md'
                 : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
@@ -972,6 +1100,7 @@ export function Itinerary() {
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowDeleteConfirm(true)}
+                disabled={finalizingTdv}
                 className="text-red-600 dark:text-red-400 hover:bg-red-500/10 shrink-0 rounded-xl"
               >
                 <Icon name="delete" />
@@ -981,7 +1110,7 @@ export function Itinerary() {
           </div>
         </div>
         {showRoteiroSidebar && (
-          <div className="mt-3 pt-3 pb-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
+          <div className="mt-2 pt-1 pb-1 sm:mt-3 sm:pt-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
             <ItineraryDayChips
               days={days}
               selectedDay={effectiveSelectedDay}
@@ -1024,6 +1153,24 @@ export function Itinerary() {
         )}
       </header>
 
+      {finalizeError ? (
+        <div
+          className="flex-shrink-0 px-4 sm:px-6 py-2.5 bg-red-500/10 border-b border-red-500/25 text-red-700 dark:text-red-400 text-sm flex items-start gap-2"
+          role="alert"
+        >
+          <Icon name="error" className="text-base shrink-0 mt-0.5" aria-hidden />
+          <p className="min-w-0 flex-1 leading-snug">{finalizeError}</p>
+          <button
+            type="button"
+            onClick={() => setFinalizeError(null)}
+            className="shrink-0 p-0.5 rounded-md hover:bg-red-500/15 text-red-600 dark:text-red-400"
+            aria-label="Fechar aviso"
+          >
+            <Icon name="close" className="text-base" />
+          </button>
+        </div>
+      ) : null}
+
       <div
         className={`flex-1 flex min-w-0 min-h-0 overflow-hidden ${
           mode === MODE_ROTEIRO ? 'flex-col lg:flex-row' : ''
@@ -1062,6 +1209,11 @@ export function Itinerary() {
                     <Icon name="auto_awesome" />
                     {finalizingTdv ? 'Gerando roteiro…' : 'Gerar roteiro e ativar viagem'}
                   </Button>
+                  {finalizeError ? (
+                    <p className="mt-2 text-xs text-red-600 dark:text-red-400 leading-relaxed" role="alert">
+                      {finalizeError}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               {!hasFullAccess && premiumRestriction ? (
@@ -1470,6 +1622,7 @@ export function Itinerary() {
         deleting={deleting}
         tripLabel={destLabel}
       />
+      <FinalizeItineraryOverlay open={finalizingTdv} />
       <RoteiroDragOverlay active={dragReorder.isOverlayActive}>
         <ItineraryDragGhost
           activity={dragReorder.ghostActivity}

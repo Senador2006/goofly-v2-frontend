@@ -1,27 +1,5 @@
 import { ItineraryActivityCardCompact } from './ItineraryActivityCardCompact'
-
-function minutesBetweenStarts(startStr, endStr) {
-  if (!startStr || !endStr) return null
-  const [sh, sm] = String(startStr).split(':').map(Number)
-  const [eh, em] = String(endStr).split(':').map(Number)
-  if (![sh, sm, eh, em].every(Number.isFinite)) return null
-  const mins = eh * 60 + em - (sh * 60 + sm)
-  return mins > 0 ? mins : null
-}
-
-function formatDuration(act, startResolved, endResolved) {
-  const fromWindow = minutesBetweenStarts(startResolved, endResolved)
-  if (fromWindow != null) {
-    const h = Math.round((fromWindow / 60) * 10) / 10
-    return `${h}h`
-  }
-  if (act?.duration) return act.duration
-  if (act?.duration_minutes) {
-    const h = Math.round((act.duration_minutes / 60) * 10) / 10
-    return `${h}h`
-  }
-  return '2h'
-}
+import { formatActivityDuration } from '../../utils/formatActivityDuration'
 
 /** Ghost flutuante da parada arrastada (dentro de RoteiroDragOverlay). */
 export function ItineraryDragGhost({ activity, index, style }) {
@@ -57,7 +35,7 @@ export function ItineraryDragGhost({ activity, index, style }) {
         index={index}
         scheduleLabel={scheduleLabel}
         title={title}
-        durationLabel={formatDuration(
+        durationLabel={formatActivityDuration(
           activity,
           start,
           typeof end === 'string' ? end.trim() : null,
