@@ -5,10 +5,10 @@ import { LoadingSpinner } from '../common/LoadingSpinner'
 import { EmptyState } from '../common/EmptyState'
 import { placeService } from '../../services/placeService'
 import { getPlaceCoverImageUrl, getPlaceVideoUrls } from '../../utils/placeImages'
+import { buildTdvLikePlaceData } from '../../utils/tdvLikePlaceData'
 import { getRequestErrorMessage } from '../../utils/errors'
 import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
-import { readLatLng } from '../../utils/coordinates'
 
 function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
@@ -304,17 +304,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
     try {
-      const latLng = readLatLng(currentPlace)
-      const placeData = {
-        name: currentPlace.name,
-        description: currentPlace.description || currentPlace.aiReasoning,
-        location:
-          currentPlace.location ||
-          (currentPlace.city && currentPlace.country ? `${currentPlace.city}, ${currentPlace.country}` : undefined),
-        ...(latLng
-          ? { coordinates: { latitude: latLng[0], longitude: latLng[1] } }
-          : {}),
-      }
+      const placeData = buildTdvLikePlaceData(currentPlace)
       const res = await placeService.like(tripId, placeId, placeData)
       setTotalLikes(typeof res?.likesUsedTotal === 'number' ? res.likesUsedTotal : totalLikes + 1)
       setLikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev])

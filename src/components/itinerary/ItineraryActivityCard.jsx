@@ -2,6 +2,7 @@ import { useCallback, useId, useState } from 'react'
 import { Icon } from '../common/Icon'
 import { ItineraryStopMarker } from './ItineraryStopMarker'
 import { ItineraryActivityCardCompact } from './ItineraryActivityCardCompact'
+import { PlaceCardGallery } from './PlaceCardGallery'
 import {
   googleMapsPlaceUrl,
   resolveActivityCoordinates,
@@ -14,6 +15,7 @@ import {
   resolveActivityTitle,
   resolveActivityTitleForEdit,
 } from '../../utils/itineraryPrintFormat'
+import { shouldShowTdvRoteiroGallery } from '../../utils/placeImages'
 
 function minutesBetweenStarts(startStr, endStr) {
   if (!startStr || !endStr) return null
@@ -220,6 +222,7 @@ export function ItineraryActivityCard({
   isDragPending = false,
   canDragReorder = false,
   onDragHandlePointerDown,
+  hasFullAccess = false,
 }) {
   const panelId = useId()
   const [open, setOpen] = useState(false)
@@ -237,6 +240,13 @@ export function ItineraryActivityCard({
   const description = resolveActivityDescription(effective)
   const badge = sourceBadgeLabel(effective)
   const ticket = resolveTicketInfo(effective || act)
+  const sourceKey = String((effective || act)?.source || '').trim()
+  const showTdvGallery = shouldShowTdvRoteiroGallery(effective || act, hasFullAccess)
+  // Imagens TDV só na versão completa (galeria). Na prévia gratuita não vazar via hero.
+  const showTopHero =
+    !compactMode &&
+    sourceKey !== 'tdv_like' &&
+    !!(effective?.image_url || act?.image_url)
 
   const toggle = useCallback(() => {
     setOpen((v) => !v)
@@ -278,7 +288,7 @@ export function ItineraryActivityCard({
             : 'border-border-light dark:border-border-dark shadow-sm ring-inset ring-primary/25')
         }
       >
-        {!compactMode && (effective?.image_url || act?.image_url) ? (
+        {showTopHero ? (
           <div
             className="h-36 sm:h-40 w-full bg-cover bg-center"
             style={{ backgroundImage: `url(${effective?.image_url || act.image_url})` }}
@@ -341,6 +351,7 @@ export function ItineraryActivityCard({
               open={open}
               onToggle={toggle}
               panelId={panelId}
+              showTdvGallery={showTdvGallery}
             />
           )}
         </div>
@@ -637,6 +648,7 @@ function CardBody({
   open,
   onToggle,
   panelId,
+  showTdvGallery = false,
 }) {
   const hasTicketBox = ticket.required || !!ticket.hint || ticket.links.length > 0
   const mapCoords = resolveActivityCoordinates(act)
@@ -705,6 +717,14 @@ function CardBody({
                   : 'Sugestão da IA para este horário do roteiro.'}
               </p>
             )}
+            {showTdvGallery ? (
+              <div
+                className="relative mx-auto mt-3 w-full max-w-[17.5rem] sm:max-w-[19rem] aspect-square overflow-hidden rounded-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <PlaceCardGallery place={act} variant="compact" />
+              </div>
+            ) : null}
             {mapCoords ? (
               <div className="mt-4">
                 <a

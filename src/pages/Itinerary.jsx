@@ -1166,6 +1166,7 @@ export function Itinerary() {
                         displayIsLast={displayIsLast}
                         editing={roteiroEditOpen}
                         draft={act}
+                        hasFullAccess={hasFullAccess}
                         isTracked={String(act.id) === String(trackedStopId)}
                         cardRef={(el) => {
                           const key = String(act.id)
