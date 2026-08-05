@@ -39,8 +39,8 @@ const ITINERARY_STYLES = [
 const ACCOMMODATION_TYPES = [
   { value: 'hotel', label: 'Hotel' },
   { value: 'airbnb', label: 'Airbnb' },
-  { value: 'hostel', label: 'Albergue' },
-  { value: 'apartment', label: 'Apartamento' },
+  { value: 'hostel', label: 'Hostel' },
+  { value: 'apartment', label: 'Residência' },
   { value: 'other', label: 'Outro' },
 ]
 
@@ -68,15 +68,6 @@ const PRIORITIZE_OPTIONS = [
   { slug: 'parques-natureza', label: 'Parques e Natureza' },
   { slug: 'arte-de-rua', label: 'Arte de Rua' },
   { slug: 'vida-noturna-local', label: 'Vida Noturna Local' },
-]
-
-const TRIP_TYPES = [
-  { value: 'tourism', label: 'Turismo' },
-  { value: 'business', label: 'Negócios' },
-  { value: 'adventure', label: 'Aventura' },
-  { value: 'romantic', label: 'Romântica' },
-  { value: 'family', label: 'Familiar' },
-  { value: 'other', label: 'Outro' },
 ]
 
 const CURRENCIES = ['USD', 'EUR', 'BRL', 'GBP']
@@ -163,7 +154,6 @@ export function NewTrip() {
     budget: '',
     currency: 'USD',
     travelers: { adults: 1, children: 0 },
-    tripType: '',
   })
 
   const updateField = (field, value) => {
@@ -274,7 +264,8 @@ export function NewTrip() {
     }
     if (s === 3) {
       if (!formData.interests?.length) return 'Selecione pelo menos 1 interesse'
-      if (!formData.travelers?.adults || formData.travelers.adults < 1) return 'Informe o número de adultos'
+      const adults = Number(formData.travelers?.adults)
+      if (!Number.isFinite(adults) || adults < 1) return 'Informe o número de adultos'
       return null
     }
     return null
@@ -335,8 +326,10 @@ export function NewTrip() {
       prioritizePreferences: prior,
       budget: formData.budget ? Number(formData.budget) : undefined,
       currency: formData.currency || 'USD',
-      travelers: { adults: formData.travelers.adults || 1, children: formData.travelers.children || 0 },
-      tripType: formData.tripType || undefined,
+      travelers: {
+        adults: Math.max(1, Number(formData.travelers.adults) || 1),
+        children: Math.max(0, Number(formData.travelers.children) || 0),
+      },
     }
   }
 
@@ -726,7 +719,18 @@ export function NewTrip() {
                       type="number"
                       min={1}
                       value={formData.travelers.adults}
-                      onChange={(e) => updateField('travelers', { ...formData.travelers, adults: parseInt(e.target.value, 10) || 1 })}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        updateField('travelers', {
+                          ...formData.travelers,
+                          adults: raw === '' ? '' : Math.max(1, parseInt(raw, 10) || 1),
+                        })
+                      }}
+                      onBlur={() => {
+                        if (formData.travelers.adults === '' || Number(formData.travelers.adults) < 1) {
+                          updateField('travelers', { ...formData.travelers, adults: 1 })
+                        }
+                      }}
                       className="w-20 px-3 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
                     />
                   </div>
@@ -736,7 +740,18 @@ export function NewTrip() {
                       type="number"
                       min={0}
                       value={formData.travelers.children}
-                      onChange={(e) => updateField('travelers', { ...formData.travelers, children: parseInt(e.target.value, 10) || 0 })}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        updateField('travelers', {
+                          ...formData.travelers,
+                          children: raw === '' ? '' : Math.max(0, parseInt(raw, 10) || 0),
+                        })
+                      }}
+                      onBlur={() => {
+                        if (formData.travelers.children === '' || Number(formData.travelers.children) < 0) {
+                          updateField('travelers', { ...formData.travelers, children: 0 })
+                        }
+                      }}
                       className="w-20 px-3 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
                     />
                   </div>
@@ -817,19 +832,6 @@ export function NewTrip() {
                     ))}
                   </select>
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Tipo de viagem (opcional)</label>
-                <select
-                  value={formData.tripType}
-                  onChange={(e) => updateField('tripType', e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                >
-                  <option value="">Selecione</option>
-                  {TRIP_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
               </div>
             </div>
           )}
