@@ -350,6 +350,24 @@ export function Itinerary() {
     }
   }, [isPlanning, mode])
 
+  // Mobile TDV: trava scroll do Layout e remove padding — card fica entre abas e MobileNav
+  useEffect(() => {
+    const main = document.querySelector('main')
+    if (!main) return undefined
+
+    const mq = window.matchMedia('(max-width: 1023px)')
+    const sync = () => {
+      if (mode === MODE_TDV && mq.matches) main.classList.add('tdv-mobile-lock')
+      else main.classList.remove('tdv-mobile-lock')
+    }
+    sync()
+    mq.addEventListener('change', sync)
+    return () => {
+      mq.removeEventListener('change', sync)
+      main.classList.remove('tdv-mobile-lock')
+    }
+  }, [mode])
+
   useEffect(() => {
     if (searchParams.get('unlocked') !== '1' || !tripId) return
     let cancelled = false
@@ -918,7 +936,7 @@ export function Itinerary() {
 
   const modeTabs = (
     <div
-      className={`flex gap-1.5 sm:gap-2 flex-wrap p-1 rounded-2xl bg-surface-light dark:bg-white/[0.06] w-fit max-w-full ${
+      className={`flex w-fit max-w-full flex-nowrap items-center gap-1.5 rounded-2xl border border-zinc-200/80 bg-zinc-100/90 p-1 dark:border-white/[0.08] dark:bg-white/[0.06] sm:gap-2 ${
         finalizingTdv ? 'pointer-events-none opacity-60' : ''
       }`}
       aria-disabled={finalizingTdv || undefined}
@@ -963,6 +981,17 @@ export function Itinerary() {
             <span className="hidden sm:inline">Documentos</span>
             <span className="sm:hidden">Docs</span>
             {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
+          </button>
+          {/* Mobile: lixeira na mesma fileira das abas — libera a faixa abaixo para o card TDV */}
+          <button
+            type="button"
+            disabled={finalizingTdv}
+            onClick={() => setShowDeleteConfirm(true)}
+            aria-label="Apagar planejamento"
+            title="Apagar planejamento"
+            className="flex items-center justify-center rounded-xl px-2.5 py-2 text-red-600 transition-all hover:bg-red-500/10 disabled:cursor-not-allowed dark:text-red-400 lg:hidden"
+          >
+            <Icon name="delete" className="text-base" />
           </button>
         </>
       ) : (
@@ -1021,19 +1050,42 @@ export function Itinerary() {
 
   return (
     <>
-    <div className="print:hidden flex flex-col h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8 min-h-0 bg-background-light/50 dark:bg-background-dark/30">
+    <div
+      className={`print:hidden flex flex-col min-h-0 bg-background-light/50 dark:bg-background-dark/30 ${
+        mode === MODE_TDV
+          ? // Mobile: preenche o main travado; pb reserva a MobileNav. Desktop: full-bleed habitual.
+            'flex h-full min-h-0 flex-1 flex-col overflow-hidden max-lg:pb-[var(--goofly-mobile-nav-height,0px)] lg:h-[100dvh] lg:-mx-12 lg:-my-8'
+          : 'h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8'
+      }`}
+    >
       {/* Cabeçalho único — evita três colunas competindo por atenção */}
-      <header className="flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 py-3 sm:py-4">
-        <div className="flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+      <header
+        className={`flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 ${
+          mode === MODE_TDV ? 'py-2 pb-1.5 lg:py-4 lg:pb-4' : 'py-3 sm:py-4'
+        }`}
+      >
+        <div
+          className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary overflow-x-auto no-scrollbar ${
+            mode === MODE_TDV ? 'mb-1 lg:mb-3' : 'mb-2 sm:mb-3'
+          }`}
+        >
           <span>Início</span>
           <Icon name="chevron_right" className="text-[10px] shrink-0" />
           <span>Roteiros</span>
           <Icon name="chevron_right" className="text-[10px] shrink-0" />
           <span className="text-[#1c1c0d] dark:text-white truncate">{destLabel}</span>
         </div>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div
+          className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${
+            mode === MODE_TDV ? 'gap-1.5 lg:gap-3' : 'gap-3'
+          }`}
+        >
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-[#1c1c0d] dark:text-white leading-tight">
+            <h1
+              className={`font-black tracking-tight text-[#1c1c0d] dark:text-white leading-tight ${
+                mode === MODE_TDV ? 'text-xl lg:text-3xl' : 'text-xl sm:text-2xl lg:text-3xl'
+              }`}
+            >
               Criador de Roteiros
             </h1>
             <p className="text-xs sm:text-sm text-text-secondary mt-0.5">
@@ -1048,7 +1100,7 @@ export function Itinerary() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex min-w-0 items-center gap-2">
               {modeTabs}
               {roteiroEditOpen ? planCompleteBadge : null}
             </div>
@@ -1101,10 +1153,12 @@ export function Itinerary() {
                 size="sm"
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={finalizingTdv}
-                className="text-red-600 dark:text-red-400 hover:bg-red-500/10 shrink-0 rounded-xl"
+                aria-label="Apagar planejamento"
+                title="Apagar planejamento"
+                className="hidden shrink-0 rounded-xl border border-red-200 bg-red-50 font-bold text-red-700 shadow-none hover:bg-red-100 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/15 lg:inline-flex"
               >
                 <Icon name="delete" />
-                <span className="hidden sm:inline">Apagar</span>
+                <span>Apagar</span>
               </Button>
             )}
           </div>

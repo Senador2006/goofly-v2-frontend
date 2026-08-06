@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
@@ -37,8 +38,8 @@ const EMPTY_DECK_PREFETCH_MAX_ATTEMPTS = 3
 const EMPTY_DECK_PREFETCH_RETRY_MS = 2000
 
 /**
- * TDV — mobile: pilha única (card · ações · finalizar/listas).
- * lg+: cartão à esquerda, painel finalizar + curtidas/descartes na lateral direita (sticky).
+ * TDV — layout fixo sem scroll de página: card relativo à viewport + barra inferior
+ * com undo / dislike / like / finalizar. Histórico na lateral (lg+) ou sheet (mobile).
  */
 export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSatisfied, finalizingTdv = false }) {
   const t = useT()
@@ -48,6 +49,14 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const [likedPlaces, setLikedPlaces] = useState([])
   const [dislikedPlaces, setDislikedPlaces] = useState([])
   const [loading, setLoading] = useState(false)
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
+  const [sheetDragY, setSheetDragY] = useState(0)
+  const [sheetDragging, setSheetDragging] = useState(false)
+  const [sheetDismissing, setSheetDismissing] = useState(false)
+  const sheetDragRef = useRef(null)
+  const sheetPanelRef = useRef(null)
+  const sheetDismissingRef = useRef(false)
+  const sheetDismissTimerRef = useRef(null)
   const [prefetchLoading, setPrefetchLoading] = useState(false)
   const [error, setError] = useState(null)
   const [swipeFeedback, setSwipeFeedback] = useState(null)
@@ -55,7 +64,118 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const [undoStack, setUndoStack] = useState([])
   const [undoLoading, setUndoLoading] = useState(false)
   const [undoNotice, setUndoNotice] = useState(null)
+  const [finalizeConfirmOpen, setFinalizeConfirmOpen] = useState(false)
   const undoBusyRef = useRef(false)
+  const finalizeConfirmRef = useRef(null)
+
+  const SHEET_DISMISS_PX = 88
+  const SHEET_DISMISS_MS = 340
+  const SHEET_DRAG_START_PX = 6
+  const SHEET_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
+
+  const closeMobilePanel = useCallback(() => {
+    setMobilePanelOpen(false)
+    setSheetDragY(0)
+    setSheetDragging(false)
+    setSheetDismissing(false)
+    sheetDismissingRef.current = false
+    sheetDragRef.current = null
+  }, [])
+
+  const runSheetDismiss = useCallback(() => {
+    if (sheetDismissingRef.current) return
+    sheetDismissingRef.current = true
+    setSheetDismissing(true)
+    setSheetDragging(false)
+
+    const panelH = sheetPanelRef.current?.offsetHeight
+    const exitY = (panelH && panelH > 0 ? panelH : Math.round(window.innerHeight * 0.92)) + 32
+
+    // 1º frame: liga a transition (sai de dragging); 2º: alvo off-screen — evita “corte” no meio.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setSheetDragY(exitY)
+      })
+    })
+
+    if (sheetDismissTimerRef.current != null) window.clearTimeout(sheetDismissTimerRef.current)
+    sheetDismissTimerRef.current = window.setTimeout(() => {
+      closeMobilePanel()
+    }, SHEET_DISMISS_MS)
+  }, [closeMobilePanel])
+
+  useEffect(() => {
+    if (!mobilePanelOpen) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    setSheetDragY(0)
+    setSheetDragging(false)
+    setSheetDismissing(false)
+    sheetDismissingRef.current = false
+    return () => {
+      document.body.style.overflow = prev
+      if (sheetDismissTimerRef.current != null) {
+        window.clearTimeout(sheetDismissTimerRef.current)
+        sheetDismissTimerRef.current = null
+      }
+    }
+  }, [mobilePanelOpen])
+
+  const onSheetHeaderPointerDown = (e) => {
+    if (sheetDismissingRef.current) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    if (e.target?.closest?.('button')) return
+    e.stopPropagation()
+    sheetDragRef.current = { y: e.clientY, pointerId: e.pointerId, active: false }
+    setSheetDragging(true)
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const onSheetHeaderPointerMove = (e) => {
+    const start = sheetDragRef.current
+    if (!start || start.pointerId !== e.pointerId || sheetDismissingRef.current) return
+    const dy = e.clientY - start.y
+    if (!start.active) {
+      if (Math.abs(dy) < SHEET_DRAG_START_PX) return
+      start.active = true
+    }
+    setSheetDragY(Math.max(0, dy))
+  }
+
+  const endSheetHeaderDrag = (e, { cancelled = false } = {}) => {
+    const start = sheetDragRef.current
+    sheetDragRef.current = null
+    if (!start || cancelled || sheetDismissingRef.current) {
+      setSheetDragging(false)
+      if (!sheetDismissingRef.current) setSheetDragY(0)
+      return
+    }
+    const dy = e.clientY - start.y
+    if (start.active && dy >= SHEET_DISMISS_PX) {
+      runSheetDismiss()
+      return
+    }
+    // Volta com transition (não no mesmo paint que dragging=true).
+    setSheetDragging(false)
+    requestAnimationFrame(() => {
+      setSheetDragY(0)
+    })
+  }
+
+  const onSheetHeaderPointerUp = (e) => {
+    if (sheetDragRef.current?.pointerId != null && e.pointerId !== sheetDragRef.current.pointerId) {
+      return
+    }
+    endSheetHeaderDrag(e)
+  }
+
+  const onSheetHeaderPointerCancel = (e) => {
+    endSheetHeaderDrag(e, { cancelled: true })
+  }
 
   const prefetchInFlightRef = useRef(false)
   /** Tamanho do baralho logo após o último `discoverSession` (ignora append de prefetch). */
@@ -297,11 +417,33 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   // Congela o TDV durante finalize: aborta discover/prefetch em voo (não compete com n8n).
   useEffect(() => {
     if (!finalizingTdv) return
+    setFinalizeConfirmOpen(false)
     loadAbortRef.current?.abort()
     prefetchAbortRef.current?.abort()
     prefetchInFlightRef.current = false
     setPrefetchLoading(false)
   }, [finalizingTdv])
+
+  useEffect(() => {
+    if (!finalizeConfirmOpen) return undefined
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setFinalizeConfirmOpen(false)
+      }
+    }
+    const onPointerDown = (e) => {
+      if (finalizeConfirmRef.current?.contains(e.target)) return
+      setFinalizeConfirmOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    // Capture: fecha ao tocar fora antes de outros handlers do card.
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [finalizeConfirmOpen])
 
   const handleLike = useCallback(async () => {
     if (finalizingTdv || !currentPlace || !tripId) return
@@ -413,6 +555,10 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     if (finalizingTdv) return undefined
     const onKeyDown = (e) => {
       if (!currentPlace) return
+      // Desktop: ← → trocam fotos (PlaceCardGallery). Mobile: curtida/descarte.
+      if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
+        return
+      }
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
         handleDislike()
@@ -426,100 +572,163 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [finalizingTdv, currentPlace, handleLike, handleDislike])
 
-  const firstDest = trip?.destinations?.[0]
-  const destTitle = firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Sua viagem'
-
-  const choicesPanel = (
-    <div className="grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2 lg:mx-0 lg:max-w-none lg:grid-cols-1 lg:gap-2">
-      <div className="p-2.5 sm:p-3 rounded-xl bg-primary/[0.08] dark:bg-primary/[0.06] border border-primary/20">
-        <h5 className="font-bold text-xs mb-0.5 flex items-center gap-1.5 text-foreground dark:text-white">
-          <Icon name="favorite" className="text-sm text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
-          Curtidas
-        </h5>
-        {likedPlaces.length === 0 ? (
-          <p className="text-[11px] text-text-secondary">Nenhuma ainda</p>
-        ) : (
-          <ul className="space-y-1 max-h-20 overflow-y-auto mt-1">
-            {likedPlaces.map((place, idx) => (
-              <li
-                key={`${place.placeId}-${idx}`}
-                className="text-xs text-foreground dark:text-white flex items-start gap-2"
-              >
-                <Icon name="check_circle" className="text-primary text-sm shrink-0 mt-0.5" />
-                <span className="line-clamp-2">{place.name}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <div className="p-2.5 sm:p-3 rounded-xl bg-red-500/[0.07] border border-red-500/20">
-        <h5 className="font-bold text-xs mb-0.5 flex items-center gap-1.5 text-foreground dark:text-white">
-          <Icon name="close" className="text-sm text-red-500 dark:text-red-400" />
-          Descartados
-        </h5>
-        {dislikedPlaces.length === 0 ? (
-          <p className="text-[11px] text-text-secondary">Nenhum ainda</p>
-        ) : (
-          <ul className="space-y-1 max-h-20 overflow-y-auto mt-1">
-            {dislikedPlaces.map((place, idx) => (
-              <li
-                key={`${place.placeId}-${idx}`}
-                className="text-xs text-foreground dark:text-white/90 flex items-start gap-2"
-              >
-                <Icon name="not_interested" className="text-red-500/80 text-sm shrink-0 mt-0.5" />
-                <span className="line-clamp-2">{place.name}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
+  const likesChip = (
+    <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-200/90 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-[#5c4810] shadow-sm dark:border-primary/25 dark:bg-primary/10 dark:text-primary dark:shadow-none sm:text-xs">
+      <Icon name="favorite" className="text-xs text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
+      {totalLikes === 1
+        ? t('tdv.likes_one', { count: totalLikes })
+        : t('tdv.likes_other', { count: totalLikes })}
+    </span>
   )
 
-  const finalizePanel = (
-    <div className="relative z-[1] w-full max-w-xl lg:mx-0 lg:max-w-none mx-auto p-3 sm:p-4 rounded-2xl bg-white dark:bg-surface-dark/90 border border-border-light dark:border-border-dark shadow-sm">
-      <p className="text-[11px] sm:text-xs text-text-secondary mb-2 leading-relaxed">
+  const historyTriggerButton = (
+    <button
+      type="button"
+      onClick={() => setMobilePanelOpen(true)}
+      className="group inline-flex items-center gap-1 rounded-full border border-white/35 bg-black/55 py-1 pl-2 pr-1.5 text-[10px] font-bold leading-none text-white shadow-[0_3px_10px_rgba(0,0,0,0.4)] backdrop-blur-md transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/80"
+      aria-label={t('tdv.history_section')}
+    >
+      <Icon
+        name="favorite"
+        className="text-xs text-primary"
+        style={{ fontVariationSettings: "'FILL' 1" }}
+      />
+      <span className="tabular-nums">{totalLikes}</span>
+      <span
+        className="flex size-4 items-center justify-center rounded-full bg-white/15 text-white/90 transition-colors group-active:bg-white/25"
+        aria-hidden
+      >
+        <Icon name="expand_more" className="text-sm leading-none" />
+      </span>
+    </button>
+  )
+
+  const renderChoicesPanel = (layout = 'sidebar') => {
+    // sidebar: listas com scroll interno (lateral desktop).
+    // sheet: altura natural — o sheet mobile rola o conteúdo inteiro até Descartados.
+    const isSheet = layout === 'sheet'
+    const listWrapClass = isSheet
+      ? 'px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5'
+      : 'relative min-h-0 flex-1 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5'
+    const listClass = isSheet
+      ? 'space-y-1 py-0.5 pl-1 pr-2.5'
+      : 'tdv-choices-scroll h-full space-y-1 overflow-y-auto py-0.5 pl-1 pr-2.5'
+
+    return (
+      <div
+        className={
+          isSheet
+            ? 'grid w-full grid-cols-1 gap-2'
+            : 'grid min-h-0 w-full max-w-xl flex-1 grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2 lg:mx-0 lg:max-w-none lg:grid-cols-1'
+        }
+      >
+        <div
+          className={
+            isSheet
+              ? 'flex flex-col overflow-hidden rounded-2xl border border-border-light bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-none'
+              : 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-light bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-none'
+          }
+        >
+          <h5 className="flex shrink-0 items-center gap-1.5 border-b border-amber-100 bg-amber-50/80 px-2.5 pt-1.5 pb-1.5 text-xs font-bold leading-none text-[#5c4810] dark:border-primary/15 dark:bg-primary/[0.08] dark:text-primary sm:px-3 sm:pt-2 sm:pb-2">
+            <Icon name="favorite" className="text-sm text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
+            Curtidas
+          </h5>
+          {likedPlaces.length === 0 ? (
+            <p className="px-2.5 pb-1.5 text-[11px] text-text-secondary sm:px-3 sm:pb-2">Nenhuma ainda</p>
+          ) : (
+            <div className={listWrapClass}>
+              <ul className={listClass}>
+                {likedPlaces.map((place, idx) => (
+                  <li
+                    key={`${place.placeId}-${idx}`}
+                    className="flex items-start gap-2 text-xs text-foreground dark:text-white/90"
+                  >
+                    <Icon name="check_circle" className="mt-0.5 shrink-0 text-sm text-primary" />
+                    <span className="line-clamp-2">{place.name}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+        <div
+          className={
+            isSheet
+              ? 'flex flex-col overflow-hidden rounded-2xl border border-border-light bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-none'
+              : 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-light bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.035] dark:shadow-none'
+          }
+        >
+          <h5 className="flex shrink-0 items-center gap-1 border-b border-red-100 bg-red-50/70 px-2.5 pt-1.5 pb-1.5 text-xs font-bold leading-none text-red-700 dark:border-red-400/15 dark:bg-red-500/[0.08] dark:text-red-300 sm:px-3 sm:pt-2 sm:pb-2">
+            <Icon name="close" className="text-base leading-none text-red-500 dark:text-red-400" />
+            Descartados
+          </h5>
+          {dislikedPlaces.length === 0 ? (
+            <p className="px-2.5 pb-1.5 text-[11px] text-text-secondary sm:px-3 sm:pb-2">Nenhum ainda</p>
+          ) : (
+            <div className={listWrapClass}>
+              <ul className={listClass}>
+                {dislikedPlaces.map((place, idx) => (
+                  <li
+                    key={`${place.placeId}-${idx}`}
+                    className="flex items-start gap-2 text-xs text-text-secondary dark:text-white/70"
+                  >
+                    <Icon name="not_interested" className="mt-0.5 shrink-0 text-sm text-red-500/90 dark:text-red-400/90" />
+                    <span className="line-clamp-2 line-through decoration-red-300/80 dark:decoration-red-400/40">
+                      {place.name}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const choicesPanel = renderChoicesPanel('sidebar')
+
+  const renderFinalizeConfirm = () => (
+    <>
+      <p className="mb-2 text-[11px] leading-snug text-text-secondary sm:text-xs lg:mb-3 lg:text-[13px] lg:leading-relaxed">
         Ao finalizar, a IA usa o formulário da viagem e, se houver, suas curtidas e descartes. Sem curtidas, o roteiro
         vem só do planejamento.
       </p>
-      <Button onClick={onTdvSatisfied} disabled={finalizingTdv} className="w-full rounded-full py-2.5 sm:py-3">
+      <Button
+        onClick={() => {
+          setFinalizeConfirmOpen(false)
+          onTdvSatisfied?.()
+        }}
+        disabled={finalizingTdv}
+        className="w-full rounded-full py-2.5 sm:py-3 lg:py-3.5 lg:text-[15px]"
+      >
         {finalizingTdv ? t('tdv.finalize_generating') : t('tdv.finalize_cta')}
       </Button>
       {totalLikes < 1 && (
-        <p className="text-[10px] text-text-secondary mt-1.5 text-center">{t('tdv.finalize_hint')}</p>
+        <p className="mt-1.5 text-center text-[10px] text-text-secondary lg:mt-2 lg:text-[11px]">{t('tdv.finalize_hint')}</p>
       )}
+    </>
+  )
+
+  const finalizePanel = (
+    <div className="relative z-[1] mx-auto w-full max-w-xl shrink-0 rounded-2xl border border-border-light bg-white p-3 shadow-sm dark:border-white/[0.08] dark:bg-surface-dark dark:shadow-none sm:p-3.5 lg:mx-0 lg:max-w-none">
+      {renderFinalizeConfirm()}
     </div>
   )
 
   const belowFoldContent = (
-    <>
+    <div className="flex h-full min-h-0 w-full flex-col gap-2.5">
+      <div className="mx-auto flex w-full max-w-xl shrink-0 justify-center lg:mx-0 lg:max-w-none lg:justify-start">
+        {likesChip}
+      </div>
       {finalizePanel}
-      {(undoStack.length > 0 || undoLoading || undoNotice) && (
-        <div className="w-full max-w-xl lg:mx-0 lg:max-w-none mx-auto flex flex-col items-center gap-1 lg:items-stretch">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={finalizingTdv || undoStack.length === 0 || undoLoading}
-            className="rounded-full"
-            onClick={handleUndo}
-            aria-label="Desfazer última ação no TDV"
-          >
-            <Icon name="undo" className="text-lg" />
-            {undoLoading ? 'Desfazendo...' : 'Desfazer última ação'}
-          </Button>
-          {undoNotice && (
-            <p className="text-[11px] text-red-500 dark:text-red-400 text-center px-2">{undoNotice}</p>
-          )}
-        </div>
-      )}
       {choicesPanel}
-    </>
+    </div>
   )
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6 bg-background-light dark:bg-card-dark" role="status" aria-live="polite">
+      <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#f0f0ee] p-6 dark:bg-[#0e0e0e]" role="status" aria-live="polite">
         <LoadingSpinner />
       </div>
     )
@@ -527,8 +736,8 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   if (error) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background-light dark:bg-card-dark">
-        <div className="max-w-md w-full p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-2xl text-sm text-center" role="alert">
+      <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden bg-[#f0f0ee] p-6 dark:bg-[#0e0e0e]">
+        <div className="w-full max-w-md rounded-2xl border border-red-200/80 bg-red-50 p-4 text-center text-sm text-red-700 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-300" role="alert">
           {error}
         </div>
         <Button
@@ -545,179 +754,303 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     )
   }
 
-  // Reserva ~15rem para header app + faixa TDV + dica + botões; teto em px evita cartão gigante em monitores altos.
+  // Card preenche a coluna. Mobile (<lg): sem raio no topo (padrão travado). Desktop: cantos arredondados.
   const cardSurface =
-    'w-[min(100%,24rem)] sm:w-full lg:w-full mx-auto lg:mx-0 aspect-[3/4] max-h-[min(56dvh,400px)] sm:max-h-[min(53dvh,420px)] md:max-h-[min(50dvh,400px)] lg:max-h-[min(calc(100dvh-15rem),380px)] xl:max-h-[min(calc(100dvh-15rem),400px)] 2xl:max-h-[min(calc(100dvh-15rem),420px)] rounded-2xl sm:rounded-3xl'
+    'h-full w-full min-h-0 rounded-none lg:rounded-t-3xl lg:rounded-b-none'
 
-  return (
-    <div className="flex flex-1 flex-col min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain bg-gradient-to-b from-background-light to-white dark:from-card-dark dark:to-background-dark">
-      <div className="flex-shrink-0 px-3 sm:px-4 py-2 border-b border-border-light/70 dark:border-border-dark/70 bg-white/50 dark:bg-card-dark/30">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 max-w-3xl mx-auto w-full">
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('tdv.title')}</p>
-            <p className="text-base sm:text-lg font-bold text-foreground dark:text-white truncate">{destTitle}</p>
+  // Undo: neutro. Dislike: rejeição (vermelho). Like: afirmação (primary). Finalize: sucesso (verde).
+  const undoBtnClass =
+    'flex size-9 shrink-0 items-center justify-center rounded-full border border-zinc-200/90 bg-white text-zinc-500 shadow-sm active:scale-95 motion-safe:transition-[transform,colors,box-shadow] hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.06] dark:text-white/55 dark:hover:border-white/20 dark:hover:bg-white/[0.1] dark:hover:text-white lg:size-11 lg:shadow-md disabled:opacity-35 disabled:pointer-events-none'
+  const dislikeBtnClass =
+    'flex size-11 shrink-0 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 shadow-sm active:scale-95 motion-safe:transition-[transform,colors,box-shadow] hover:border-red-300 hover:bg-red-100 hover:text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-400/45 dark:hover:bg-red-500/18 dark:hover:text-red-300 lg:size-14 lg:shadow-md disabled:opacity-45 disabled:pointer-events-none'
+  const likeBtnClass =
+    'flex size-12 shrink-0 items-center justify-center rounded-full bg-primary text-foreground shadow-primary-glow ring-2 ring-primary/20 active:scale-95 motion-safe:transition-[transform,box-shadow] hover:brightness-[1.03] dark:shadow-primary-glow-dark dark:ring-primary/25 lg:size-16 disabled:opacity-45 disabled:pointer-events-none'
+  const finalizeBtnClass =
+    'flex size-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm active:scale-95 motion-safe:transition-[transform,colors,box-shadow] hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:border-emerald-400/45 dark:hover:bg-emerald-500/18 dark:hover:text-emerald-300 lg:size-11 lg:shadow-md disabled:opacity-35 disabled:pointer-events-none'
+
+  const actionButtons = (
+    <>
+      <button
+        type="button"
+        onClick={handleUndo}
+        disabled={finalizingTdv || undoStack.length === 0 || undoLoading}
+        className={undoBtnClass}
+        aria-label={undoLoading ? t('tdv.undo_loading') : t('tdv.undo_action')}
+        title={t('tdv.undo_action')}
+      >
+        <Icon name={undoLoading ? 'progress_activity' : 'undo'} className={`text-lg lg:text-2xl ${undoLoading ? 'animate-spin' : ''}`} />
+      </button>
+      <button
+        type="button"
+        onClick={handleDislike}
+        disabled={finalizingTdv}
+        className={dislikeBtnClass}
+        aria-label="Descartar"
+      >
+        <Icon name="close" className="text-xl lg:text-3xl" />
+      </button>
+      <button
+        type="button"
+        onClick={handleLike}
+        disabled={finalizingTdv}
+        className={likeBtnClass}
+        aria-label="Curtir"
+      >
+        <Icon name="favorite" className="text-2xl lg:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
+      </button>
+      <div className="relative shrink-0" ref={finalizeConfirmRef}>
+        {finalizeConfirmOpen ? (
+          <div
+            className="absolute bottom-[calc(100%+0.65rem)] right-0 z-[50] w-[min(17.5rem,calc(100vw-1.25rem))] rounded-2xl border border-border-light bg-white p-3 shadow-xl dark:border-white/[0.1] dark:bg-surface-dark lg:bottom-[calc(100%+1.5rem)] lg:left-1/2 lg:right-auto lg:w-[22.5rem] lg:-translate-x-1/2 lg:p-4 lg:shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('tdv.finalize_action')}
+          >
+            {renderFinalizeConfirm()}
+            <span
+              className="pointer-events-none absolute -bottom-1.5 right-3 size-3 rotate-45 border-b border-r border-border-light bg-white dark:border-white/[0.1] dark:bg-surface-dark lg:left-1/2 lg:right-auto lg:-translate-x-1/2"
+              aria-hidden
+            />
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark">
-              <Icon name="favorite" className="text-xs text-primary" style={{ fontVariationSettings: "'FILL' 1" }} />
-              {totalLikes === 1
-                ? t('tdv.likes_one', { count: totalLikes })
-                : t('tdv.likes_other', { count: totalLikes })}
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setFinalizeConfirmOpen((open) => !open)}
+          disabled={finalizingTdv}
+          className={`${finalizeBtnClass} ${
+            finalizeConfirmOpen ? 'ring-2 ring-emerald-500/40 dark:ring-emerald-400/40' : ''
+          }`}
+          aria-label={finalizingTdv ? t('tdv.finalize_generating') : t('tdv.finalize_action')}
+          aria-expanded={finalizeConfirmOpen}
+          aria-haspopup="dialog"
+          title={t('tdv.finalize_action')}
+        >
+          <Icon
+            name={finalizingTdv ? 'progress_activity' : 'task_alt'}
+            className={`text-lg lg:text-2xl ${finalizingTdv ? 'animate-spin' : ''}`}
+            filled={!finalizingTdv}
+          />
+        </button>
+      </div>
+    </>
+  )
+
+  const placeCard = currentPlace ? (
+    <div className="relative isolate h-full w-full min-h-0">
+      {places[currentIndex + 1] && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-0 ${cardSurface} origin-center overflow-hidden border-0 bg-zinc-800 opacity-40 shadow-lg scale-[0.985]`}
+          aria-hidden
+        >
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{
+              backgroundImage: `url(${getPlaceCoverImageUrl(places[currentIndex + 1])})`,
+            }}
+          />
+        </div>
+      )}
+      <div
+        className={`absolute inset-0 z-[1] ${cardSurface} overflow-hidden border-0 bg-zinc-900 shadow-xl ring-1 ring-black/[0.04] transition-[transform,opacity] duration-300 group dark:ring-white/[0.08] motion-reduce:transition-none ${
+          swipeFeedback === 'like'
+            ? 'ring-4 ring-primary sm:translate-y-px motion-reduce:translate-y-0'
+            : ''
+        } ${swipeFeedback === 'dislike' ? 'opacity-[0.92] ring-4 ring-red-400/50 sm:translate-y-0.5 motion-reduce:translate-y-0' : ''}`}
+      >
+        <PlaceCardGallery place={currentPlace} />
+        <div className="pointer-events-none absolute inset-0 z-[10] bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[40] px-3 pb-2 pt-5 text-white sm:px-5 sm:pb-3 sm:pt-10">
+          <div className="mb-0.5 flex gap-1 overflow-x-auto no-scrollbar sm:mb-1">
+            {(currentPlace.tags || currentPlace.categories || []).filter(Boolean).map((tag) => {
+              const label = typeof tag === 'string' ? tag : tag?.name || tag?.label || String(tag)
+              return (
+                <span
+                  key={label}
+                  className="whitespace-nowrap rounded-full border border-white/15 bg-white/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-white/95 backdrop-blur-md sm:px-2 sm:text-[9px]"
+                >
+                  {label}
+                </span>
+              )
+            })}
+          </div>
+          <h2 className="mb-0.5 line-clamp-2 text-base font-extrabold leading-tight drop-shadow-md sm:text-2xl">
+            {currentPlace.name}
+          </h2>
+          <div className="mb-0.5 flex min-w-0 items-center gap-1 text-white/90">
+            <Icon name="location_on" className="shrink-0 text-xs sm:text-sm" />
+            <span className="truncate text-[11px] font-medium sm:text-xs">
+              {currentPlace.location ||
+                (currentPlace.city && currentPlace.country
+                  ? `${currentPlace.city}, ${currentPlace.country}`
+                  : currentPlace.city || currentPlace.country || 'Destino')}
             </span>
           </div>
+          <p className="line-clamp-2 text-[10px] leading-snug text-white/90 sm:text-sm">
+            {currentPlace.description || currentPlace.aiReasoning || 'Descubra este lugar.'}
+          </p>
+          {placeVideoLinks.length > 0 ? (
+            <div className="pointer-events-auto mt-1 border-t border-white/20 pt-1 sm:mt-1.5 sm:pt-1.5">
+              <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+                <p className="m-0 shrink-0 text-[9px] font-bold uppercase tracking-wider text-white/70 sm:text-[10px]">
+                  {t('tdv.video_links_heading')}
+                </p>
+                <ul className="m-0 flex min-w-0 list-none items-center gap-1 overflow-x-auto p-0 no-scrollbar sm:gap-1.5">
+                  {placeVideoLinks.map((href, i) => (
+                    <li key={`${href}-${i}`} className="shrink-0">
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex max-w-[8.5rem] items-center gap-0.5 rounded-full border border-white/30 bg-black/35 px-2 py-0.5 text-[9px] font-semibold text-white backdrop-blur-md transition-colors hover:border-white/45 hover:bg-black/50 sm:max-w-[11rem] sm:gap-1 sm:px-2.5 sm:py-1 sm:text-[11px]"
+                        aria-label={t('tdv.video_link_aria', { n: i + 1 })}
+                      >
+                        <Icon name="videocam" className="shrink-0 text-xs text-white/90 sm:text-sm" />
+                        <span className="min-w-0 truncate">
+                          {t('tdv.video_link_label', { n: i + 1, source: videoLinkLabel(href) })}
+                        </span>
+                        <Icon name="open_in_new" className="shrink-0 text-[9px] text-white/70 sm:text-[10px]" aria-hidden />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
+    </div>
+  ) : null
 
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f0f0ee] dark:bg-[#0e0e0e]">
       {placesSource === 'mock' && (
-        <div className="flex-shrink-0 px-3 sm:px-4 py-2 bg-amber-500/10 border-b border-amber-500/20">
-          <p className="text-[11px] sm:text-xs text-amber-800 dark:text-amber-200 text-center max-w-3xl mx-auto">
+        <div className="flex-shrink-0 border-b border-amber-400/30 bg-amber-50 px-3 py-1.5 dark:border-amber-500/20 dark:bg-amber-500/10 sm:px-4">
+          <p className="mx-auto max-w-3xl text-center text-[11px] text-amber-900 dark:text-amber-200 sm:text-xs">
             {t('tdv.mock_banner')}
           </p>
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0 flex-col pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-6">
-        <div className="mx-auto w-full max-w-lg px-3 pt-4 sm:px-5 sm:pt-4 lg:max-w-[90rem] xl:max-w-[96rem] 2xl:max-w-[110rem] lg:px-6 xl:px-8 lg:pt-4">
-          {currentPlace ? (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,16rem)] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(15rem,18rem)] xl:gap-8 2xl:gap-10">
-              <div className="flex min-w-0 w-full flex-col gap-3 sm:gap-4 lg:gap-4">
-                <div className="relative isolate mx-auto mt-1 flex w-full max-w-[min(100%,24rem)] justify-center pb-8 sm:max-w-none sm:pb-10 lg:mx-0 lg:w-full lg:pb-6">
-                  {places[currentIndex + 1] && (
-                    <div
-                      className={`pointer-events-none absolute left-1/2 top-0 z-0 ${cardSurface} -translate-x-1/2 origin-top overflow-hidden shadow-lg border border-border-light dark:border-border-dark bg-card-dark scale-[0.92] opacity-55`}
-                      aria-hidden
-                    >
-                      <div
-                        className="absolute inset-0 bg-cover bg-center"
-                        style={{
-                          backgroundImage: `url(${getPlaceCoverImageUrl(places[currentIndex + 1])})`,
-                        }}
-                      />
-                    </div>
-                  )}
-                  <div
-                    className={`relative z-[1] ${cardSurface} overflow-hidden shadow-2xl border border-white/10 ring-1 ring-black/5 dark:ring-white/10 transition-[transform,opacity] duration-300 group bg-card-dark motion-reduce:transition-none ${
-                      swipeFeedback === 'like'
-                        ? 'ring-4 ring-primary sm:translate-y-px motion-reduce:translate-y-0'
-                        : ''
-                    } ${swipeFeedback === 'dislike' ? 'opacity-[0.92] sm:translate-y-0.5 motion-reduce:translate-y-0' : ''}`}
-                  >
-                    <PlaceCardGallery place={currentPlace} />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none z-[10]" />
-                    {/* z acima da faixa de zoom da galeria (z-30), senão o toque médio captura o clique dos links de vídeo */}
-                    <div className="absolute bottom-0 left-0 right-0 z-[40] px-4 pb-3 pt-10 text-white pointer-events-none sm:px-5 sm:pb-4 sm:pt-12">
-                      <div className="flex gap-1.5 mb-1.5 overflow-x-auto no-scrollbar">
-                        {(currentPlace.tags || currentPlace.categories || []).filter(Boolean).map((tag) => {
-                          const label = typeof tag === 'string' ? tag : tag?.name || tag?.label || String(tag)
-                          return (
-                            <span
-                              key={label}
-                              className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold uppercase tracking-wider whitespace-nowrap"
-                            >
-                              {label}
-                            </span>
-                          )
-                        })}
-                      </div>
-                      <h2 className="text-lg sm:text-2xl font-extrabold mb-1.5 leading-snug drop-shadow-md line-clamp-3">
-                        {currentPlace.name}
-                      </h2>
-                      <div className="flex min-w-0 items-center gap-1.5 text-white/90 mb-1">
-                        <Icon name="location_on" className="text-sm shrink-0" />
-                        <span className="text-xs font-medium truncate">
-                          {currentPlace.location ||
-                            (currentPlace.city && currentPlace.country
-                              ? `${currentPlace.city}, ${currentPlace.country}`
-                              : currentPlace.city || currentPlace.country || 'Destino')}
-                        </span>
-                      </div>
-                      <p className="text-[11px] sm:text-sm text-white/90 leading-relaxed line-clamp-2 lg:line-clamp-3">
-                        {currentPlace.description || currentPlace.aiReasoning || 'Descubra este lugar.'}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* Coluna esquerda: card + barra — bloco contínuo, gutters mínimos e simétricos */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1">
+            <div className="absolute inset-0">
+              {currentPlace ? (
+                placeCard
+              ) : deckUnavailable ? (
+                <div className="flex h-full w-full flex-col items-center justify-center px-3">
+                  <EmptyState
+                    icon="cloud_off"
+                    title={t('tdv.empty_title')}
+                    description={t('tdv.agent_unavailable')}
+                    action={
+                      <Button onClick={handleRetryDeck} disabled={finalizingTdv} className="rounded-full">
+                        {t('tdv.retry')}
+                      </Button>
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-3" role="status" aria-live="polite">
+                  <LoadingSpinner />
+                  <p className="text-sm text-text-secondary">{t('tdv.fetching')}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="tdv-action-bar relative z-[30] flex shrink-0 flex-col items-center border-t border-zinc-200/90 bg-white px-3 py-2 shadow-[0_-4px_16px_rgba(17,17,17,0.04)] dark:border-white/[0.07] dark:bg-[#141414] dark:shadow-[0_-6px_20px_rgba(0,0,0,0.35)] lg:px-5 lg:py-2.5">
+            {undoNotice ? (
+              <p className="mb-1 max-w-[20rem] px-2 text-center text-[10px] leading-snug text-red-600 dark:text-red-400 lg:text-[11px]" role="alert">
+                {undoNotice}
+              </p>
+            ) : null}
+            <div className="flex w-full max-w-md items-center justify-between px-1 lg:max-w-lg lg:px-3">
+              {actionButtons}
+            </div>
+          </div>
+
+          {/* Mobile: histórico à direita; pontinhos ficam à esquerda (PlaceCardGallery) */}
+          <div className="absolute right-3 top-3 z-[45] lg:hidden">{historyTriggerButton}</div>
+        </div>
+
+        {/* Lateral alinhada ao bloco do card — mesmo fundo, sem faixa morta na junção */}
+        <aside className="hidden min-h-0 w-[min(100%,16.5rem)] shrink-0 flex-col gap-2.5 overflow-hidden border-l border-zinc-200/80 bg-[#f7f7f5] px-2.5 py-2.5 dark:border-white/[0.07] dark:bg-[#121212] lg:flex xl:w-[17.5rem] xl:px-3">
+          {belowFoldContent}
+        </aside>
+      </div>
+
+      {mobilePanelOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[1200] lg:hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('tdv.history_section')}
+            >
+              <button
+                type="button"
+                className="absolute inset-0 bg-black/55"
+                aria-label="Fechar"
+                style={{
+                  opacity: Math.max(0, 1 - sheetDragY / Math.max(1, (sheetPanelRef.current?.offsetHeight || 480) * 0.85)),
+                  transition:
+                    sheetDragging && !sheetDismissing
+                      ? 'none'
+                      : `opacity ${SHEET_DISMISS_MS}ms ${SHEET_EASE}`,
+                }}
+                onClick={runSheetDismiss}
+              />
+              <div
+                ref={sheetPanelRef}
+                className="absolute inset-x-0 bottom-0 flex max-h-[min(90dvh,44rem)] flex-col rounded-t-2xl border border-border-light bg-background-light shadow-2xl will-change-transform dark:border-border-dark dark:bg-card-dark"
+                style={{
+                  transform: `translate3d(0, ${sheetDragY}px, 0)`,
+                  transition:
+                    sheetDragging && !sheetDismissing
+                      ? 'none'
+                      : `transform ${SHEET_DISMISS_MS}ms ${SHEET_EASE}`,
+                }}
+              >
+                <div
+                  className="flex shrink-0 touch-none cursor-grab flex-col active:cursor-grabbing"
+                  onPointerDown={onSheetHeaderPointerDown}
+                  onPointerMove={onSheetHeaderPointerMove}
+                  onPointerUp={onSheetHeaderPointerUp}
+                  onPointerCancel={onSheetHeaderPointerCancel}
+                >
+                  <div className="flex justify-center pb-1 pt-2" aria-hidden>
+                    <span className="h-1 w-10 rounded-full bg-black/20 dark:bg-white/25" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-b border-border-light/70 px-4 pb-3 dark:border-border-dark/70">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="m-0 text-sm font-bold text-foreground dark:text-white">
+                        {t('tdv.history_section')}
                       </p>
-                      {placeVideoLinks.length > 0 ? (
-                        <div className="mt-2.5 pointer-events-auto border-t border-white/15 pt-2.5 text-left">
-                          <p className="m-0 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-white/75">
-                            {t('tdv.video_links_heading')}
-                          </p>
-                          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-                            {placeVideoLinks.map((href, i) => (
-                              <li key={`${href}-${i}`} className="min-w-0">
-                                <a
-                                  href={href}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex max-w-full items-center gap-1 text-[11px] font-medium text-white underline decoration-white/50 underline-offset-2 transition-colors hover:text-white hover:decoration-white"
-                                  aria-label={t('tdv.video_link_aria', { n: i + 1 })}
-                                >
-                                  <Icon name="videocam" className="shrink-0 text-sm text-white/90" />
-                                  <span className="min-w-0 truncate">
-                                    {t('tdv.video_link_label', { n: i + 1, source: videoLinkLabel(href) })}
-                                  </span>
-                                  <Icon name="open_in_new" className="shrink-0 text-xs text-white/70" aria-hidden />
-                                </a>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
+                      {likesChip}
                     </div>
+                    <button
+                      type="button"
+                      onClick={runSheetDismiss}
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full text-text-secondary hover:bg-black/5 dark:hover:bg-white/10"
+                      aria-label="Fechar"
+                    >
+                      <Icon name="close" className="text-xl" />
+                    </button>
                   </div>
                 </div>
-
-                <p className="mx-auto max-w-[min(100%,24rem)] shrink-0 px-4 text-center text-[10px] leading-relaxed text-text-secondary sm:max-w-none sm:text-[11px] lg:px-0">
-                  {t('tdv.photo_hint')}
-                </p>
-
-                <div className="relative z-[30] isolate mx-auto flex w-full max-w-[18rem] shrink-0 justify-between gap-6 px-6 pt-0.5 sm:max-w-none sm:justify-center sm:gap-[4.75rem] sm:px-16 lg:px-4">
-                  <button
-                    type="button"
-                    onClick={handleDislike}
-                    disabled={finalizingTdv}
-                    className="flex size-[3.25rem] shrink-0 items-center justify-center rounded-full border border-border-light bg-white text-text-secondary shadow-lg ring-1 ring-border-light/90 active:scale-95 motion-safe:transition-[transform,colors] hover:text-red-500 dark:border-border-dark dark:bg-card-dark dark:ring-white/15 hover:shadow-xl sm:size-14 disabled:opacity-50 disabled:pointer-events-none"
-                    aria-label="Descartar"
-                  >
-                    <Icon name="close" className="text-2xl sm:text-3xl" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleLike}
-                    disabled={finalizingTdv}
-                    className="flex size-[3.625rem] shrink-0 items-center justify-center rounded-full bg-primary text-foreground shadow-primary-glow dark:shadow-primary-glow-dark ring-2 ring-primary/15 active:scale-95 motion-safe:transition-transform sm:size-16 disabled:opacity-50 disabled:pointer-events-none"
-                    aria-label="Curtir"
-                  >
-                    <Icon name="favorite" className="text-3xl sm:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
-                  </button>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                  <div className="flex w-full flex-col gap-2.5">
+                    {finalizePanel}
+                    {renderChoicesPanel('sheet')}
+                  </div>
                 </div>
               </div>
-
-              <aside className="flex min-w-0 flex-col gap-3 border-t border-border-light/60 pt-5 dark:border-border-dark/55 lg:sticky lg:top-3 lg:max-h-[calc(100dvh-7.5rem)] lg:overflow-y-auto lg:border-t-0 lg:pt-0 lg:gap-4">
-                {belowFoldContent}
-              </aside>
-            </div>
-          ) : deckUnavailable ? (
-          <div className="w-full py-4">
-            <EmptyState
-              icon="cloud_off"
-              title={t('tdv.empty_title')}
-              description={t('tdv.agent_unavailable')}
-              action={
-                <Button onClick={handleRetryDeck} disabled={finalizingTdv} className="rounded-full">
-                  {t('tdv.retry')}
-                </Button>
-              }
-            />
-            <div className="flex flex-col gap-4 mt-8 pt-4 border-t border-border-light/50 dark:border-border-dark/60">
-              {belowFoldContent}
-            </div>
-          </div>
-          ) : (
-          <div className="w-full py-12 flex flex-col items-center justify-center gap-3" role="status" aria-live="polite">
-            <LoadingSpinner />
-            <p className="text-sm text-text-secondary">{t('tdv.fetching')}</p>
-          </div>
-          )}
-        </div>
-      </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   )
 }

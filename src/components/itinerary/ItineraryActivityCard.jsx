@@ -497,7 +497,7 @@ function CardEditFields({
               value={titleEditValue}
               disabled={false}
               placeholder="Busque um lugar (ex.: Torre Eiffel)…"
-              className="goofly-google-place-ac-frame goofly-google-place-ac-frame--compact relative z-[30] w-full overflow-visible rounded-xl border border-border-light dark:border-border-dark"
+              className="goofly-google-place-ac-frame goofly-google-place-ac-frame--compact relative z-[30] w-full overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
               onDraftChange={(text) =>
                 onDraftPatch({ title: text, name: text, placeName: text })
               }

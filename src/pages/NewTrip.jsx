@@ -29,11 +29,9 @@ const INTERESTS = [
 ]
 
 const ITINERARY_STYLES = [
+  { value: 'relaxante', label: 'Relaxante', desc: 'Mais tempo livre' },
   { value: 'equilibrado', label: 'Equilibrado', desc: 'Balanceia atividades e tempo livre' },
   { value: 'ativo', label: 'Ativo', desc: 'Muitas atividades por dia' },
-  { value: 'esportes', label: 'Esportes', desc: 'Foco em atividades físicas' },
-  { value: 'eventos', label: 'Eventos', desc: 'Prioriza eventos e shows' },
-  { value: 'relaxante', label: 'Relaxante', desc: 'Mais tempo livre' },
 ]
 
 const ACCOMMODATION_TYPES = [
@@ -147,9 +145,9 @@ export function NewTrip() {
     interests: [],
     tripDescription: '',
     itineraryStyle: 'equilibrado',
-    tripPurpose: '',
     avoidPreferences: [],
     prioritizePreferences: [],
+    avoidCustom: '',
     prioritizeCustom: '',
     budget: '',
     currency: 'USD',
@@ -313,6 +311,8 @@ export function NewTrip() {
         checkOut: a.checkOut,
         nights: a.nights || 0,
       }))
+    const avoid = [...(formData.avoidPreferences || [])]
+    if (formData.avoidCustom?.trim()) avoid.push('custom: ' + formData.avoidCustom.trim())
     const prior = [...(formData.prioritizePreferences || [])]
     if (formData.prioritizeCustom?.trim()) prior.push('custom: ' + formData.prioritizeCustom.trim())
     return {
@@ -321,8 +321,7 @@ export function NewTrip() {
       interests: formData.interests,
       tripDescription: formData.tripDescription?.trim() || undefined,
       itineraryStyle: formData.itineraryStyle || 'equilibrado',
-      tripPurpose: formData.tripPurpose?.trim() || undefined,
-      avoidPreferences: formData.avoidPreferences || [],
+      avoidPreferences: avoid,
       prioritizePreferences: prior,
       budget: formData.budget ? Number(formData.budget) : undefined,
       currency: formData.currency || 'USD',
@@ -435,20 +434,6 @@ export function NewTrip() {
                               })
                             }
                           />
-                          <p className="mt-2 text-[11px] text-text-secondary/90 leading-snug flex items-start gap-1.5">
-                            <Icon name="travel_explore" className="text-sm shrink-0 mt-px opacity-80" aria-hidden />
-                            Pesquise uma cidade e escolha uma sugestão — preenchemos país e coordenadas
-                            automaticamente ({' '}
-                            <a
-                              href="https://developers.google.com/maps/documentation/javascript/place-autocomplete-new?hl=pt-br"
-                              target="_blank"
-                              rel="noreferrer noopener"
-                              className="text-primary underline font-semibold"
-                            >
-                              documentação
-                            </a>
-                            ).
-                          </p>
                         </>
                       ) : (
                         <input
@@ -699,25 +684,14 @@ export function NewTrip() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-semibold mb-2">Motivo da viagem (opcional)</label>
-                <textarea
-                  value={formData.tripPurpose}
-                  onChange={(e) => updateField('tripPurpose', e.target.value.slice(0, 500))}
-                  placeholder="Ex: Lugares fotográficos, eventos específicos..."
-                  rows={2}
-                  maxLength={500}
-                  className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark resize-none"
-                />
-                <span className="text-xs text-text-secondary">{formData.tripPurpose.length}/500</span>
-              </div>
-              <div>
                 <label className="block text-sm font-semibold mb-2">Viajantes *</label>
-                <div className="flex gap-4">
-                  <div>
-                    <label className="block text-xs text-text-secondary mb-1">Adultos</label>
+                <div className="flex items-start gap-6">
+                  <div className="flex flex-col items-center gap-1.5">
+                    <span className="text-xs leading-none text-text-secondary">Adultos</span>
                     <input
                       type="number"
                       min={1}
+                      aria-label="Adultos"
                       value={formData.travelers.adults}
                       onChange={(e) => {
                         const raw = e.target.value
@@ -731,14 +705,15 @@ export function NewTrip() {
                           updateField('travelers', { ...formData.travelers, adults: 1 })
                         }
                       }}
-                      className="w-20 px-3 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                      className="box-border h-10 w-20 rounded-xl border border-border-light bg-background-light px-2 text-center tabular-nums dark:border-border-dark dark:bg-background-dark [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-text-secondary mb-1">Crianças</label>
+                  <div className="flex flex-col items-center gap-1.5">
+                    <span className="text-xs leading-none text-text-secondary">Crianças</span>
                     <input
                       type="number"
                       min={0}
+                      aria-label="Crianças"
                       value={formData.travelers.children}
                       onChange={(e) => {
                         const raw = e.target.value
@@ -752,7 +727,7 @@ export function NewTrip() {
                           updateField('travelers', { ...formData.travelers, children: 0 })
                         }
                       }}
-                      className="w-20 px-3 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                      className="box-border h-10 w-20 rounded-xl border border-border-light bg-background-light px-2 text-center tabular-nums dark:border-border-dark dark:bg-background-dark [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
                   </div>
                 </div>
@@ -781,6 +756,13 @@ export function NewTrip() {
                     </button>
                   ))}
                 </div>
+                <input
+                  type="text"
+                  value={formData.avoidCustom}
+                  onChange={(e) => updateField('avoidCustom', e.target.value)}
+                  placeholder="Outro (custom)"
+                  className="mt-2 w-full px-4 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                />
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-2">Coisas a priorizar (opcional)</label>
@@ -842,7 +824,9 @@ export function NewTrip() {
             </Button>
             {step < 4 ? (
               <Button type="button" onClick={handleNextClick}>
-                Próximo
+                {step === 2 && !(formData.accommodations || []).some(accommodationHasContent)
+                  ? 'Pular'
+                  : 'Próximo'}
               </Button>
             ) : (
               <Button type="button" disabled={loading} onClick={handleCreateTripClick}>
