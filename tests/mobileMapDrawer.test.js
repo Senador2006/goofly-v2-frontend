@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   resolveMobileMapSnap,
   computeMapTranslate,
+  computeMapCurtainClip,
   computeHandleInset,
   resolveHandleWidthPx,
   mobileMapDrawerTransitionStyle,
@@ -41,11 +42,14 @@ describe('resolveMobileMapSnap', () => {
 
 describe('computeMapTranslate', () => {
   it('escondido à direita quando fechado', () => {
-    assert.equal(computeMapTranslate({ open: false, isDragging: false, dragOffset: 0 }), 'translateX(100%)')
+    assert.equal(
+      computeMapTranslate({ open: false, isDragging: false, dragOffset: 0 }),
+      'translateX(100%) scale(0.985)'
+    )
   })
 
   it('visível quando aberto', () => {
-    assert.equal(computeMapTranslate({ open: true, isDragging: false, dragOffset: 0 }), 'translateX(0)')
+    assert.equal(computeMapTranslate({ open: true, isDragging: false, dragOffset: 0 }), 'translateX(0) scale(1)')
   })
 
   it('segue arrasto ao abrir (da direita)', () => {
@@ -56,11 +60,28 @@ describe('computeMapTranslate', () => {
   })
 })
 
+describe('computeMapCurtainClip', () => {
+  it('totalmente recortado quando fechado', () => {
+    assert.equal(
+      computeMapCurtainClip({ open: false, isDragging: false, dragOffset: 0, panelWidth: 360 }),
+      'inset(0 100% 0 0 round 0)'
+    )
+  })
+
+  it('revela parcialmente durante arrasto', () => {
+    assert.equal(
+      computeMapCurtainClip({ open: false, isDragging: true, dragOffset: -80, panelWidth: 360 }),
+      'inset(0 280px 0 0 round 0)'
+    )
+  })
+})
+
 describe('mobileMapDrawerTransitionStyle', () => {
-  it('usa duração mais longa e easing suave', () => {
+  it('usa duração mais longa e easing tipo carrossel', () => {
     const style = mobileMapDrawerTransitionStyle()
     assert.match(style, new RegExp(`transform ${MOBILE_MAP_DRAWER_MS}ms`))
-    assert.match(style, /cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\)/)
+    assert.match(style, /clip-path/)
+    assert.match(style, /cubic-bezier\(0\.32, 1\.05, 0\.55, 1\)/)
   })
 })
 
