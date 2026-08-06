@@ -947,10 +947,11 @@ export function Itinerary() {
         {showRoteiroSidebar ? (
           <section
             className={
-              'relative flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark ' +
+              'roteiro-mobile-map-stage relative flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark ' +
               (dragReorder.isOverlayActive ? 'roteiro-list-drag-active z-40 ' : '') +
+              (mobileMapOpen ? 'roteiro-mobile-map-open ' : '') +
               (mode === MODE_ROTEIRO
-                ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-8 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
+                ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-10 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
                 : 'w-full max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5')
             }
             aria-label="Paradas do dia"
