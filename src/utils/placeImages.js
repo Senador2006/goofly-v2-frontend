@@ -5,6 +5,37 @@ function isHttpUrl(value) {
 }
 
 /**
+ * URLs http(s) reais do place/activity — sem placeholder.
+ * Usado no like TDV e na galeria compacta do roteiro.
+ */
+export function getRealPlaceImageUrls(place) {
+  if (!place) return []
+
+  const fromApi = place.image_urls ?? place.imageUrls ?? place.imageLinks ?? place.image_links
+  if (Array.isArray(fromApi) && fromApi.length > 0) {
+    const valid = fromApi.map((u) => (typeof u === 'string' ? u.trim() : '')).filter(isHttpUrl)
+    if (valid.length > 0) return valid
+  }
+
+  const single = place.image_url ?? place.imageUrl
+  if (isHttpUrl(single)) return [single.trim()]
+
+  return []
+}
+
+/**
+ * Galeria compacta no roteiro: só na versão completa (paga) e para paradas
+ * curtidas no TDV com imagens reais.
+ *
+ * @param {Record<string, unknown> | null | undefined} act
+ * @param {boolean} [hasFullAccess=false]
+ */
+export function shouldShowTdvRoteiroGallery(act, hasFullAccess = false) {
+  if (!hasFullAccess) return false
+  return String(act?.source || '').trim() === 'tdv_like' && getRealPlaceImageUrls(act).length > 0
+}
+
+/**
  * URLs de vídeo vindas do agente TDV (`videoLinks`) ou snake_case da API.
  */
 export function getPlaceVideoUrls(place) {
@@ -40,18 +71,8 @@ export function resolveVideoPresentation(pageUrl) {
  * Lista de URLs para o carrossel do TDV (mín. 1 entrada — placeholder se vazio).
  */
 export function getPlaceImageUrls(place) {
-  if (!place) return [PLACEHOLDER_COVER]
-
-  const fromApi = place.image_urls ?? place.imageUrls ?? place.imageLinks ?? place.image_links
-  if (Array.isArray(fromApi) && fromApi.length > 0) {
-    const valid = fromApi.map((u) => (typeof u === 'string' ? u.trim() : '')).filter(isHttpUrl)
-    if (valid.length > 0) return valid
-  }
-
-  const single = place.image_url ?? place.imageUrl
-  if (isHttpUrl(single)) return [single.trim()]
-
-  return [PLACEHOLDER_COVER]
+  const real = getRealPlaceImageUrls(place)
+  return real.length > 0 ? real : [PLACEHOLDER_COVER]
 }
 
 export function getPlaceCoverImageUrl(place) {

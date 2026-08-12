@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { moveActivityToIndexInSameDay } from '../utils/itineraryDayHelpers'
 import { prefersReducedFlipMotion } from '../utils/flipListAnimation'
 import {
@@ -11,13 +11,14 @@ import {
   resolveTargetIndex,
   resolveExpandImageOffsetPx,
   scrollCardHeaderIntoView,
+  scrollCardIntoViewportCenter,
   scrollCompactCardBeforeExpand,
   shouldShowInsertLine,
   ROTEIRO_DRAG_SCROLL_HEADER_EDGE_PX,
   ROTEIRO_DRAG_EXPAND_MS,
   ROTEIRO_DRAG_HOLD_MS,
   ROTEIRO_DRAG_LANDING_MS,
-  ROTEIRO_DRAG_MOVE_CANCEL_PX,
+  ROTEIRO_DRAG_MOVE_START_PX,
   ROTEIRO_DRAG_REVERT_MS,
 } from '../utils/roteiroDragReorder'
 
@@ -93,6 +94,7 @@ export function useRoteiroDragReorder({
   const phaseTimerRef = useRef(null)
   const autoScrollRafRef = useRef(0)
   const ghostRectRef = useRef(null)
+  const needsCollapseCenterScrollRef = useRef(false)
 
   const canDrag = enabled && dayActivities.length > 1
   const reducedMotion = prefersReducedFlipMotion()
@@ -185,6 +187,19 @@ export function useRoteiroDragReorder({
     [collectSlotRects, listRef, scrollRef],
   )
 
+  useLayoutEffect(() => {
+    if (phase !== 'dragging' || !needsCollapseCenterScrollRef.current) return
+    needsCollapseCenterScrollRef.current = false
+
+    const id = draggingIdRef.current
+    const scrollEl = scrollRef.current
+    const cardEl = id ? itemRefs.current.get(String(id)) : null
+    scrollCardIntoViewportCenter(scrollEl, cardEl)
+
+    const { x, y } = lastPointerRef.current
+    updateDragMetrics(x, y)
+  }, [phase, scrollRef, itemRefs, updateDragMetrics])
+
   function ghostWidthFromRef() {
     if (originRectRef.current?.width) return originRectRef.current.width
     return 0
@@ -206,6 +221,7 @@ export function useRoteiroDragReorder({
     setShowInsertLine(false)
     setGhostOutsideList(false)
     setExpandRevealed(false)
+    needsCollapseCenterScrollRef.current = false
     document.body.classList.remove('roteiro-drag-active')
 
     if (lastDroppedId) {
@@ -394,6 +410,8 @@ export function useRoteiroDragReorder({
       draggingIdRef.current = String(activityId)
       setDraggingId(String(activityId))
       setPendingDragId(null)
+      pendingIdRef.current = null
+      needsCollapseCenterScrollRef.current = true
       syncPhase('dragging')
       document.body.classList.add('roteiro-drag-active')
 
@@ -448,11 +466,10 @@ export function useRoteiroDragReorder({
       if (phaseRef.current === 'pending') {
         const dx = event.clientX - pointerStartRef.current.x
         const dy = event.clientY - pointerStartRef.current.y
-        if (Math.hypot(dx, dy) > ROTEIRO_DRAG_MOVE_CANCEL_PX) {
+        if (Math.hypot(dx, dy) > ROTEIRO_DRAG_MOVE_START_PX) {
+          const id = pendingIdRef.current
           clearHoldTimer()
-          pendingIdRef.current = null
-          setPendingDragId(null)
-          syncPhase('idle')
+          if (id != null) startDragging(id, event.clientX, event.clientY)
         }
         return
       }
@@ -518,6 +535,7 @@ export function useRoteiroDragReorder({
     applyDrop,
     scrollRef,
     stopAutoScroll,
+    startDragging,
   ])
 
   useEffect(

@@ -9,21 +9,43 @@ const tinderViewSource = readFileSync(
   'utf8'
 )
 
-test('TinderView: scroll na página inteira (não painel interno no histórico)', () => {
-  assert.match(tinderViewSource, /overflow-y-auto/)
+test('TinderView: layout fixo sem scroll de página (card + barra de ações)', () => {
+  assert.match(tinderViewSource, /tdv-action-bar/)
+  assert.match(tinderViewSource, /overflow-hidden/)
   assert.match(tinderViewSource, /belowFoldContent/)
   assert.doesNotMatch(tinderViewSource, /historyScrollContent/)
-  assert.doesNotMatch(tinderViewSource, /flex-1 min-h-\[3\.75rem\]/)
+  assert.doesNotMatch(tinderViewSource, /overscroll-y-contain/)
+  // Root do TDV ativo não usa scroll de página
+  assert.match(
+    tinderViewSource,
+    /flex h-full min-h-0 flex-1 flex-col overflow-hidden/
+  )
 })
 
-test('TinderView: card maior e finalize antes do histórico', () => {
-  assert.match(tinderViewSource, /min\(calc\(100dvh-15rem\),380px\)/)
+test('TinderView: card relativo à área disponível e finalize antes do histórico', () => {
+  assert.match(tinderViewSource, /h-full w-full min-h-0 rounded-none lg:rounded-t-3xl/)
+  assert.doesNotMatch(tinderViewSource, /aspect-\[3\/4\]/)
+  assert.doesNotMatch(tinderViewSource, /min\(calc\(100dvh-12rem\),400px\)/)
   assert.match(tinderViewSource, /finalizePanel/)
+  assert.match(tinderViewSource, /tdv-action-bar/)
+  // Barra de ações fica na coluna do card (não atravessa a lateral)
+  assert.match(
+    tinderViewSource,
+    /tdv-action-bar[\s\S]*?\{actionButtons\}[\s\S]*?<\/aside>/
+  )
   const belowFoldBlock = tinderViewSource.slice(
     tinderViewSource.indexOf('const belowFoldContent'),
     tinderViewSource.indexOf('if (loading)')
   )
   assert.match(belowFoldBlock, /\{finalizePanel\}[\s\S]*\{choicesPanel\}/)
+})
+
+test('TinderView: lateral sem scroll de coluna', () => {
+  assert.match(tinderViewSource, /aside className="[^"]*overflow-hidden/)
+  assert.doesNotMatch(
+    tinderViewSource,
+    /aside className="[^"]*overflow-y-auto/
+  )
 })
 
 test('TinderView: sem badge de dia nem botão próximo dia', () => {

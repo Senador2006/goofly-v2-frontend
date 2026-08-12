@@ -88,28 +88,29 @@ function resolveIncludedPrimaryTypes(resultKind, explicit) {
 const GOOFLY_AC_THEME = {
   light: {
     colorScheme: 'light',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#F5F5F5',
     vars: {
-      '--gmp-mat-color-surface': '#ffffff',
+      '--gmp-mat-color-surface': '#F5F5F5',
       '--gmp-mat-color-on-surface': '#111111',
       '--gmp-mat-color-on-surface-variant': '#6b6b6b',
-      '--gmp-mat-color-outline-decorative': '#e5e5e5',
+      /* Outline interno transparente: a borda vem do wrapper (igual aos inputs do form) */
+      '--gmp-mat-color-outline-decorative': 'transparent',
       '--gmp-mat-color-primary': '#fec641',
-      '--gmp-mat-color-neutral-container': '#ffffff',
+      '--gmp-mat-color-neutral-container': '#F5F5F5',
       '--gmp-mat-color-on-neutral-container': '#111111',
-      '--gmp-mat-color-secondary-container': '#f5f5f5',
+      '--gmp-mat-color-secondary-container': '#ffffff',
     },
   },
   dark: {
     colorScheme: 'dark',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#111111',
     vars: {
-      '--gmp-mat-color-surface': '#1a1a1a',
+      '--gmp-mat-color-surface': '#111111',
       '--gmp-mat-color-on-surface': 'rgba(249, 250, 251, 0.96)',
       '--gmp-mat-color-on-surface-variant': 'rgba(180, 180, 180, 0.95)',
-      '--gmp-mat-color-outline-decorative': '#2a2a2a',
+      '--gmp-mat-color-outline-decorative': 'transparent',
       '--gmp-mat-color-primary': '#fec641',
-      '--gmp-mat-color-neutral-container': '#232323',
+      '--gmp-mat-color-neutral-container': '#111111',
       '--gmp-mat-color-on-neutral-container': 'rgba(249, 250, 251, 0.96)',
       '--gmp-mat-color-secondary-container': '#161616',
     },
@@ -130,7 +131,7 @@ function applyGooglePlaceAcTheme(ac, isDark) {
 }
 
 const DEFAULT_AC_CLASSNAME =
-  'goofly-google-place-ac-frame relative z-[42] w-full min-h-[3.125rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark'
+  'goofly-google-place-ac-frame relative z-[42] w-full min-h-[3.125rem] overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark'
 
 /**
  * Place Autocomplete (novo): `PlaceAutocompleteElement` (`gmp-place-autocomplete`).

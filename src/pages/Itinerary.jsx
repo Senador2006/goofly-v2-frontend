@@ -9,6 +9,7 @@ import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivity
 import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
+import { FinalizeItineraryOverlay } from '../components/itinerary/FinalizeItineraryOverlay'
 import {
   ItineraryDayMap,
   clearItineraryRouteCache,
@@ -28,11 +29,15 @@ import { userService } from '../services/userService'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useRoteiroDragReorder } from '../hooks/useRoteiroDragReorder'
+import { useRoteiroDaySwap } from '../hooks/useRoteiroDaySwap'
 import {
+  assignActivityToDay,
   buildDateToDayMap,
   getActivityDayNumber,
+  getIsoDateForDay,
   reorderActivityInSameDay,
   sortDayActivities,
+  swapActivitiesBetweenDays,
 } from '../utils/itineraryDayHelpers'
 import { resolveAccommodationsForDay } from '../utils/accommodationDayResolver'
 import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
@@ -41,6 +46,13 @@ import {
   playReorderSwapAnimation,
   prefersReducedFlipMotion,
 } from '../utils/flipListAnimation'
+import {
+  clearFinalizeTdvSession,
+  finalizeTdvSessionDeadline,
+  isFinalizeRequestAbort,
+  markFinalizeTdvSession,
+  readFinalizeTdvSession,
+} from '../utils/finalizeTdvSession'
 
 const MODE_ROTEIRO = 'roteiro'
 
@@ -96,7 +108,7 @@ function normalizeActivityTicketForPersist(act) {
   return out
 }
 
-/** Reagrupa todos os dias, ordena dentro de cada dia e normaliza day/dayNumber/order para persistência. */
+/** Reagrupa todos os dias, ordena dentro de cada dia e normaliza day/dayNumber/order/datas para persistência. */
 function normalizeActivitiesForPersist(activities, dateToDayMap, fallbackDay = 1) {
   const fb = Math.max(1, Math.floor(Number(fallbackDay) || 1))
   const withDay = activities.map((a) => {
@@ -110,7 +122,13 @@ function normalizeActivitiesForPersist(activities, dateToDayMap, fallbackDay = 1
       dayNum = Math.floor(dayNum)
     }
     dayNum = Math.max(1, dayNum)
-    return { ...a, day: dayNum, dayNumber: dayNum, day_number: dayNum }
+    const assigned = assignActivityToDay(
+      { ...a, day: dayNum, dayNumber: dayNum, day_number: dayNum },
+      dayNum,
+      dateToDayMap,
+    )
+    const iso = getIsoDateForDay(dateToDayMap, dayNum)
+    return iso ? assigned : { ...a, day: dayNum, dayNumber: dayNum, day_number: dayNum }
   })
   /** @type {Map<number, any[]>} */
   const map = new Map()
@@ -232,7 +250,10 @@ export function Itinerary() {
   const tripDestCity = trip?.destinations?.[0]?.city
   useDocumentTitle(tripDestCity ? `Roteiro · ${tripDestCity}` : 'Roteiro')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [finalizingTdv, setFinalizingTdv] = useState(false)
+  const [finalizingTdv, setFinalizingTdv] = useState(() => Boolean(readFinalizeTdvSession(tripId)))
+  const [finalizeError, setFinalizeError] = useState(null)
+  /** Incrementado para (re)disparar o poll quando o POST cai por rede sem response. */
+  const [finalizeResumeKey, setFinalizeResumeKey] = useState(0)
   const [roteiroEditOpen, setRoteiroEditOpen] = useState(false)
   const [draftActivities, setDraftActivities] = useState(null)
   const [savingRoteiro, setSavingRoteiro] = useState(false)
@@ -242,7 +263,10 @@ export function Itinerary() {
   )
   const [trackedStopId, setTrackedStopId] = useState(null)
   const deleteInFlightRef = useRef(false)
+  const finalizeInFlightRef = useRef(false)
   const stopCardRefs = useRef(new Map())
+  const dayChipRefs = useRef(new Map())
+  const dayChipsScrollRef = useRef(null)
   const roteiroListScrollRef = useRef(null)
   const roteiroCardsListRef = useRef(null)
   const flipBeforeReorderRef = useRef(null)
@@ -326,6 +350,24 @@ export function Itinerary() {
     }
   }, [isPlanning, mode])
 
+  // Mobile TDV: trava scroll do Layout e remove padding — card fica entre abas e MobileNav
+  useEffect(() => {
+    const main = document.querySelector('main')
+    if (!main) return undefined
+
+    const mq = window.matchMedia('(max-width: 1023px)')
+    const sync = () => {
+      if (mode === MODE_TDV && mq.matches) main.classList.add('tdv-mobile-lock')
+      else main.classList.remove('tdv-mobile-lock')
+    }
+    sync()
+    mq.addEventListener('change', sync)
+    return () => {
+      mq.removeEventListener('change', sync)
+      main.classList.remove('tdv-mobile-lock')
+    }
+  }, [mode])
+
   useEffect(() => {
     if (searchParams.get('unlocked') !== '1' || !tripId) return
     let cancelled = false
@@ -373,28 +415,125 @@ export function Itinerary() {
     }
   }
 
-  const handleFinalizeTdv = useCallback(async () => {
-    if (!tripId) return
-    setFinalizingTdv(true)
-    setError(null)
-    try {
-      const result = await tripService.finalizeTdvPlanning(tripId)
-      if (result?.trip) setTrip(result.trip)
-      const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
-      clearItineraryRouteCache(tripId)
-      setItinerary(itineraryData)
-      const firstDay = itineraryData?.activities?.[0]?.day
-      if (firstDay != null && firstDay !== '') {
-        const asNum = Number(firstDay)
-        setSelectedDay(Number.isFinite(asNum) && asNum >= 1 ? asNum : firstDay)
+  const applyFinalizeSuccess = useCallback(
+    (tripData, itineraryData) => {
+      clearFinalizeTdvSession(tripId)
+      if (tripData) setTrip(tripData)
+      if (itineraryData) {
+        clearItineraryRouteCache(tripId)
+        setItinerary(itineraryData)
+        const firstDay = itineraryData?.activities?.[0]?.day
+        if (firstDay != null && firstDay !== '') {
+          const asNum = Number(firstDay)
+          setSelectedDay(Number.isFinite(asNum) && asNum >= 1 ? asNum : firstDay)
+        }
       }
       setMode(MODE_ROTEIRO)
+      setFinalizeError(null)
+      finalizeInFlightRef.current = false
+      setFinalizingTdv(false)
+    },
+    [tripId],
+  )
+
+  const handleFinalizeTdv = useCallback(async () => {
+    if (!tripId || finalizeInFlightRef.current) return
+    finalizeInFlightRef.current = true
+    setShowDeleteConfirm(false)
+    markFinalizeTdvSession(tripId)
+    setFinalizingTdv(true)
+    setFinalizeError(null)
+    try {
+      const result = await tripService.finalizeTdvPlanning(tripId)
+      const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
+      applyFinalizeSuccess(result?.trip, itineraryData)
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Não foi possível finalizar o TDV')
-    } finally {
+      // Abort/rede sem response (ex.: refresh): mantém session para retomar overlay + poll.
+      if (isFinalizeRequestAbort(err) || !err.response) {
+        finalizeInFlightRef.current = false
+        setFinalizeResumeKey((k) => k + 1)
+        return
+      }
+      clearFinalizeTdvSession(tripId)
+      setFinalizeError(
+        err.response?.data?.error?.message || 'Não foi possível finalizar o TDV',
+      )
+      finalizeInFlightRef.current = false
       setFinalizingTdv(false)
     }
-  }, [tripId])
+  }, [tripId, applyFinalizeSuccess])
+
+  /**
+   * Pós-refresh: o POST original não existe mais no browser, mas o backend pode
+   * ainda estar gerando. Observa até status `ativa` ou deadline da session.
+   */
+  useEffect(() => {
+    if (!tripId || loading || !trip) return
+    const session = readFinalizeTdvSession(tripId)
+    if (!session) return
+
+    if (trip.status === 'ativa') {
+      let cancelled = false
+      ;(async () => {
+        try {
+          const itineraryData =
+            itinerary || (await tripService.getItinerary(tripId, { refresh: true }))
+          if (cancelled) return
+          applyFinalizeSuccess(trip, itineraryData)
+        } catch {
+          if (!cancelled) {
+            clearFinalizeTdvSession(tripId)
+            setFinalizingTdv(false)
+          }
+        }
+      })()
+      return () => {
+        cancelled = true
+      }
+    }
+
+    // POST ainda em voo nesta montagem — não duplicar com poll.
+    if (finalizeInFlightRef.current) return
+
+    let cancelled = false
+    setFinalizingTdv(true)
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+    ;(async () => {
+      while (!cancelled) {
+        const deadline = finalizeTdvSessionDeadline(session)
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) {
+          clearFinalizeTdvSession(tripId)
+          setFinalizingTdv(false)
+          setFinalizeError(
+            'A geração está demorando mais do que o esperado. Atualize a página ou tente gerar novamente.',
+          )
+          return
+        }
+        try {
+          const tripData = await tripService.getTrip(tripId)
+          if (cancelled) return
+          if (tripData?.status === 'ativa') {
+            const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
+            if (cancelled) return
+            applyFinalizeSuccess(tripData, itineraryData)
+            return
+          }
+        } catch {
+          /* mantém poll */
+        }
+        await sleep(Math.min(2500, Math.max(500, remaining)))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // itinerary só como cache no atalho `ativa`; poll é guiado por session + status.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId, trip, loading, applyFinalizeSuccess, finalizeResumeKey])
 
   const dateToDayMap = useMemo(() => buildDateToDayMap(trip), [trip])
 
@@ -436,12 +575,76 @@ export function Itinerary() {
   dragReorderCancelRef.current = dragReorder.cancelDrag
   const dragInteractionBlockedRef = useRef(dragReorder.isInteractionBlocked)
   dragInteractionBlockedRef.current = dragReorder.isInteractionBlocked
+  const daySwapCancelRef = useRef(null)
+
+  const handleSelectDay = useCallback((day) => {
+    dragReorderCancelRef.current?.()
+    daySwapCancelRef.current?.()
+    trackedFollowRef.current = { id: null, reason: null }
+    setSelectedDay(day)
+  }, [])
+
+  const handleDaySwap = useCallback(
+    (fromDay, toDay) => {
+      setDraftActivities((prev) => {
+        if (!prev) return prev
+        return swapActivitiesBetweenDays(prev, dateToDayMap, fromDay, toDay)
+      })
+      setSelectedDay(toDay)
+    },
+    [dateToDayMap],
+  )
+
+  const daysForSwap = useMemo(() => {
+    const acts =
+      roteiroEditOpen && Array.isArray(draftActivities)
+        ? draftActivities
+        : itinerary?.activities || []
+    return computeDaysList(acts, dateToDayMap, trip)
+  }, [roteiroEditOpen, draftActivities, itinerary, trip, dateToDayMap])
+
+  const daySwap = useRoteiroDaySwap({
+    enabled: roteiroEditOpen && !loading && Boolean(trip) && hasFullAccess,
+    days: daysForSwap,
+    selectedDay,
+    chipRefs: dayChipRefs,
+    scrollRef: dayChipsScrollRef,
+    onSwap: handleDaySwap,
+    onSelectDay: handleSelectDay,
+    onFocusSwapDay: (day) => {
+      trackedFollowRef.current = { id: null, reason: null }
+      setSelectedDay(day)
+    },
+    onSwapGestureStart: () => {
+      dragReorderCancelRef.current?.()
+    },
+  })
+  daySwapCancelRef.current = daySwap.cancelSwap
+
+  const onActivityDragHandlePointerDown = useCallback(
+    (activityId, event) => {
+      daySwapCancelRef.current?.()
+      dragReorder.onDragHandlePointerDown(activityId, event)
+    },
+    [dragReorder],
+  )
+
+  const onDayChipPointerDown = useCallback(
+    (day, event) => {
+      if (dragReorder.phase !== 'idle') {
+        dragReorderCancelRef.current?.()
+      }
+      daySwap.onChipPointerDown(day, event)
+    },
+    [dragReorder.phase, daySwap],
+  )
 
   useEffect(() => {
     setRoteiroEditOpen(false)
     setDraftActivities(null)
     setTrackedStopId(null)
     stopCardRefs.current.clear()
+    dayChipRefs.current.clear()
     trackedFollowRef.current = { id: null, reason: null }
   }, [tripId])
 
@@ -450,12 +653,6 @@ export function Itinerary() {
     const act = draftActivities.find((a) => String(a.id) === String(trackedStopId))
     return act != null && isPendingNewStop(act)
   }, [trackedStopId, draftActivities])
-
-  const handleSelectDay = useCallback((day) => {
-    dragReorderCancelRef.current?.()
-    trackedFollowRef.current = { id: null, reason: null }
-    setSelectedDay(day)
-  }, [])
 
   useLayoutEffect(() => {
     if (loading || !trip || !roteiroEditOpen || !trackedStopId || !Array.isArray(draftActivities)) return
@@ -555,19 +752,29 @@ export function Itinerary() {
     setMobileMapOpen(false)
   }, [mode])
 
-  if (loading) return <LoadingSpinner />
+  if (loading) {
+    return (
+      <>
+        {finalizingTdv ? null : <LoadingSpinner />}
+        <FinalizeItineraryOverlay open={finalizingTdv} />
+      </>
+    )
+  }
   if (error || !trip) {
     return (
-      <div className="p-4">
-        <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl">
-          {error || 'Viagem não encontrada'}
+      <>
+        <div className="p-4">
+          <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl">
+            {error || 'Viagem não encontrada'}
+          </div>
+          <Link to="/trips">
+            <Button variant="secondary" className="mt-4">
+              Voltar
+            </Button>
+          </Link>
         </div>
-        <Link to="/trips">
-          <Button variant="secondary" className="mt-4">
-            Voltar
-          </Button>
-        </Link>
-      </div>
+        <FinalizeItineraryOverlay open={finalizingTdv} />
+      </>
     )
   }
 
@@ -647,6 +854,7 @@ export function Itinerary() {
 
   const handleCancelRoteiroEdit = () => {
     dragReorderCancelRef.current?.()
+    daySwapCancelRef.current?.()
     setRoteiroEditOpen(false)
     setDraftActivities(null)
     setSavingRoteiro(false)
@@ -711,6 +919,7 @@ export function Itinerary() {
   }
 
   const guardedSwitchModeFromRoteiro = (nextMode) => {
+    if (finalizingTdv) return
     if (!roteiroEditOpen) {
       setMode(nextMode)
       return
@@ -726,13 +935,19 @@ export function Itinerary() {
   }
 
   const modeTabs = (
-    <div className="flex gap-1.5 sm:gap-2 flex-wrap p-1 rounded-2xl bg-surface-light dark:bg-white/[0.06] w-fit max-w-full">
+    <div
+      className={`flex w-fit max-w-full flex-nowrap items-center gap-1.5 rounded-2xl border border-zinc-200/80 bg-zinc-100/90 p-1 dark:border-white/[0.08] dark:bg-white/[0.06] sm:gap-2 ${
+        finalizingTdv ? 'pointer-events-none opacity-60' : ''
+      }`}
+      aria-disabled={finalizingTdv || undefined}
+    >
       {isPlanning ? (
         <>
           <button
             type="button"
+            disabled={finalizingTdv}
             onClick={() => setMode(MODE_ROTEIRO)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all disabled:cursor-not-allowed ${
               mode === MODE_ROTEIRO
                 ? 'bg-primary text-black shadow-md'
                 : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
@@ -742,8 +957,9 @@ export function Itinerary() {
           </button>
           <button
             type="button"
+            disabled={finalizingTdv}
             onClick={() => guardedSwitchModeFromRoteiro(MODE_TDV)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all disabled:cursor-not-allowed ${
               mode === MODE_TDV
                 ? 'bg-primary text-black shadow-md'
                 : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
@@ -753,8 +969,9 @@ export function Itinerary() {
           </button>
           <button
             type="button"
+            disabled={finalizingTdv}
             onClick={() => guardedSwitchModeFromRoteiro(MODE_DOCUMENTOS)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all ${
+            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all disabled:cursor-not-allowed ${
               mode === MODE_DOCUMENTOS
                 ? 'bg-primary text-black shadow-md'
                 : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
@@ -764,6 +981,17 @@ export function Itinerary() {
             <span className="hidden sm:inline">Documentos</span>
             <span className="sm:hidden">Docs</span>
             {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
+          </button>
+          {/* Mobile: lixeira na mesma fileira das abas — libera a faixa abaixo para o card TDV */}
+          <button
+            type="button"
+            disabled={finalizingTdv}
+            onClick={() => setShowDeleteConfirm(true)}
+            aria-label="Apagar planejamento"
+            title="Apagar planejamento"
+            className="flex items-center justify-center rounded-xl px-2.5 py-2 text-red-600 transition-all hover:bg-red-500/10 disabled:cursor-not-allowed dark:text-red-400 lg:hidden"
+          >
+            <Icon name="delete" className="text-base" />
           </button>
         </>
       ) : (
@@ -822,19 +1050,42 @@ export function Itinerary() {
 
   return (
     <>
-    <div className="print:hidden flex flex-col h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8 min-h-0 bg-background-light/50 dark:bg-background-dark/30">
+    <div
+      className={`print:hidden flex flex-col min-h-0 bg-background-light/50 dark:bg-background-dark/30 ${
+        mode === MODE_TDV
+          ? // Mobile: preenche o main travado; pb reserva a MobileNav. Desktop: full-bleed habitual.
+            'flex h-full min-h-0 flex-1 flex-col overflow-hidden max-lg:pb-[var(--goofly-mobile-nav-height,0px)] lg:h-[100dvh] lg:-mx-12 lg:-my-8'
+          : 'h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8'
+      }`}
+    >
       {/* Cabeçalho único — evita três colunas competindo por atenção */}
-      <header className="flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 py-3 sm:py-4">
-        <div className="flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+      <header
+        className={`flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 ${
+          mode === MODE_TDV ? 'py-2 pb-1.5 lg:py-4 lg:pb-4' : 'py-3 sm:py-4'
+        }`}
+      >
+        <div
+          className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary overflow-x-auto no-scrollbar ${
+            mode === MODE_TDV ? 'mb-1 lg:mb-3' : 'mb-2 sm:mb-3'
+          }`}
+        >
           <span>Início</span>
           <Icon name="chevron_right" className="text-[10px] shrink-0" />
           <span>Roteiros</span>
           <Icon name="chevron_right" className="text-[10px] shrink-0" />
           <span className="text-[#1c1c0d] dark:text-white truncate">{destLabel}</span>
         </div>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div
+          className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${
+            mode === MODE_TDV ? 'gap-1.5 lg:gap-3' : 'gap-3'
+          }`}
+        >
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-[#1c1c0d] dark:text-white leading-tight">
+            <h1
+              className={`font-black tracking-tight text-[#1c1c0d] dark:text-white leading-tight ${
+                mode === MODE_TDV ? 'text-xl lg:text-3xl' : 'text-xl sm:text-2xl lg:text-3xl'
+              }`}
+            >
               Criador de Roteiros
             </h1>
             <p className="text-xs sm:text-sm text-text-secondary mt-0.5">
@@ -849,7 +1100,7 @@ export function Itinerary() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex min-w-0 items-center gap-2">
               {modeTabs}
               {roteiroEditOpen ? planCompleteBadge : null}
             </div>
@@ -901,20 +1152,37 @@ export function Itinerary() {
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="text-red-600 dark:text-red-400 hover:bg-red-500/10 shrink-0 rounded-xl"
+                disabled={finalizingTdv}
+                aria-label="Apagar planejamento"
+                title="Apagar planejamento"
+                className="hidden shrink-0 rounded-xl border border-red-200 bg-red-50 font-bold text-red-700 shadow-none hover:bg-red-100 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/15 lg:inline-flex"
               >
                 <Icon name="delete" />
-                <span className="hidden sm:inline">Apagar</span>
+                <span>Apagar</span>
               </Button>
             )}
           </div>
         </div>
         {showRoteiroSidebar && (
-          <div className="mt-3 pt-3 pb-2 sm:pb-2.5 border-t border-border-light dark:border-white/10">
+          <div className="mt-2 pt-1 pb-1 sm:mt-3 sm:pt-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
             <ItineraryDayChips
               days={days}
               selectedDay={effectiveSelectedDay}
               onSelectDay={handleSelectDay}
+              swapEnabled={roteiroEditOpen && hasFullAccess && !loading}
+              daySwap={{
+                phase: daySwap.phase,
+                isSwapMode: daySwap.isSwapMode,
+                isDragging: daySwap.isDragging,
+                draggingDay: daySwap.draggingDay,
+                pendingDay: daySwap.pendingDay,
+                targetDay: daySwap.targetDay,
+                ghostStyle: daySwap.ghostStyle,
+                focusReady: daySwap.focusReady,
+                onChipPointerDown: onDayChipPointerDown,
+                chipRefs: dayChipRefs,
+                scrollRef: dayChipsScrollRef,
+              }}
               getDayState={(day) => {
                 const peek =
                   previewDayMapsReady && premiumRestriction && !hasFullAccess && !isPlanning
@@ -938,6 +1206,24 @@ export function Itinerary() {
           </div>
         )}
       </header>
+
+      {finalizeError ? (
+        <div
+          className="flex-shrink-0 px-4 sm:px-6 py-2.5 bg-red-500/10 border-b border-red-500/25 text-red-700 dark:text-red-400 text-sm flex items-start gap-2"
+          role="alert"
+        >
+          <Icon name="error" className="text-base shrink-0 mt-0.5" aria-hidden />
+          <p className="min-w-0 flex-1 leading-snug">{finalizeError}</p>
+          <button
+            type="button"
+            onClick={() => setFinalizeError(null)}
+            className="shrink-0 p-0.5 rounded-md hover:bg-red-500/15 text-red-600 dark:text-red-400"
+            aria-label="Fechar aviso"
+          >
+            <Icon name="close" className="text-base" />
+          </button>
+        </div>
+      ) : null}
 
       <div
         className={`flex-1 flex min-w-0 min-h-0 overflow-hidden ${
@@ -978,6 +1264,11 @@ export function Itinerary() {
                     <Icon name="auto_awesome" />
                     {finalizingTdv ? 'Gerando roteiro…' : 'Gerar roteiro e ativar viagem'}
                   </Button>
+                  {finalizeError ? (
+                    <p className="mt-2 text-xs text-red-600 dark:text-red-400 leading-relaxed" role="alert">
+                      {finalizeError}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               {!hasFullAccess && premiumRestriction ? (
@@ -1082,6 +1373,7 @@ export function Itinerary() {
                         displayIsLast={displayIsLast}
                         editing={roteiroEditOpen}
                         draft={act}
+                        hasFullAccess={hasFullAccess}
                         isTracked={String(act.id) === String(trackedStopId)}
                         cardRef={(el) => {
                           const key = String(act.id)
@@ -1190,14 +1482,16 @@ export function Itinerary() {
                           dragReorder.canDrag && !dragReorder.isInteractionBlocked
                         }
                         onDragHandlePointerDown={(event) =>
-                          dragReorder.onDragHandlePointerDown(act.id, event)
+                          onActivityDragHandlePointerDown(act.id, event)
                         }
                         dayPickerValue={getActivityDayNumber(act, dateToDayMap) ?? effectiveSelectedDay}
                         dayPickerOptions={days}
                         onDayChange={(dn) => {
                           setDraftActivities((prev) =>
                             (prev ?? []).map((item) =>
-                              String(item.id) === String(act.id) ? { ...item, day: dn, dayNumber: dn } : item,
+                              String(item.id) === String(act.id)
+                                ? assignActivityToDay(item, dn, dateToDayMap)
+                                : item,
                             ),
                           )
                           if (String(act.id) === String(trackedStopId)) {
@@ -1383,6 +1677,7 @@ export function Itinerary() {
         deleting={deleting}
         tripLabel={destLabel}
       />
+      <FinalizeItineraryOverlay open={finalizingTdv} />
       <RoteiroDragOverlay active={dragReorder.isOverlayActive}>
         <ItineraryDragGhost
           activity={dragReorder.ghostActivity}
