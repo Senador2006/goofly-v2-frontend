@@ -2,6 +2,7 @@ import { useCallback, useId, useState } from 'react'
 import { Icon } from '../common/Icon'
 import { ItineraryStopMarker } from './ItineraryStopMarker'
 import { ItineraryActivityCardCompact } from './ItineraryActivityCardCompact'
+import { PlaceCardGallery } from './PlaceCardGallery'
 import {
   googleMapsPlaceUrl,
   resolveActivityCoordinates,
@@ -14,29 +15,8 @@ import {
   resolveActivityTitle,
   resolveActivityTitleForEdit,
 } from '../../utils/itineraryPrintFormat'
-
-function minutesBetweenStarts(startStr, endStr) {
-  if (!startStr || !endStr) return null
-  const [sh, sm] = String(startStr).split(':').map(Number)
-  const [eh, em] = String(endStr).split(':').map(Number)
-  if (![sh, sm, eh, em].every(Number.isFinite)) return null
-  const mins = eh * 60 + em - (sh * 60 + sm)
-  return mins > 0 ? mins : null
-}
-
-function formatDuration(act, startResolved, endResolved) {
-  const fromWindow = minutesBetweenStarts(startResolved, endResolved)
-  if (fromWindow != null) {
-    const h = Math.round((fromWindow / 60) * 10) / 10
-    return `${h}h`
-  }
-  if (act.duration) return act.duration
-  if (act.duration_minutes) {
-    const h = Math.round((act.duration_minutes / 60) * 10) / 10
-    return `${h}h`
-  }
-  return '2h'
-}
+import { shouldShowTdvRoteiroGallery } from '../../utils/placeImages'
+import { formatActivityDuration } from '../../utils/formatActivityDuration'
 
 /** @param {Record<string, unknown> | null | undefined} act */
 function activityNeedsTicket(act) {
@@ -220,6 +200,7 @@ export function ItineraryActivityCard({
   isDragPending = false,
   canDragReorder = false,
   onDragHandlePointerDown,
+  hasFullAccess = false,
 }) {
   const panelId = useId()
   const [open, setOpen] = useState(false)
@@ -237,12 +218,19 @@ export function ItineraryActivityCard({
   const description = resolveActivityDescription(effective)
   const badge = sourceBadgeLabel(effective)
   const ticket = resolveTicketInfo(effective || act)
+  const sourceKey = String((effective || act)?.source || '').trim()
+  const showTdvGallery = shouldShowTdvRoteiroGallery(effective || act, hasFullAccess)
+  // Imagens TDV só na versão completa (galeria). Na prévia gratuita não vazar via hero.
+  const showTopHero =
+    !compactMode &&
+    sourceKey !== 'tdv_like' &&
+    !!(effective?.image_url || act?.image_url)
 
   const toggle = useCallback(() => {
     setOpen((v) => !v)
   }, [])
 
-  const durationLabel = formatDuration(
+  const durationLabel = formatActivityDuration(
     effective || act,
     start,
     typeof end === 'string' ? end.trim() : null,
@@ -278,7 +266,7 @@ export function ItineraryActivityCard({
             : 'border-border-light dark:border-border-dark shadow-sm ring-inset ring-primary/25')
         }
       >
-        {!compactMode && (effective?.image_url || act?.image_url) ? (
+        {showTopHero ? (
           <div
             className="h-36 sm:h-40 w-full bg-cover bg-center"
             style={{ backgroundImage: `url(${effective?.image_url || act.image_url})` }}
@@ -341,6 +329,7 @@ export function ItineraryActivityCard({
               open={open}
               onToggle={toggle}
               panelId={panelId}
+              showTdvGallery={showTdvGallery}
             />
           )}
         </div>
@@ -508,7 +497,7 @@ function CardEditFields({
               value={titleEditValue}
               disabled={false}
               placeholder="Busque um lugar (ex.: Torre Eiffel)…"
-              className="goofly-google-place-ac-frame goofly-google-place-ac-frame--compact relative z-[30] w-full overflow-visible rounded-xl border border-border-light dark:border-border-dark"
+              className="goofly-google-place-ac-frame goofly-google-place-ac-frame--compact relative z-[30] w-full overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
               onDraftChange={(text) =>
                 onDraftPatch({ title: text, name: text, placeName: text })
               }
@@ -637,6 +626,7 @@ function CardBody({
   open,
   onToggle,
   panelId,
+  showTdvGallery = false,
 }) {
   const hasTicketBox = ticket.required || !!ticket.hint || ticket.links.length > 0
   const mapCoords = resolveActivityCoordinates(act)
@@ -673,7 +663,7 @@ function CardBody({
               </span>
             ) : null}
             <span className="text-[11px] font-semibold text-text-secondary">
-              {formatDuration(act, startResolved, endResolved)}
+              {formatActivityDuration(act, startResolved, endResolved)}
             </span>
             <Icon
               name={open ? 'expand_less' : 'expand_more'}
@@ -705,6 +695,14 @@ function CardBody({
                   : 'Sugestão da IA para este horário do roteiro.'}
               </p>
             )}
+            {showTdvGallery ? (
+              <div
+                className="relative mx-auto mt-3 w-full max-w-[17.5rem] sm:max-w-[19rem] aspect-square overflow-hidden rounded-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <PlaceCardGallery place={act} variant="compact" />
+              </div>
+            ) : null}
             {mapCoords ? (
               <div className="mt-4">
                 <a

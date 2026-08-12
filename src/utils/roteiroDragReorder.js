@@ -1,7 +1,10 @@
 /** @typedef {{ top: number, bottom: number, height: number, left?: number, width?: number }} SlotRect */
 
 export const ROTEIRO_DRAG_HOLD_MS = 180
-export const ROTEIRO_DRAG_MOVE_CANCEL_PX = 6
+/** Movimento durante pending inicia o arraste imediatamente (px). */
+export const ROTEIRO_DRAG_MOVE_START_PX = 6
+/** @deprecated use ROTEIRO_DRAG_MOVE_START_PX */
+export const ROTEIRO_DRAG_MOVE_CANCEL_PX = ROTEIRO_DRAG_MOVE_START_PX
 export const ROTEIRO_DRAG_SCROLL_EDGE_PX = 48
 export const ROTEIRO_DRAG_LANDING_MS = 220
 export const ROTEIRO_DRAG_EXPAND_MS = 280
@@ -136,6 +139,25 @@ export function scrollCardHeaderIntoView(scrollEl, cardEl, edgePx = ROTEIRO_DRAG
   const scrollRect = scrollEl.getBoundingClientRect()
   const targetRect = target.getBoundingClientRect()
   const delta = targetRect.top - (scrollRect.top + edgePx)
+  if (Math.abs(delta) >= 2) {
+    scrollEl.scrollTop += delta
+  }
+}
+
+/**
+ * Centraliza o card no viewport do container de scroll.
+ * Usado ao entrar no modo compacto para o card escolhido não “sumir” para cima.
+ *
+ * @param {HTMLElement | null} scrollEl
+ * @param {HTMLElement | null} cardEl
+ */
+export function scrollCardIntoViewportCenter(scrollEl, cardEl) {
+  if (!scrollEl || !cardEl) return
+  const scrollRect = scrollEl.getBoundingClientRect()
+  const cardRect = cardEl.getBoundingClientRect()
+  const cardCenter = cardRect.top + cardRect.height / 2
+  const viewCenter = scrollRect.top + scrollRect.height / 2
+  const delta = cardCenter - viewCenter
   if (Math.abs(delta) >= 2) {
     scrollEl.scrollTop += delta
   }

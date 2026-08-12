@@ -14,6 +14,7 @@ import {
   ROTEIRO_DRAG_COMPACT_HEIGHT_PX,
   resolveExpandImageOffsetPx,
   scrollCompactCardBeforeExpand,
+  scrollCardIntoViewportCenter,
   ROTEIRO_DRAG_EXPAND_IMAGE_H_PX,
   ROTEIRO_DRAG_EXPAND_IMAGE_H_SM_PX,
 } from '../src/utils/roteiroDragReorder.js'
@@ -140,6 +141,21 @@ describe('scrollCompactCardBeforeExpand', () => {
     }
     scrollCompactCardBeforeExpand(scrollEl, cardEl, 48, 144)
     assert.equal(scrollEl.scrollTop, 316)
+  })
+})
+
+describe('scrollCardIntoViewportCenter', () => {
+  it('centraliza o card no viewport do scroll', () => {
+    const scrollEl = {
+      scrollTop: 40,
+      getBoundingClientRect: () => ({ top: 100, height: 400 }),
+    }
+    const cardEl = {
+      getBoundingClientRect: () => ({ top: 140, height: 72 }),
+    }
+    // card center = 176; view center = 300; delta = -124 → scrollTop = -84
+    scrollCardIntoViewportCenter(scrollEl, cardEl)
+    assert.equal(scrollEl.scrollTop, -84)
   })
 })
 

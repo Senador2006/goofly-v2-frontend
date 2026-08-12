@@ -160,3 +160,85 @@ export function getIsoDateForDay(dateToDayMap, dayNum) {
   }
   return null
 }
+
+const ACTIVITY_DATE_KEYS = [
+  'dayDate',
+  'day_date',
+  'date',
+  'canonicalDate',
+  'canonical_date',
+  'scheduledDate',
+  'scheduled_date',
+  'itineraryDate',
+  'itinerary_date',
+]
+
+/**
+ * Atribui uma atividade a um dia (1-based) e sincroniza datas conhecidas com o ISO do mapa.
+ *
+ * @param {any} act
+ * @param {number} dayNum
+ * @param {Map<string, number>} dateToDayMap
+ */
+export function assignActivityToDay(act, dayNum, dateToDayMap) {
+  const n = Math.floor(Number(dayNum))
+  if (!Number.isFinite(n) || n < 1 || !act || typeof act !== 'object') return act
+
+  const next = {
+    ...act,
+    day: n,
+    dayNumber: n,
+    day_number: n,
+  }
+
+  const map = dateToDayMap instanceof Map ? dateToDayMap : new Map()
+  const iso = getIsoDateForDay(map, n)
+  if (!iso) return next
+
+  for (const key of ACTIVITY_DATE_KEYS) {
+    if (act[key] != null && act[key] !== '') {
+      next[key] = iso
+    }
+  }
+  next.dayDate = iso
+  next.canonicalDate = iso
+  return next
+}
+
+/**
+ * Troca os conjuntos de atividades entre dois dias (conteúdo), preservando `order` relativo.
+ * Calendário / rótulos Dia N permanecem; só os campos de dia/data das atividades mudam.
+ *
+ * @param {any[]} all
+ * @param {Map<string, number>} dateToDayMap
+ * @param {number} dayA
+ * @param {number} dayB
+ */
+export function swapActivitiesBetweenDays(all, dateToDayMap, dayA, dayB) {
+  if (!Array.isArray(all)) return all
+
+  const a = Math.floor(Number(dayA))
+  const b = Math.floor(Number(dayB))
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a < 1 || b < 1 || a === b) {
+    return all
+  }
+
+  const map = dateToDayMap instanceof Map ? dateToDayMap : new Map()
+
+  let touches = false
+  for (const act of all) {
+    const d = getActivityDayNumber(act, map)
+    if (d === a || d === b) {
+      touches = true
+      break
+    }
+  }
+  if (!touches) return all
+
+  return all.map((act) => {
+    const d = getActivityDayNumber(act, map)
+    if (d === a) return assignActivityToDay(act, b, map)
+    if (d === b) return assignActivityToDay(act, a, map)
+    return act
+  })
+}

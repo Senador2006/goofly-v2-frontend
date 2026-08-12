@@ -4,6 +4,7 @@ import {
   getPlaceImageUrls,
   getPlaceCoverImageUrl,
   getPlaceVideoUrls,
+  getRealPlaceImageUrls,
   resolveVideoPresentation,
 } from '../src/utils/placeImages.js'
 
@@ -12,6 +13,10 @@ test('getPlaceImageUrls usa image_urls da API', () => {
     image_urls: ['https://a.com/1.jpg', 'https://b.com/2.jpg'],
   })
   assert.deepEqual(urls, ['https://a.com/1.jpg', 'https://b.com/2.jpg'])
+})
+
+test('getRealPlaceImageUrls não força placeholder quando vazio', () => {
+  assert.deepEqual(getRealPlaceImageUrls({ name: 'X' }), [])
 })
 
 test('getPlaceImageUrls faz fallback para image_url única', () => {
