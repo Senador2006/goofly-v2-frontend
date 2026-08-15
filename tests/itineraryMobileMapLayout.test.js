@@ -91,16 +91,18 @@ describe('ItineraryMobileMapDrawer contracts', () => {
 })
 
 describe('ItineraryDayMap pin source contract', () => {
-  it('prioriza localMarkers para pins quando há atividades locais (exceto prévia premium)', () => {
+  it('prioriza apiMarkers Geoapify e ignora coordenadas locais do agente', () => {
     assert.match(dayMapSource, /resolveMapMarkers/)
     assert.match(dayMapSource, /routeRestricted/)
+    assert.match(dayMapSource, /EMPTY_LOCAL_MARKERS/)
+    assert.match(dayMapSource, /countNamedActivities/)
   })
 
   it('suporta mapLayoutWatch para invalidateSize', () => {
     assert.match(dayMapSource, /mapLayoutWatch/)
   })
 
-  it('suporta preferLocalRoute para rota ORS via preview do draft', () => {
+  it('suporta preferLocalRoute para rota Geoapify via preview do draft', () => {
     assert.match(dayMapSource, /preferLocalRoute/)
     assert.match(dayMapSource, /previewItineraryRoute/)
     assert.match(dayMapSource, /draftCacheKey/)

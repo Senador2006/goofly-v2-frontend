@@ -46,19 +46,33 @@ describe('itineraryMapRoute helpers', () => {
     )
   })
 
-  it('resolveMapMarkers never falls back to apiMarkers when restricted', () => {
+  it('resolveMapMarkers usa só apiMarkers (Geoapify) e ignora coords locais do agente', () => {
     const local = [{ activityId: 'a1', coords: [1, 2] }]
-    const api = [{ activityId: 'hidden', coords: [3, 4] }]
+    const api = [{ activityId: 'a1', coords: [48.85, 2.35] }]
     assert.deepEqual(
-      resolveMapMarkers({ localMarkers: local, apiMarkers: api, routeRestricted: true }),
-      local,
+      resolveMapMarkers({ localMarkers: local, apiMarkers: api, routeRestricted: false }),
+      api,
     )
     assert.deepEqual(
-      resolveMapMarkers({ localMarkers: [], apiMarkers: api, routeRestricted: true }),
+      resolveMapMarkers({ localMarkers: local, apiMarkers: [], routeRestricted: false }),
       [],
     )
     assert.deepEqual(
-      resolveMapMarkers({ localMarkers: [], apiMarkers: api, routeRestricted: false }),
+      resolveMapMarkers({
+        localMarkers: local,
+        apiMarkers: api,
+        routeRestricted: true,
+        apiRouteSafeForPreview: false,
+      }),
+      [],
+    )
+    assert.deepEqual(
+      resolveMapMarkers({
+        localMarkers: local,
+        apiMarkers: api,
+        routeRestricted: true,
+        apiRouteSafeForPreview: true,
+      }),
       api,
     )
   })

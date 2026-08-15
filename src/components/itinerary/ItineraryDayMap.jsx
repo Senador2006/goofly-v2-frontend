@@ -27,8 +27,9 @@ import { resolveAccommodationLegDisplay } from '../../utils/itineraryAccommodati
 import { MapAccommodationRoutesToggle } from './MapAccommodationRoutesToggle'
 
 /**
- * RF04.3 — Mapa do roteiro por dia: pins numerados + rota (OpenRouteService ou linha reta).
- * Cache em memória por trip+dia; invalida quando as atividades do dia mudam.
+ * RF04.3 — Mapa do roteiro por dia: pins numerados + rota (Geoapify pelo nome).
+ * Ignora coordenadas do agente otimizador; o backend geocodifica só o nome.
+ * Cache em memória por trip+dia; invalida quando os nomes do dia mudam.
  */
 
 const ROUTE_PROFILE = 'foot-walking'
@@ -48,22 +49,24 @@ function draftCacheKey(tripId, day, accSig = '') {
   return accSig ? `${base}:acc:${accSig}` : base
 }
 
-function countGeolocatedActivities(activities) {
-  return (activities || []).filter((a) => readLatLng(a)).length
+function countNamedActivities(activities) {
+  return (activities || []).filter((a) =>
+    String(a?.name || a?.title || a?.placeName || '').trim(),
+  ).length
 }
 
 /**
- * Assinatura estável das atividades visíveis no dia. Inclui id E coordenadas
- * para que a rota seja recalculada quando uma parada é geocodificada (nova) ou
- * renomeada (coordenada muda) — não só quando os ids mudam.
+ * Assinatura estável das paradas visíveis no dia. Usa id + nome (não as
+ * coordenadas do agente) para recalcular a rota quando o usuário renomeia.
  */
 function activitiesCacheSignature(activities) {
   return (activities || [])
     .map((a) => {
       const id = String(a?.id ?? a?.placeId ?? a?.place_id ?? '')
-      const c = readLatLng(a)
-      const coord = c ? `${c[0].toFixed(5)},${c[1].toFixed(5)}` : 'nocoord'
-      return `${id}@${coord}`
+      const name = String(a?.name || a?.title || a?.placeName || '')
+        .trim()
+        .toLowerCase()
+      return `${id}@${name}`
     })
     .join('|')
 }
@@ -130,26 +133,10 @@ function getHomeIcon(homeOrder = null) {
 }
 
 function shouldFetchDayRoute(activities, accommodations) {
-  const geoActivities = countGeolocatedActivities(activities)
-  if (geoActivities >= 2) return true
-  if (hasPlottableAccommodation(accommodations) && geoActivities >= 1) return true
+  const named = countNamedActivities(activities)
+  if (named >= 2) return true
+  if (hasPlottableAccommodation(accommodations) && named >= 1) return true
   return false
-}
-
-function buildLocalMarkers(activities) {
-  return (activities || [])
-    .map((act, idx) => {
-      const coords = readLatLng(act)
-      if (!coords) return null
-      return {
-        order: idx + 1,
-        activityId: act.id || act.placeId || `local-${idx}`,
-        name: act.name || 'Parada',
-        startTime: act.startTime || act.start_time || act.time || null,
-        coords,
-      }
-    })
-    .filter(Boolean)
 }
 
 function parseApiMarkers(routeData) {
@@ -170,6 +157,8 @@ export function clearItineraryRouteCache(tripId) {
     if (key.startsWith(prefix)) routeCacheByKey.delete(key)
   }
 }
+
+const EMPTY_LOCAL_MARKERS = []
 
 export function ItineraryDayMap({
   tripId,
@@ -295,7 +284,7 @@ export function ItineraryDayMap({
 
   const visibleActivityIds = useMemo(() => buildVisibleActivityIdSet(activities), [activities])
 
-  const localMarkers = useMemo(() => buildLocalMarkers(activities), [activities])
+  const localMarkers = EMPTY_LOCAL_MARKERS
   const apiMarkers = useMemo(
     () => (routePayloadValid ? parseApiMarkers(routeData) : []),
     [routePayloadValid, routeData]
@@ -307,8 +296,14 @@ export function ItineraryDayMap({
   }, [routeRestricted, routePayloadValid, routeData, visibleActivityIds])
 
   const markers = useMemo(
-    () => resolveMapMarkers({ localMarkers, apiMarkers, routeRestricted }),
-    [localMarkers, apiMarkers, routeRestricted],
+    () =>
+      resolveMapMarkers({
+        localMarkers,
+        apiMarkers,
+        routeRestricted,
+        apiRouteSafeForPreview,
+      }),
+    [localMarkers, apiMarkers, routeRestricted, apiRouteSafeForPreview],
   )
 
   const mapAccommodations = useMemo(() => {
@@ -405,6 +400,7 @@ export function ItineraryDayMap({
 
   const showStraightHint =
     routeSource === 'straight_line' ||
+    warnings.includes('geoapify_not_configured') ||
     warnings.includes('ors_not_configured') ||
     usingMarkerPolylineFallback
 
@@ -426,7 +422,7 @@ export function ItineraryDayMap({
         style={{ width: '100%', height: '100%', minHeight: 280 }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Rotas: <a href="https://openrouteservice.org">OpenRouteService</a>'
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Rotas: <a href="https://www.geoapify.com/">Geoapify</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {polylinePositions.length >= 2 ? (
@@ -564,7 +560,7 @@ export function ItineraryDayMap({
             <p className="text-xs text-text-secondary mt-1">
               {skippedCount > 0
                 ? `${skippedCount} parada(s) sem localização neste dia.`
-                : 'Nenhuma atividade com coordenadas para este dia.'}
+                : 'Nenhuma parada com nome para este dia.'}
             </p>
           </div>
         </div>
@@ -596,8 +592,8 @@ export function ItineraryDayMap({
               <p className="text-[10px] text-amber-700 dark:text-amber-300 mt-0.5 m-0">
                 Trajeto aproximado (linha reta)
               </p>
-            ) : routePayloadValid && routeSource === 'openrouteservice' ? (
-              <p className="text-[10px] text-text-secondary mt-0.5 m-0">Rota a pé (OpenRouteService)</p>
+            ) : routePayloadValid && routeSource === 'geoapify' ? (
+              <p className="text-[10px] text-text-secondary mt-0.5 m-0">Rota a pé (Geoapify)</p>
             ) : null}
           </div>
           {warnings.includes('duplicate_coordinates') ? (
