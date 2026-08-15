@@ -361,6 +361,7 @@ export function Pagamento() {
                   throw new Error('O pagamento foi recusado. Verifique os dados ou tente outro cartão.')
                 }
 
+                await userService.completeCheckout({ tripId })
                 if (isPendingPayment(paymentResult) || hasPixPayload(paymentResult)) {
                   if (String(payload.payment_method_id || '').toLowerCase() === 'pix' || hasPixPayload(paymentResult)) {
                     startPixPolling(tripId, paymentResult)
