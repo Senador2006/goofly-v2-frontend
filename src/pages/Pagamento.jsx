@@ -12,6 +12,7 @@ import { tripService } from '../services/tripService'
 import { hasTripPlanningUnlocked } from '../utils/planningAccess'
 import { createLogger } from '../utils/logger'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { resolveMetaPurchaseEventId, trackMetaEvent } from '../utils/metaPixel'
 
 const MERCADO_PAGO_SCRIPT_ID = 'mercado-pago-sdk'
 let mercadoPagoScriptPromise = null
@@ -347,6 +348,19 @@ export function Pagamento() {
                   throw new Error('O pagamento foi recusado. Verifique os dados ou tente outro cartão.')
                 }
 
+                trackMetaEvent(
+                  'Purchase',
+                  {
+                    value: Number(amountForBrick),
+                    currency: 'BRL',
+                    content_ids: [String(tripId)],
+                    content_type: 'product',
+                    content_name: 'planejamento_completo',
+                  },
+                  resolveMetaPurchaseEventId(paymentResult)
+                )
+
+                await userService.completeCheckout({ tripId })
                 if (isPendingPayment(paymentResult) || hasPixPayload(paymentResult)) {
                   if (String(payload.payment_method_id || '').toLowerCase() === 'pix' || hasPixPayload(paymentResult)) {
                     startPixPolling(tripId, paymentResult)
@@ -638,7 +652,16 @@ export function Pagamento() {
       {!showBrick ? (
         <Button
           className="w-full rounded-full py-4 font-bold"
-          onClick={() => setShowBrick(true)}
+          onClick={() => {
+            trackMetaEvent('InitiateCheckout', {
+              value: planningAmount,
+              currency: 'BRL',
+              content_ids: tripId ? [String(tripId)] : undefined,
+              content_type: 'product',
+              content_name: 'planejamento_completo',
+            })
+            setShowBrick(true)
+          }}
           disabled={loading || !canPay}
         >
           Pagar agora
