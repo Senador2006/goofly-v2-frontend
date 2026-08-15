@@ -128,10 +128,23 @@ export function Pagamento() {
   }, [])
 
   const finishUnlock = useCallback(
-    async (id) => {
+    async (id, paymentResult = null) => {
       if (!id) {
         throw new Error('Selecione a viagem que deseja desbloquear antes de concluir o pagamento.')
       }
+
+      trackMetaEvent(
+        'Purchase',
+        {
+          value: planningAmount != null ? Number(planningAmount) : undefined,
+          currency: 'BRL',
+          content_ids: [String(id)],
+          content_type: 'product',
+          content_name: 'planejamento_completo',
+        },
+        resolveMetaPurchaseEventId(paymentResult)
+      )
+
       await userService.completeCheckout({ tripId: id })
       if (!isMountedRef.current) return
       setSuccess(true)
@@ -141,7 +154,7 @@ export function Pagamento() {
         navigate(`/trips/${id}/itinerary?unlocked=1`, { replace: true })
       }, 1200)
     },
-    [navigate]
+    [navigate, planningAmount]
   )
 
   const startPixPolling = useCallback(
@@ -171,7 +184,7 @@ export function Pagamento() {
             clearPoll()
             setLoading(true)
             try {
-              await finishUnlock(id)
+              await finishUnlock(id, pixPayload ?? status)
             } catch (err) {
               if (isMountedRef.current) {
                 setError(
@@ -340,25 +353,13 @@ export function Pagamento() {
                 const paymentResult = await paymentService.pay(payload)
 
                 if (isApprovedPayment(paymentResult)) {
-                  await finishUnlock(tripId)
+                  await finishUnlock(tripId, paymentResult)
                   return
                 }
 
                 if (isRefusedPayment(paymentResult)) {
                   throw new Error('O pagamento foi recusado. Verifique os dados ou tente outro cartão.')
                 }
-
-                trackMetaEvent(
-                  'Purchase',
-                  {
-                    value: Number(amountForBrick),
-                    currency: 'BRL',
-                    content_ids: [String(tripId)],
-                    content_type: 'product',
-                    content_name: 'planejamento_completo',
-                  },
-                  resolveMetaPurchaseEventId(paymentResult)
-                )
 
                 await userService.completeCheckout({ tripId })
                 if (isPendingPayment(paymentResult) || hasPixPayload(paymentResult)) {
