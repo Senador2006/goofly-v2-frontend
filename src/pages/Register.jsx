@@ -5,6 +5,7 @@ import { AuthPageLayout, AUTH_INPUT_CLASS } from '../components/auth/AuthPageLay
 import { TurnstileWidget } from '../components/auth/TurnstileWidget'
 import { Button } from '../components/common/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { trackMetaEvent } from '../utils/metaPixel'
 
 export function Register() {
   useDocumentTitle('Criar conta')
@@ -46,6 +47,7 @@ export function Register() {
 
     try {
       await register(name, email, password, captchaToken)
+      trackMetaEvent('CompleteRegistration', { status: true, content_name: 'goofly_signup' })
       navigate('/dashboard')
     } catch (err) {
       setCaptchaToken('')

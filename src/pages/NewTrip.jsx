@@ -8,6 +8,7 @@ import { tripService } from '../services/tripService'
 import { hasGoogleMapsApiKey } from '../services/googleMapsPlacesLoader'
 import { readLatLng } from '../utils/coordinates'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { trackMetaEvent } from '../utils/metaPixel'
 
 // Constantes do PRE_TRIP_FORM.md
 const INTERESTS = [
@@ -346,6 +347,15 @@ export function NewTrip() {
     try {
       const payload = buildPayload()
       const trip = await tripService.createTrip(payload)
+      const dest = payload.destinations?.[0]
+      const destLabel = dest
+        ? [dest.city, dest.country].filter(Boolean).join(', ')
+        : undefined
+      trackMetaEvent('Lead', {
+        content_name: destLabel || 'nova_viagem',
+        content_ids: trip?.id ? [String(trip.id)] : undefined,
+        content_category: 'trip_planning',
+      })
       navigate(`/trips/${trip.id}/itinerary?tab=tdv`)
     } catch (err) {
       setError(err.response?.data?.error?.message || err.message || 'Erro ao criar viagem')

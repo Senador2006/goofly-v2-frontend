@@ -21,9 +21,15 @@ export function apiRouteMatchesVisibleActivities(routeData, visibleIds) {
   })
 }
 
-export function resolveMapMarkers({ localMarkers, apiMarkers, routeRestricted }) {
-  if (routeRestricted) return localMarkers
-  return localMarkers.length > 0 ? localMarkers : apiMarkers
+export function resolveMapMarkers({
+  localMarkers,
+  apiMarkers,
+  routeRestricted,
+  apiRouteSafeForPreview = true,
+}) {
+  if (routeRestricted && !apiRouteSafeForPreview) return []
+  if (Array.isArray(apiMarkers) && apiMarkers.length > 0) return apiMarkers
+  return []
 }
 
 export function resolvePolylinePositions({

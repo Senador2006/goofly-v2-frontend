@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AuthProvider } from './context/AuthContext'
+import { MetaPixelProvider } from './components/analytics/MetaPixelProvider'
 import { ThemeProvider } from './context/ThemeContext'
 import { I18nProvider } from './i18n'
 import 'leaflet/dist/leaflet.css'
@@ -15,9 +16,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <I18nProvider>
         <ThemeProvider>
           <AuthProvider>
-            <ErrorBoundary>
-              <App />
-            </ErrorBoundary>
+            <MetaPixelProvider>
+              <ErrorBoundary>
+                <App />
+              </ErrorBoundary>
+            </MetaPixelProvider>
           </AuthProvider>
         </ThemeProvider>
       </I18nProvider>

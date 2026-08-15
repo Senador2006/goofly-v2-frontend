@@ -12,6 +12,7 @@ import { tripService } from '../services/tripService'
 import { hasTripPlanningUnlocked } from '../utils/planningAccess'
 import { createLogger } from '../utils/logger'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { resolveMetaPurchaseEventId, trackMetaEvent } from '../utils/metaPixel'
 
 const MERCADO_PAGO_SCRIPT_ID = 'mercado-pago-sdk'
 let mercadoPagoScriptPromise = null
@@ -127,10 +128,23 @@ export function Pagamento() {
   }, [])
 
   const finishUnlock = useCallback(
-    async (id) => {
+    async (id, paymentResult = null) => {
       if (!id) {
         throw new Error('Selecione a viagem que deseja desbloquear antes de concluir o pagamento.')
       }
+
+      trackMetaEvent(
+        'Purchase',
+        {
+          value: planningAmount != null ? Number(planningAmount) : undefined,
+          currency: 'BRL',
+          content_ids: [String(id)],
+          content_type: 'product',
+          content_name: 'planejamento_completo',
+        },
+        resolveMetaPurchaseEventId(paymentResult)
+      )
+
       await userService.completeCheckout({ tripId: id })
       if (!isMountedRef.current) return
       setSuccess(true)
@@ -140,7 +154,7 @@ export function Pagamento() {
         navigate(`/trips/${id}/itinerary?unlocked=1`, { replace: true })
       }, 1200)
     },
-    [navigate]
+    [navigate, planningAmount]
   )
 
   const startPixPolling = useCallback(
@@ -170,7 +184,7 @@ export function Pagamento() {
             clearPoll()
             setLoading(true)
             try {
-              await finishUnlock(id)
+              await finishUnlock(id, pixPayload ?? status)
             } catch (err) {
               if (isMountedRef.current) {
                 setError(
@@ -339,7 +353,7 @@ export function Pagamento() {
                 const paymentResult = await paymentService.pay(payload)
 
                 if (isApprovedPayment(paymentResult)) {
-                  await finishUnlock(tripId)
+                  await finishUnlock(tripId, paymentResult)
                   return
                 }
 
@@ -638,7 +652,16 @@ export function Pagamento() {
       {!showBrick ? (
         <Button
           className="w-full rounded-full py-4 font-bold"
-          onClick={() => setShowBrick(true)}
+          onClick={() => {
+            trackMetaEvent('InitiateCheckout', {
+              value: planningAmount,
+              currency: 'BRL',
+              content_ids: tripId ? [String(tripId)] : undefined,
+              content_type: 'product',
+              content_name: 'planejamento_completo',
+            })
+            setShowBrick(true)
+          }}
           disabled={loading || !canPay}
         >
           Pagar agora
