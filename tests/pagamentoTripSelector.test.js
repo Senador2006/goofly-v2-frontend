@@ -36,7 +36,8 @@ describe('U-10 — Pagamento com seletor de viagem', () => {
 
   it('Pagamento reseta checkout ao trocar viagem', () => {
     assert.match(pagamento, /setShowBrick\(false\)/)
-    assert.match(pagamento, /useEffect\(\(\) => \{\s*setShowBrick\(false\)[\s\S]*?\}, \[tripId\]\)/)
+    assert.match(pagamento, /setPixPending\(null\)/)
+    assert.match(pagamento, /useEffect\(\(\) => \{\s*setShowBrick\(false\)[\s\S]*?\}, \[tripId/)
   })
 
   it('Pagamento usa hasTripPlanningUnlocked para viagens já desbloqueadas', () => {
@@ -54,7 +55,19 @@ describe('U-10 — Pagamento com seletor de viagem', () => {
   })
 
   it('completeCheckout continua enviando tripId', () => {
-    assert.match(pagamento, /userService\.completeCheckout\(\{ tripId \}\)/)
+    assert.match(pagamento, /userService\.completeCheckout\(\{\s*tripId/)
+  })
+
+  it('Brick oferece cartão e PIX sem boleto (ticket)', () => {
+    assert.match(pagamento, /bankTransfer:\s*'all'/)
+    assert.match(pagamento, /creditCard:\s*'all'/)
+    assert.doesNotMatch(pagamento, /ticket:\s*'all'/)
+  })
+
+  it('Pagamento faz poll de status para PIX pendente', () => {
+    assert.match(pagamento, /paymentService\.getStatus/)
+    assert.match(pagamento, /startPixPolling/)
+    assert.match(pagamento, /Pague com PIX/)
   })
 
   it('Admin unlock exige viagem selecionada', () => {
