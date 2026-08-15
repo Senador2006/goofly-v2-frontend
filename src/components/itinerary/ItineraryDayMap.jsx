@@ -601,6 +601,11 @@ export function ItineraryDayMap({
               Várias paradas no mesmo ponto
             </div>
           ) : null}
+          {warnings.includes('geocode_fallback_coordinates') ? (
+            <div className="rounded-lg bg-amber-500/15 border border-amber-500/30 px-2 py-1 text-[10px] text-amber-900 dark:text-amber-200 max-w-[11rem]">
+              Algumas paradas usaram coordenadas salvas
+            </div>
+          ) : null}
         </div>
       ) : null}
 
