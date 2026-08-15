@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
@@ -17,6 +17,9 @@ import { resolveMetaPurchaseEventId, trackMetaEvent } from '../utils/metaPixel'
 const MERCADO_PAGO_SCRIPT_ID = 'mercado-pago-sdk'
 let mercadoPagoScriptPromise = null
 const logger = createLogger('pages.pagamento')
+
+const POLL_INTERVAL_MS = 4000
+const POLL_TIMEOUT_MS = 12 * 60 * 1000
 
 function loadMercadoPagoSdk() {
   if (window.MercadoPago) {
@@ -55,6 +58,16 @@ function isApprovedPayment(result) {
   return ['approved', 'paid'].includes(status)
 }
 
+function isPendingPayment(result) {
+  const status = String(result?.data?.status || result?.status || '').toLowerCase()
+  return ['pending', 'processing', 'in_process', 'in_mediation'].includes(status)
+}
+
+function isRefusedPayment(result) {
+  const status = String(result?.data?.status || result?.status || '').toLowerCase()
+  return ['refused', 'rejected', 'cancelled', 'charged_back', 'denied', 'error'].includes(status)
+}
+
 function formatBRL(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value))
 }
@@ -62,6 +75,10 @@ function formatBRL(value) {
 function normalizeTripId(raw) {
   const trimmed = raw?.trim()
   return trimmed || null
+}
+
+function hasPixPayload(result) {
+  return Boolean(result?.qr_code || result?.qr_code_base64 || result?.ticket_url)
 }
 
 export function Pagamento() {
@@ -80,8 +97,11 @@ export function Pagamento() {
   const [showBrick, setShowBrick] = useState(false)
   const [priceLoading, setPriceLoading] = useState(Boolean(tripId))
   const [priceQuote, setPriceQuote] = useState(null)
+  const [pixPending, setPixPending] = useState(null)
+  const [pollHint, setPollHint] = useState(null)
   const brickControllerRef = useRef(null)
   const isMountedRef = useRef(false)
+  const pollTimerRef = useRef(null)
 
   const selectedTrip = useMemo(
     () => trips.find((t) => String(t.id) === String(tripId)) ?? null,
@@ -99,6 +119,98 @@ export function Pagamento() {
 
   const planningAmount =
     priceQuote?.amountBrl != null ? Number(priceQuote.amountBrl) : null
+
+  const clearPoll = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
+  }, [])
+
+  const finishUnlock = useCallback(
+    async (id, paymentResult = null) => {
+      if (!id) {
+        throw new Error('Selecione a viagem que deseja desbloquear antes de concluir o pagamento.')
+      }
+
+      trackMetaEvent(
+        'Purchase',
+        {
+          value: planningAmount != null ? Number(planningAmount) : undefined,
+          currency: 'BRL',
+          content_ids: [String(id)],
+          content_type: 'product',
+          content_name: 'planejamento_completo',
+        },
+        resolveMetaPurchaseEventId(paymentResult)
+      )
+
+      await userService.completeCheckout({ tripId: id })
+      if (!isMountedRef.current) return
+      setSuccess(true)
+      setPixPending(null)
+      setPollHint(null)
+      setTimeout(() => {
+        navigate(`/trips/${id}/itinerary?unlocked=1`, { replace: true })
+      }, 1200)
+    },
+    [navigate, planningAmount]
+  )
+
+  const startPixPolling = useCallback(
+    (id, pixPayload) => {
+      clearPoll()
+      setPixPending(pixPayload)
+      setShowBrick(false)
+      setPollHint('Aguardando confirmação do PIX…')
+      const startedAt = Date.now()
+
+      pollTimerRef.current = setInterval(async () => {
+        if (!isMountedRef.current) {
+          clearPoll()
+          return
+        }
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          clearPoll()
+          setPollHint(null)
+          setError(
+            'O PIX ainda não foi confirmado. Se você já pagou, aguarde alguns minutos e atualize a página; caso contrário, gere um novo pagamento.'
+          )
+          return
+        }
+        try {
+          const status = await paymentService.getStatus(id)
+          if (status?.planningUnlocked || ['approved', 'paid'].includes(String(status?.status || '').toLowerCase())) {
+            clearPoll()
+            setLoading(true)
+            try {
+              await finishUnlock(id, pixPayload ?? status)
+            } catch (err) {
+              if (isMountedRef.current) {
+                setError(
+                  err.response?.data?.error?.message ||
+                    err.message ||
+                    'Pagamento aprovado, mas não foi possível concluir o desbloqueio.'
+                )
+              }
+            } finally {
+              if (isMountedRef.current) setLoading(false)
+            }
+            return
+          }
+          if (['refused', 'rejected', 'cancelled', 'charged_back', 'denied', 'error'].includes(String(status?.status || '').toLowerCase())) {
+            clearPoll()
+            setPixPending(null)
+            setPollHint(null)
+            setError('O pagamento foi recusado. Tente novamente com outro método.')
+          }
+        } catch (err) {
+          logger.error('Poll status PIX:', err)
+        }
+      }, POLL_INTERVAL_MS)
+    },
+    [clearPoll, finishUnlock]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -128,7 +240,10 @@ export function Pagamento() {
     setShowBrick(false)
     setError(null)
     setPriceQuote(null)
-  }, [tripId])
+    setPixPending(null)
+    setPollHint(null)
+    clearPoll()
+  }, [tripId, clearPoll])
 
   useEffect(() => {
     if (!tripId) {
@@ -166,15 +281,16 @@ export function Pagamento() {
     isMountedRef.current = true
     return () => {
       isMountedRef.current = false
+      clearPoll()
     }
-  }, [])
+  }, [clearPoll])
 
   const handleTripSelect = (id) => {
     setSearchParams({ tripId: id }, { replace: true })
   }
 
   useEffect(() => {
-    if (!showBrick) return
+    if (!showBrick || pixPending) return
 
     let cancelled = false
 
@@ -209,7 +325,6 @@ export function Pagamento() {
             paymentMethods: {
               creditCard: 'all',
               debitCard: 'all',
-              ticket: 'all',
               bankTransfer: 'all',
             },
           },
@@ -236,36 +351,30 @@ export function Pagamento() {
                 }
 
                 const paymentResult = await paymentService.pay(payload)
-                if (!isApprovedPayment(paymentResult)) {
+
+                if (isApprovedPayment(paymentResult)) {
+                  await finishUnlock(tripId, paymentResult)
+                  return
+                }
+
+                if (isRefusedPayment(paymentResult)) {
+                  throw new Error('O pagamento foi recusado. Verifique os dados ou tente outro cartão.')
+                }
+
+                if (isPendingPayment(paymentResult) || hasPixPayload(paymentResult)) {
+                  if (String(payload.payment_method_id || '').toLowerCase() === 'pix' || hasPixPayload(paymentResult)) {
+                    startPixPolling(tripId, paymentResult)
+                    return
+                  }
                   throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
                 }
 
-                if (!tripId) {
-                  throw new Error('Selecione a viagem que deseja desbloquear antes de concluir o pagamento.')
-                }
-
-                trackMetaEvent(
-                  'Purchase',
-                  {
-                    value: Number(amountForBrick),
-                    currency: 'BRL',
-                    content_ids: [String(tripId)],
-                    content_type: 'product',
-                    content_name: 'planejamento_completo',
-                  },
-                  resolveMetaPurchaseEventId(paymentResult)
-                )
-
-                await userService.completeCheckout({ tripId })
-
-                if (!isMountedRef.current) return
-                setSuccess(true)
-                setTimeout(() => {
-                  navigate(`/trips/${tripId}/itinerary?unlocked=1`, { replace: true })
-                }, 1200)
+                throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
               } catch (err) {
-                if (!isMountedRef.current) return
-                setError(err.response?.data?.error?.message || err.message || 'Erro ao processar o pagamento.')
+                if (isMountedRef.current) {
+                  setError(err.response?.data?.error?.message || err.message || 'Erro ao processar o pagamento.')
+                }
+                throw err
               } finally {
                 if (isMountedRef.current) {
                   setLoading(false)
@@ -296,7 +405,7 @@ export function Pagamento() {
       }
       brickControllerRef.current = null
     }
-  }, [showBrick, navigate, tripId, user?.email, planningAmount])
+  }, [showBrick, pixPending, navigate, tripId, user?.email, planningAmount, finishUnlock, startPixPolling])
 
   if (success) {
     return (
@@ -342,6 +451,96 @@ export function Pagamento() {
   }
 
   const canPay = Boolean(tripId) && !isSelectedUnlocked && planningAmount != null && !priceLoading
+
+  if (pixPending) {
+    const qrSrc = pixPending.qr_code_base64
+      ? pixPending.qr_code_base64.startsWith('data:')
+        ? pixPending.qr_code_base64
+        : `data:image/png;base64,${pixPending.qr_code_base64}`
+      : null
+
+    return (
+      <div className="max-w-lg mx-auto p-6">
+        <h1 className="text-2xl md:text-3xl font-black text-foreground dark:text-white mb-2">
+          Pague com PIX
+        </h1>
+        <p className="text-text-secondary mb-6">
+          Escaneie o QR Code ou copie o código. Liberamos o roteiro assim que o Mercado Pago confirmar o pagamento.
+        </p>
+
+        {qrSrc && (
+          <div className="flex justify-center mb-6">
+            <img src={qrSrc} alt="QR Code PIX" className="w-56 h-56 bg-white rounded-xl p-2" />
+          </div>
+        )}
+
+        {pixPending.qr_code && (
+          <div className="mb-6">
+            <p className="text-sm font-medium text-foreground dark:text-white mb-2">Código copia e cola</p>
+            <textarea
+              readOnly
+              value={pixPending.qr_code}
+              className="w-full text-xs p-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-card-dark text-foreground dark:text-white"
+              rows={4}
+            />
+            <Button
+              className="w-full mt-3 rounded-full font-bold"
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(pixPending.qr_code)
+                  setPollHint('Código PIX copiado.')
+                } catch {
+                  setPollHint('Selecione o código e copie manualmente.')
+                }
+              }}
+            >
+              Copiar código PIX
+            </Button>
+          </div>
+        )}
+
+        {pixPending.ticket_url && !qrSrc && (
+          <a
+            href={pixPending.ticket_url}
+            target="_blank"
+            rel="noreferrer"
+            className="block text-center text-primary font-semibold underline mb-6"
+          >
+            Abrir página de pagamento PIX
+          </a>
+        )}
+
+        {pollHint && (
+          <p className="text-sm text-text-secondary mb-4 flex items-center gap-2">
+            <Icon name="hourglass_empty" className="text-primary" />
+            {pollHint}
+          </p>
+        )}
+
+        {error && (
+          <div className="mb-4 p-3 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
+        <Button
+          variant="secondary"
+          className="w-full"
+          disabled={loading}
+          onClick={() => {
+            clearPoll()
+            setPixPending(null)
+            setPollHint(null)
+            setError(null)
+            setShowBrick(true)
+          }}
+        >
+          Escolher outro método
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-lg mx-auto p-6">
