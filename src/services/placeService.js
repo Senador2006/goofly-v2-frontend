@@ -15,6 +15,7 @@ function unwrapDiscover(res) {
     places,
     totalLikes: meta.totalLikes ?? summary.likesCount ?? 0,
     placesSource: meta.placesSource ?? null,
+    tdvLimit: meta.tdvLimit ?? null,
     likedPlaces: summary.likedPlaces ?? [],
     dislikedPlaces: summary.dislikedPlaces ?? [],
   }
@@ -71,10 +72,33 @@ export const placeService = {
 
   skip: (tripId, place) => api.post('/places/skip', { tripId, place }),
 
-  cacheSkippedPlaces: (tripId, places) =>
-    api.post('/places/discover/cache-skipped', { tripId, places }),
+  cacheSkippedPlaces: (tripId, places, requestConfig = {}) => {
+    const body = { tripId, places }
+    // pagehide/unmount: keepalive garante que o POST sobreviva à navegação.
+    if (requestConfig.keepalive && typeof fetch === 'function') {
+      const base = String(api.defaults?.baseURL || '').replace(/\/$/, '')
+      const url = `${base}/places/discover/cache-skipped`
+      return fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      }).then(() => ({ success: true }), () => ({ success: false }))
+    }
+    return api.post('/places/discover/cache-skipped', body, requestConfig)
+  },
 
-  getTdvSummary: (tripId) => api.get('/places/tdv-summary', { params: { tripId } }),
+  getTdvSummary: (tripId) =>
+    api.get('/places/tdv-summary', { params: { tripId } }).then((res) => {
+      const data = res.body?.data || {}
+      return {
+        likedPlaces: data.likedPlaces ?? [],
+        dislikedPlaces: data.dislikedPlaces ?? [],
+        likesCount: data.likesCount ?? data.likedPlaces?.length ?? 0,
+        dislikesCount: data.dislikesCount ?? data.dislikedPlaces?.length ?? 0,
+      }
+    }),
 
   getRecommendationsFree: (payload) =>
     api.post('/places/recommendations/free', payload).then((res) => res.body.data || []),

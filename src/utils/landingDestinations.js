@@ -20,7 +20,6 @@ export const heroDestinations = [
     img: u('photo-1537996194471-e657df975ab4'),
   },
 ]
-
 export const offers = [
   {
     city: 'Lisboa, Portugal',
@@ -51,3 +50,4 @@ export const offers = [
     img: u('photo-1663001899005-a76fd718e2bf'),
   },
 ]
+

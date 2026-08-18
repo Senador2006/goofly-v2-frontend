@@ -29,7 +29,7 @@ export function LandingOffers() {
             <Link
               key={o.city}
               to="/register"
-              className="group block rounded-2xl overflow-hidden bg-white border border-border-light hover:-translate-y-1.5 hover:border-primary/40 hover:shadow-md transition-all"
+              className="group block rounded-2xl overflow-hidden bg-white border border-foreground/10 hover:-translate-y-1.5 hover:shadow-lg hover:border-transparent transition-all"
             >
               <div className="aspect-[4/3] overflow-hidden bg-background-light">
                 <img
@@ -40,12 +40,12 @@ export function LandingOffers() {
                 />
               </div>
               <div className="p-4">
-                <span className="inline-block mb-2 px-2.5 py-0.5 text-[0.7rem] font-bold rounded-full bg-primary/20 text-foreground border border-primary/40">
+                <span className="inline-block mb-2 px-2.5 py-0.5 text-[0.7rem] font-bold rounded-full bg-primary/15 text-foreground border border-primary/40">
                   {o.badge}
                 </span>
                 <div className="font-bold text-base text-foreground">{o.city}</div>
                 <div className="text-xs text-text-secondary mt-0.5 mb-2">{o.detail}</div>
-                {o.price !== '\n' && (
+                {o.price && o.price !== '\n' && (
                   <div className="text-base font-bold text-foreground">
                     <span className="text-xs font-normal text-text-secondary mr-1">a partir de</span>
                     {o.price}

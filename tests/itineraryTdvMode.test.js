@@ -13,6 +13,13 @@ const indexCssSource = readFileSync(
   'utf8'
 )
 
+test('Itinerary: TDV permanece montado na planning (hidden fora da aba)', () => {
+  assert.match(itinerarySource, /\{isPlanning \? \(/)
+  assert.match(itinerarySource, /mode === MODE_TDV \? '' : 'hidden'/)
+  assert.match(itinerarySource, /aria-hidden=\{mode !== MODE_TDV\}/)
+  assert.doesNotMatch(itinerarySource, /isPlanning && mode === MODE_TDV \?/)
+})
+
 test('Itinerary: planejamento com TDV e confirmação de apagar fora do header', () => {
   assert.match(itinerarySource, /MODE_TDV/)
   assert.match(itinerarySource, /<DeletePlanningOverlay/)

@@ -10,6 +10,9 @@ import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremi
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
 import { FinalizeItineraryOverlay } from '../components/itinerary/FinalizeItineraryOverlay'
+import { RoteiroModifyPanel } from '../components/itinerary/RoteiroModifyPanel'
+import { RoteiroModifyActivityRow } from '../components/itinerary/RoteiroModifyActivityRow'
+import { ItineraryModeTabs } from '../components/itinerary/ItineraryModeTabs'
 import {
   ItineraryDayMap,
   clearItineraryRouteCache,
@@ -26,10 +29,13 @@ import { ItineraryDragGhost } from '../components/itinerary/ItineraryDragGhost'
 import { RoteiroDragOverlay } from '../components/itinerary/RoteiroDragOverlay'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
+import { placeService } from '../services/placeService'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useRoteiroDragReorder } from '../hooks/useRoteiroDragReorder'
 import { useRoteiroDaySwap } from '../hooks/useRoteiroDaySwap'
+import { useRoteiroLikeReplace } from '../hooks/useRoteiroLikeReplace'
+import { useT } from '../i18n'
 import {
   assignActivityToDay,
   buildDateToDayMap,
@@ -39,6 +45,11 @@ import {
   sortDayActivities,
   swapActivitiesBetweenDays,
 } from '../utils/itineraryDayHelpers'
+import {
+  applyRoteiroScheduleEdit,
+  applyRoteiroScheduleReorder,
+  isScheduleTimePatch,
+} from '../utils/roteiroScheduleContract'
 import { resolveAccommodationsForDay } from '../utils/accommodationDayResolver'
 import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
 import {
@@ -55,6 +66,10 @@ import {
 } from '../utils/finalizeTdvSession'
 
 const MODE_ROTEIRO = 'roteiro'
+const MODE_TDV = 'tdv'
+const MODE_DOCUMENTOS = 'documentos'
+/** Deve bater com `transition` em `.tdv-overlay-panel` (index.css). */
+const TDV_OVERLAY_MS = 420
 
 /** Congela índice e isLast dos cards durante animação de reorder. */
 function captureDayFrozenLayout(dayActs, premiumHiddenCount) {
@@ -69,8 +84,6 @@ function captureDayFrozenLayout(dayActs, premiumHiddenCount) {
   })
   return { indices, isLast }
 }
-const MODE_TDV = 'tdv'
-const MODE_DOCUMENTOS = 'documentos'
 
 function activityStableId(act) {
   const id = act?.id ?? act?.placeId ?? act?.place_id
@@ -239,6 +252,7 @@ export function Itinerary() {
   const { refreshUser } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const { isAdmin } = useAuth()
+  const t = useT()
   const [trip, setTrip] = useState(null)
   const [itinerary, setItinerary] = useState(null)
   const [selectedDay, setSelectedDay] = useState(1)
@@ -262,8 +276,19 @@ export function Itinerary() {
     () => readShowAccommodationRoutesPreference(),
   )
   const [trackedStopId, setTrackedStopId] = useState(null)
+  const [tdvOverlayOpen, setTdvOverlayOpen] = useState(false)
+  const [tdvOverlayAnimIn, setTdvOverlayAnimIn] = useState(false)
+  /** Monta o TinderView depois do 1º frame do slide — evita engasgo no arranque. */
+  const [tdvOverlayContentReady, setTdvOverlayContentReady] = useState(false)
+  /** Destino da aba ao fechar o overlay (pill muda na hora; mode/conteúdo após a animação). */
+  const [tdvOverlayExitTo, setTdvOverlayExitTo] = useState(null)
+  const [tdvLockHint, setTdvLockHint] = useState(null)
   const deleteInFlightRef = useRef(false)
   const finalizeInFlightRef = useRef(false)
+  const tdvOverlayCloseTimerRef = useRef(null)
+  const tdvOverlayContentTimerRef = useRef(null)
+  const tdvOverlayPanelRef = useRef(null)
+  const tdvOverlayOpenRef = useRef(false)
   const stopCardRefs = useRef(new Map())
   const dayChipRefs = useRef(new Map())
   const dayChipsScrollRef = useRef(null)
@@ -281,6 +306,9 @@ export function Itinerary() {
 
   const isPlanning = trip?.status === 'planejando'
   const hasFullAccess = hasItineraryFullAccess(itinerary, trip)
+  const tdvTabLocked = Boolean(trip) && !isPlanning && !hasFullAccess
+  const tdvAsOverlay = Boolean(trip) && !isPlanning && hasFullAccess
+  const tdvUiActive = (isPlanning && mode === MODE_TDV) || tdvOverlayOpen
 
   const handleDeletePlanning = async () => {
     if (deleteInFlightRef.current) return
@@ -345,10 +373,54 @@ export function Itinerary() {
   }, [tripId, refetchItineraryImmediate])
 
   useEffect(() => {
+    // Em planejamento, TDV é aba irmã. Pós-gerar sem unlock, força sair do mode TDV.
+    // Pós-unlock usa overlay (`tdvOverlayOpen`), não MODE_TDV.
     if (!isPlanning && mode === MODE_TDV) {
       setMode(MODE_ROTEIRO)
     }
   }, [isPlanning, mode])
+
+  useLayoutEffect(() => {
+    tdvOverlayOpenRef.current = tdvOverlayOpen
+    if (tdvOverlayContentTimerRef.current) {
+      clearTimeout(tdvOverlayContentTimerRef.current)
+      tdvOverlayContentTimerRef.current = null
+    }
+    if (!tdvOverlayOpen) {
+      setTdvOverlayAnimIn(false)
+      setTdvOverlayContentReady(false)
+      return undefined
+    }
+    // Shell leve primeiro; conteúdo pesado depois do slide começar.
+    setTdvOverlayAnimIn(false)
+    setTdvOverlayContentReady(false)
+    const panel = tdvOverlayPanelRef.current
+    if (panel) {
+      panel.style.willChange = 'transform'
+      void panel.offsetHeight
+    }
+    const id = requestAnimationFrame(() => {
+      setTdvOverlayAnimIn(true)
+      tdvOverlayContentTimerRef.current = setTimeout(() => {
+        setTdvOverlayContentReady(true)
+        tdvOverlayContentTimerRef.current = null
+      }, 64)
+    })
+    return () => {
+      cancelAnimationFrame(id)
+      if (tdvOverlayContentTimerRef.current) {
+        clearTimeout(tdvOverlayContentTimerRef.current)
+        tdvOverlayContentTimerRef.current = null
+      }
+    }
+  }, [tdvOverlayOpen])
+
+  useEffect(() => {
+    return () => {
+      if (tdvOverlayCloseTimerRef.current) clearTimeout(tdvOverlayCloseTimerRef.current)
+      if (tdvOverlayContentTimerRef.current) clearTimeout(tdvOverlayContentTimerRef.current)
+    }
+  }, [])
 
   // Mobile TDV: trava scroll do Layout e remove padding — card fica entre abas e MobileNav
   useEffect(() => {
@@ -357,7 +429,7 @@ export function Itinerary() {
 
     const mq = window.matchMedia('(max-width: 1023px)')
     const sync = () => {
-      if (mode === MODE_TDV && mq.matches) main.classList.add('tdv-mobile-lock')
+      if (tdvUiActive && mq.matches) main.classList.add('tdv-mobile-lock')
       else main.classList.remove('tdv-mobile-lock')
     }
     sync()
@@ -366,10 +438,13 @@ export function Itinerary() {
       mq.removeEventListener('change', sync)
       main.classList.remove('tdv-mobile-lock')
     }
-  }, [mode])
+  }, [tdvUiActive])
+
+  const unlockedFlag = searchParams.get('unlocked')
+  const tdvTabFlag = searchParams.get('tab')
 
   useEffect(() => {
-    if (searchParams.get('unlocked') !== '1' || !tripId) return
+    if (unlockedFlag !== '1' || !tripId) return
     let cancelled = false
     ;(async () => {
       await refreshUser().catch(() => null)
@@ -378,25 +453,67 @@ export function Itinerary() {
       if (tripData) setTrip(tripData)
       await refetchItineraryImmediate()
       if (cancelled) return
-      const next = new URLSearchParams(searchParams)
-      next.delete('unlocked')
-      setSearchParams(next, { replace: true })
+      // Remove só `unlocked` via updater — evita loop se searchParams oscilar.
+      setSearchParams(
+        (prev) => {
+          if (prev.get('unlocked') !== '1') return prev
+          const next = new URLSearchParams(prev)
+          next.delete('unlocked')
+          return next
+        },
+        { replace: true }
+      )
     })()
     return () => {
       cancelled = true
     }
-  }, [searchParams, setSearchParams, tripId, refetchItineraryImmediate, refreshUser])
+  }, [tripId, unlockedFlag, refetchItineraryImmediate, refreshUser, setSearchParams])
 
-  /** Deep link da criação de viagem (/trips/new): abrir direto na aba TDV quando ainda está em planejamento. */
+  /** Deep link: abrir TDV em planejamento (aba) ou pós-unlock (overlay). */
   useEffect(() => {
-    if (searchParams.get('tab') !== 'tdv' || !trip) return
+    if (tdvTabFlag !== 'tdv' || !trip) return
+
+    const clearTabParam = () => {
+      setSearchParams(
+        (prev) => {
+          if (prev.get('tab') !== 'tdv') return prev
+          const next = new URLSearchParams(prev)
+          next.delete('tab')
+          return next
+        },
+        { replace: true },
+      )
+    }
+
     if (trip.status === 'planejando') {
       setMode(MODE_TDV)
+      clearTabParam()
+      return
     }
-    const next = new URLSearchParams(searchParams)
-    next.delete('tab')
-    setSearchParams(next, { replace: true })
-  }, [trip, searchParams, setSearchParams])
+
+    // Pós-gerar: só abre overlay quando o unlock já refletiu no trip/itinerary
+    // (evita apagar ?tab=tdv na corrida com ?unlocked=1).
+    const unlocked =
+      unlockedFlag === '1' ||
+      hasItineraryFullAccess(itinerary, trip) ||
+      Boolean(trip.planning_unlocked_at || trip.planningUnlockedAt)
+
+    if (!unlocked) return
+
+    setMode(MODE_ROTEIRO)
+    setTdvOverlayOpen(true)
+    clearTabParam()
+  }, [
+    trip?.id,
+    trip?.status,
+    trip?.planning_unlocked_at,
+    trip?.planningUnlockedAt,
+    tdvTabFlag,
+    unlockedFlag,
+    setSearchParams,
+    trip,
+    itinerary,
+  ])
 
   const handleAdminUnlock = async () => {
     if (!tripId) return
@@ -462,6 +579,57 @@ export function Itinerary() {
       setFinalizingTdv(false)
     }
   }, [tripId, applyFinalizeSuccess])
+
+  const requestFinalizeTdv = useCallback(() => {
+    if (!hasFullAccess) {
+      const ok = globalThis.confirm?.(t('tdv.lock_warn_body'))
+      if (!ok) return
+    }
+    handleFinalizeTdv()
+  }, [hasFullAccess, handleFinalizeTdv, t])
+
+  const closeTdvOverlay = useCallback((exitTo = 'roteiro', options = {}) => {
+    if (!tdvOverlayOpenRef.current) return
+    const target = exitTo === 'documentos' ? 'documentos' : 'roteiro'
+    const skipFollowUp = Boolean(options?.skipFollowUp)
+    // 1º: começa o slide (CSS). 2º frame: chrome/pill — evita pico de layout no arranque.
+    setTdvOverlayAnimIn(false)
+    setTdvOverlayContentReady(false)
+    const panel = tdvOverlayPanelRef.current
+    if (panel) panel.style.willChange = 'transform'
+    requestAnimationFrame(() => {
+      setTdvOverlayExitTo(skipFollowUp ? null : target)
+    })
+    if (tdvOverlayCloseTimerRef.current) clearTimeout(tdvOverlayCloseTimerRef.current)
+    tdvOverlayCloseTimerRef.current = setTimeout(() => {
+      setTdvOverlayOpen(false)
+      setTdvOverlayExitTo(null)
+      tdvOverlayCloseTimerRef.current = null
+      if (panel) panel.style.willChange = ''
+      if (skipFollowUp) return
+      if (target === 'documentos') {
+        setMode(MODE_DOCUMENTOS)
+      } else {
+        setMode(MODE_ROTEIRO)
+        if (!isPlanning) refetchItineraryImmediate()
+      }
+    }, TDV_OVERLAY_MS)
+  }, [isPlanning, refetchItineraryImmediate])
+
+  const openTdvOverlay = useCallback(() => {
+    if (tdvOverlayCloseTimerRef.current) {
+      clearTimeout(tdvOverlayCloseTimerRef.current)
+      tdvOverlayCloseTimerRef.current = null
+    }
+    if (tdvOverlayContentTimerRef.current) {
+      clearTimeout(tdvOverlayContentTimerRef.current)
+      tdvOverlayContentTimerRef.current = null
+    }
+    setTdvOverlayExitTo(null)
+    setTdvOverlayContentReady(false)
+    setTdvOverlayAnimIn(false)
+    setTdvOverlayOpen(true)
+  }, [])
 
   /**
    * Pós-refresh: o POST original não existe mais no browser, mas o backend pode
@@ -537,11 +705,18 @@ export function Itinerary() {
 
   const dateToDayMap = useMemo(() => buildDateToDayMap(trip), [trip])
 
+  const likeReplace = useRoteiroLikeReplace({
+    dateToDayMap,
+    selectedDay,
+  })
+
   const dragListContext = useMemo(() => {
     const acts =
       roteiroEditOpen && Array.isArray(draftActivities)
         ? draftActivities
-        : itinerary?.activities || []
+        : likeReplace.open && Array.isArray(likeReplace.draftActivities)
+          ? likeReplace.draftActivities
+          : itinerary?.activities || []
     const tripDayCount = getTripDayCount(trip)
     const chronologicalDays = Array.from({ length: tripDayCount }, (_, i) => i + 1)
     const numericDaysFromActs = [
@@ -558,7 +733,16 @@ export function Itinerary() {
       acts.filter((a) => getActivityDayNumber(a, dateToDayMap) === effectiveDay),
     )
     return { dayNum: effectiveDay, dayActivities: dayActs }
-  }, [roteiroEditOpen, draftActivities, itinerary, trip, selectedDay, dateToDayMap])
+  }, [
+    roteiroEditOpen,
+    draftActivities,
+    likeReplace.open,
+    likeReplace.draftActivities,
+    itinerary,
+    trip,
+    selectedDay,
+    dateToDayMap,
+  ])
 
   const dragReorder = useRoteiroDragReorder({
     enabled: roteiroEditOpen && !loading && Boolean(trip),
@@ -599,9 +783,19 @@ export function Itinerary() {
     const acts =
       roteiroEditOpen && Array.isArray(draftActivities)
         ? draftActivities
-        : itinerary?.activities || []
+        : likeReplace.open && Array.isArray(likeReplace.draftActivities)
+          ? likeReplace.draftActivities
+          : itinerary?.activities || []
     return computeDaysList(acts, dateToDayMap, trip)
-  }, [roteiroEditOpen, draftActivities, itinerary, trip, dateToDayMap])
+  }, [
+    roteiroEditOpen,
+    draftActivities,
+    likeReplace.open,
+    likeReplace.draftActivities,
+    itinerary,
+    trip,
+    dateToDayMap,
+  ])
 
   const daySwap = useRoteiroDaySwap({
     enabled: roteiroEditOpen && !loading && Boolean(trip) && hasFullAccess,
@@ -782,7 +976,11 @@ export function Itinerary() {
   const destLabel = firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Viagem'
   const persistedActivities = itinerary?.activities || []
   const activities =
-    roteiroEditOpen && Array.isArray(draftActivities) ? draftActivities : persistedActivities
+    roteiroEditOpen && Array.isArray(draftActivities)
+      ? draftActivities
+      : likeReplace.open && Array.isArray(likeReplace.draftActivities)
+        ? likeReplace.draftActivities
+        : persistedActivities
   const premiumRestriction = itinerary?._premiumRestriction
     ? normalizedPremiumRestriction(itinerary._premiumRestriction)
     : null
@@ -842,13 +1040,21 @@ export function Itinerary() {
   const showRoteiroSidebar = mode === MODE_ROTEIRO
 
   const roteiroEditAllowed =
-    showRoteiroSidebar && !isPlanning && hasFullAccess && persistedActivities.length > 0
+    showRoteiroSidebar &&
+    !isPlanning &&
+    hasFullAccess &&
+    persistedActivities.length > 0 &&
+    !likeReplace.open
 
   const canPrintItinerary =
-    showRoteiroSidebar && !isPlanning && !roteiroEditOpen && persistedActivities.length > 0
+    showRoteiroSidebar &&
+    !isPlanning &&
+    !roteiroEditOpen &&
+    !likeReplace.open &&
+    persistedActivities.length > 0
 
   const handlePrintItinerary = () => {
-    if (roteiroEditOpen) return
+    if (roteiroEditOpen || likeReplace.open) return
     globalThis.print?.()
   }
 
@@ -865,6 +1071,8 @@ export function Itinerary() {
   }
 
   const handleStartRoteiroEdit = () => {
+    if (likeReplace.open) likeReplace.cancel()
+    closeTdvOverlay('roteiro', { skipFollowUp: true })
     setDraftActivities(ensureActivitiesHaveStableIds([...persistedActivities]))
     setRoteiroEditOpen(true)
     setError(null)
@@ -888,6 +1096,48 @@ export function Itinerary() {
       setError(err.response?.body?.error?.message || err.response?.data?.error?.message || 'Não foi possível salvar o roteiro.')
     } finally {
       setSavingRoteiro(false)
+    }
+  }
+
+  const handleStartModifyRoteiro = async (likesFromTdv) => {
+    if (roteiroEditOpen) handleCancelRoteiroEdit()
+    closeTdvOverlay('roteiro', { skipFollowUp: true })
+    setMode(MODE_ROTEIRO)
+    let likes = Array.isArray(likesFromTdv) ? likesFromTdv : []
+    if (likes.length === 0 && tripId) {
+      try {
+        const summary = await placeService.getTdvSummary(tripId)
+        likes = summary.likedPlaces || []
+      } catch {
+        likes = []
+      }
+    }
+    likeReplace.start(ensureActivitiesHaveStableIds([...persistedActivities]), likes)
+    setError(null)
+  }
+
+  const handleConcludeModifyRoteiro = async () => {
+    if (!tripId || !likeReplace.draftActivities) return
+    likeReplace.setSaving(true)
+    setError(null)
+    try {
+      const normalized = normalizeActivitiesForPersist(
+        likeReplace.draftActivities,
+        dateToDayMap,
+        effectiveSelectedDay,
+      )
+      const nextIt = await tripService.updateItinerary(tripId, { activities: normalized })
+      clearItineraryRouteCache(tripId)
+      setItinerary(nextIt)
+      likeReplace.cancel()
+    } catch (err) {
+      setError(
+        err.response?.body?.error?.message ||
+          err.response?.data?.error?.message ||
+          'Não foi possível salvar o roteiro.',
+      )
+    } finally {
+      likeReplace.setSaving(false)
     }
   }
 
@@ -920,6 +1170,10 @@ export function Itinerary() {
 
   const guardedSwitchModeFromRoteiro = (nextMode) => {
     if (finalizingTdv) return
+    if (likeReplace.open) {
+      setTdvLockHint('Conclua ou cancele a modificação do roteiro antes de mudar de aba.')
+      return
+    }
     if (!roteiroEditOpen) {
       setMode(nextMode)
       return
@@ -930,102 +1184,98 @@ export function Itinerary() {
     ) {
       handleCancelRoteiroEdit()
       setMode(nextMode)
-      return
     }
   }
 
+  const openTdvTab = () => {
+    setTdvLockHint(null)
+    if (finalizingTdv) return
+    if (tdvTabLocked) {
+      setTdvLockHint(t('tdv.lock_tab_hint'))
+      return
+    }
+    if (likeReplace.open) {
+      setTdvLockHint('Conclua ou cancele a modificação do roteiro antes de abrir o TDV.')
+      return
+    }
+    if (tdvAsOverlay) {
+      if (roteiroEditOpen) {
+        if (
+          !globalThis.confirm(
+            'Tem alterações não salvas neste roteiro. Mudar mesmo assim e descartá-las?',
+          )
+        ) {
+          return
+        }
+        handleCancelRoteiroEdit()
+      }
+      openTdvOverlay()
+      return
+    }
+    guardedSwitchModeFromRoteiro(MODE_TDV)
+  }
+
+  const tdvTabActive = (isPlanning && mode === MODE_TDV) || (tdvAsOverlay && tdvOverlayOpen && !tdvOverlayExitTo)
+
+  const activeModeTab =
+    tdvOverlayExitTo === 'documentos'
+      ? 'documentos'
+      : tdvOverlayExitTo === 'roteiro'
+        ? 'roteiro'
+        : tdvTabActive
+          ? 'tdv'
+          : mode === MODE_DOCUMENTOS
+            ? 'documentos'
+            : mode === MODE_TDV
+              ? 'tdv'
+              : 'roteiro'
+
+  const handleModeTabRoteiro = () => {
+    if (finalizingTdv) return
+    if (tdvAsOverlay && tdvOverlayOpen) {
+      closeTdvOverlay('roteiro')
+      return
+    }
+    setMode(MODE_ROTEIRO)
+    if (!isPlanning) refetchItineraryImmediate()
+  }
+
+  const handleModeTabDocumentos = () => {
+    if (finalizingTdv) return
+    if (tdvAsOverlay && tdvOverlayOpen) {
+      if (likeReplace.open) {
+        setTdvLockHint('Conclua ou cancele a modificação do roteiro antes de mudar de aba.')
+        return
+      }
+      if (roteiroEditOpen) {
+        if (
+          !globalThis.confirm(
+            'Tem alterações não salvas neste roteiro. Mudar mesmo assim e descartá-las?',
+          )
+        ) {
+          return
+        }
+        handleCancelRoteiroEdit()
+      }
+      closeTdvOverlay('documentos')
+      return
+    }
+    guardedSwitchModeFromRoteiro(MODE_DOCUMENTOS)
+  }
+
   const modeTabs = (
-    <div
-      className={`flex w-fit max-w-full flex-nowrap items-center gap-1.5 rounded-2xl border border-zinc-200/80 bg-zinc-100/90 p-1 dark:border-white/[0.08] dark:bg-white/[0.06] sm:gap-2 ${
-        finalizingTdv ? 'pointer-events-none opacity-60' : ''
-      }`}
-      aria-disabled={finalizingTdv || undefined}
-    >
-      {isPlanning ? (
-        <>
-          <button
-            type="button"
-            disabled={finalizingTdv}
-            onClick={() => setMode(MODE_ROTEIRO)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all disabled:cursor-not-allowed ${
-              mode === MODE_ROTEIRO
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            Roteiro
-          </button>
-          <button
-            type="button"
-            disabled={finalizingTdv}
-            onClick={() => guardedSwitchModeFromRoteiro(MODE_TDV)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all disabled:cursor-not-allowed ${
-              mode === MODE_TDV
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            TDV
-          </button>
-          <button
-            type="button"
-            disabled={finalizingTdv}
-            onClick={() => guardedSwitchModeFromRoteiro(MODE_DOCUMENTOS)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all disabled:cursor-not-allowed ${
-              mode === MODE_DOCUMENTOS
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            <Icon name="folder_shared" className="text-sm" />
-            <span className="hidden sm:inline">Documentos</span>
-            <span className="sm:hidden">Docs</span>
-            {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
-          </button>
-          {/* Mobile: lixeira na mesma fileira das abas — libera a faixa abaixo para o card TDV */}
-          <button
-            type="button"
-            disabled={finalizingTdv}
-            onClick={() => setShowDeleteConfirm(true)}
-            aria-label="Apagar planejamento"
-            title="Apagar planejamento"
-            className="flex items-center justify-center rounded-xl px-2.5 py-2 text-red-600 transition-all hover:bg-red-500/10 disabled:cursor-not-allowed dark:text-red-400 lg:hidden"
-          >
-            <Icon name="delete" className="text-base" />
-          </button>
-        </>
-      ) : (
-        <>
-          <button
-            type="button"
-            onClick={() => {
-              setMode(MODE_ROTEIRO)
-              refetchItineraryImmediate()
-            }}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-              mode === MODE_ROTEIRO
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            Roteiro
-          </button>
-          <button
-            type="button"
-            onClick={() => guardedSwitchModeFromRoteiro(MODE_DOCUMENTOS)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all ${
-              mode === MODE_DOCUMENTOS
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            <Icon name="folder_shared" className="text-sm" />
-            Docs
-            {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
-          </button>
-        </>
-      )}
-    </div>
+    <ItineraryModeTabs
+      activeTab={activeModeTab}
+      onRoteiro={handleModeTabRoteiro}
+      onTdv={openTdvTab}
+      onDocumentos={handleModeTabDocumentos}
+      tdvLocked={tdvTabLocked}
+      tdvLockTitle={t('tdv.lock_tab_hint')}
+      finalizing={finalizingTdv}
+      hasFullAccess={hasFullAccess}
+      isPlanning={isPlanning}
+      onDeletePlanning={() => setShowDeleteConfirm(true)}
+    />
   )
 
   const planCompleteBadge = hasFullAccess && !isPlanning ? (
@@ -1052,21 +1302,22 @@ export function Itinerary() {
     <>
     <div
       className={`print:hidden flex flex-col min-h-0 bg-background-light/50 dark:bg-background-dark/30 ${
-        mode === MODE_TDV
-          ? // Mobile: preenche o main travado; pb reserva a MobileNav. Desktop: full-bleed habitual.
+        tdvUiActive
+          ? // Mobile: preenche o main travado; pb reserva a MobileNav. Desktop: full-bleed.
             'flex h-full min-h-0 flex-1 flex-col overflow-hidden max-lg:pb-[var(--goofly-mobile-nav-height,0px)] lg:h-[100dvh] lg:-mx-12 lg:-my-8'
-          : 'h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8'
+          : // Mesmo bleed do TDV (cancela lg:px-12 / lg:p-8) — sem coluna lateral nem barra inferior.
+            'flex h-[calc(100vh-4rem)] min-h-0 flex-1 flex-col overflow-hidden -m-4 lg:h-[100dvh] lg:-mx-12 lg:-my-8'
       }`}
     >
       {/* Cabeçalho único — evita três colunas competindo por atenção */}
       <header
         className={`flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 ${
-          mode === MODE_TDV ? 'py-2 pb-1.5 lg:py-4 lg:pb-4' : 'py-3 sm:py-4'
+          tdvUiActive ? 'py-2 pb-1.5 lg:py-4 lg:pb-4' : 'py-3 sm:py-4'
         }`}
       >
         <div
           className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary overflow-x-auto no-scrollbar ${
-            mode === MODE_TDV ? 'mb-1 lg:mb-3' : 'mb-2 sm:mb-3'
+            tdvUiActive ? 'mb-1 lg:mb-3' : 'mb-2 sm:mb-3'
           }`}
         >
           <span>Início</span>
@@ -1077,13 +1328,13 @@ export function Itinerary() {
         </div>
         <div
           className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${
-            mode === MODE_TDV ? 'gap-1.5 lg:gap-3' : 'gap-3'
+            tdvUiActive ? 'gap-1.5 lg:gap-3' : 'gap-3'
           }`}
         >
           <div className="min-w-0">
             <h1
               className={`font-black tracking-tight text-[#1c1c0d] dark:text-white leading-tight ${
-                mode === MODE_TDV ? 'text-xl lg:text-3xl' : 'text-xl sm:text-2xl lg:text-3xl'
+                tdvUiActive ? 'text-xl lg:text-3xl' : 'text-xl sm:text-2xl lg:text-3xl'
               }`}
             >
               Criador de Roteiros
@@ -1099,113 +1350,163 @@ export function Itinerary() {
               ) : null}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <div className="flex min-w-0 items-center gap-2">
-              {modeTabs}
-              {roteiroEditOpen ? planCompleteBadge : null}
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
+            <div className="itinerary-header-mode-cluster">
+              <div className="itinerary-header-tabs">
+                {modeTabs}
+                {planCompleteBadge}
+              </div>
+              <div
+                className={`itinerary-header-actions ${
+                  !tdvOverlayOpen || tdvOverlayExitTo ? 'itinerary-header-actions--open' : ''
+                }`}
+                aria-hidden={tdvOverlayOpen && !tdvOverlayExitTo ? true : undefined}
+              >
+                {canPrintItinerary ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl shrink-0 font-bold"
+                    onClick={handlePrintItinerary}
+                    type="button"
+                    tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
+                    title="Abrir diálogo de impressão — escolha «Salvar como PDF» para exportar"
+                  >
+                    <Icon name="picture_as_pdf" />
+                    <span className="hidden sm:inline">Exportar PDF</span>
+                    <span className="sm:hidden">PDF</span>
+                  </Button>
+                ) : null}
+                {roteiroEditAllowed ? (
+                  !roteiroEditOpen ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-xl shrink-0 font-bold"
+                      onClick={handleStartRoteiroEdit}
+                      type="button"
+                      tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
+                    >
+                      <Icon name="edit" />
+                      <span className="hidden sm:inline">Editar roteiro</span>
+                      <span className="sm:hidden">Editar</span>
+                    </Button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 max-w-[min(18rem,100%)] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-primary/20 text-[#45340a] dark:text-primary border border-primary/40 leading-tight text-center shrink-0 whitespace-nowrap">
+                      <Icon name="edit_note" aria-hidden />
+                      Editando — guarde ou cancele antes de mudar de aba
+                    </span>
+                  )
+                ) : null}
+                {likeReplace.open ? (
+                  <span className="inline-flex items-center gap-1.5 max-w-[min(18rem,100%)] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-amber-500/15 text-[#5c4810] dark:text-primary border border-amber-500/35 leading-tight text-center shrink-0 whitespace-nowrap">
+                    <Icon name="swap_horiz" aria-hidden />
+                    Modificando com curtidas
+                  </span>
+                ) : null}
+                {!isPlanning && !hasFullAccess && activities.length > 0 ? (
+                  <Link
+                    to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}
+                    tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
+                    className="shrink-0"
+                  >
+                    <Button size="sm" className="rounded-xl shrink-0">
+                      <Icon name="workspace_premium" />
+                      <span className="hidden sm:inline">Roteiro completo</span>
+                    </Button>
+                  </Link>
+                ) : null}
+                {isPlanning ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={finalizingTdv}
+                    tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
+                    aria-label="Apagar planejamento"
+                    title="Apagar planejamento"
+                    className="hidden shrink-0 rounded-xl border border-red-200 bg-red-50 font-bold text-red-700 shadow-none hover:bg-red-100 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/15 lg:inline-flex"
+                  >
+                    <Icon name="delete" />
+                    <span>Apagar</span>
+                  </Button>
+                ) : null}
+              </div>
             </div>
-            {canPrintItinerary ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="rounded-xl shrink-0 font-bold"
-                onClick={handlePrintItinerary}
-                type="button"
-                title="Abrir diálogo de impressão — escolha «Salvar como PDF» para exportar"
-              >
-                <Icon name="picture_as_pdf" />
-                <span className="hidden sm:inline">Exportar PDF</span>
-                <span className="sm:hidden">PDF</span>
-              </Button>
-            ) : null}
-            {roteiroEditAllowed ? (
-              !roteiroEditOpen ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl shrink-0 font-bold"
-                  onClick={handleStartRoteiroEdit}
-                  type="button"
-                >
-                  <Icon name="edit" />
-                  <span className="hidden sm:inline">Editar roteiro</span>
-                  <span className="sm:hidden">Editar</span>
-                </Button>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 max-w-[min(18rem,100%)] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-primary/20 text-[#45340a] dark:text-primary border border-primary/40 leading-tight text-center shrink-0">
-                  <Icon name="edit_note" aria-hidden />
-                  Editando — guarde ou cancele antes de mudar de aba
-                </span>
-              )
-            ) : null}
-            {hasFullAccess && !isPlanning && !roteiroEditOpen ? planCompleteBadge : null}
-            {!isPlanning && !hasFullAccess && activities.length > 0 ? (
-              <Link to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}>
-                <Button size="sm" className="rounded-xl shrink-0">
-                  <Icon name="workspace_premium" />
-                  <span className="hidden sm:inline">Roteiro completo</span>
-                </Button>
-              </Link>
-            ) : null}
-            {isPlanning && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={finalizingTdv}
-                aria-label="Apagar planejamento"
-                title="Apagar planejamento"
-                className="hidden shrink-0 rounded-xl border border-red-200 bg-red-50 font-bold text-red-700 shadow-none hover:bg-red-100 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/15 lg:inline-flex"
-              >
-                <Icon name="delete" />
-                <span>Apagar</span>
-              </Button>
-            )}
           </div>
         </div>
-        {showRoteiroSidebar && (
-          <div className="mt-2 pt-1 pb-1 sm:mt-3 sm:pt-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
-            <ItineraryDayChips
-              days={days}
-              selectedDay={effectiveSelectedDay}
-              onSelectDay={handleSelectDay}
-              swapEnabled={roteiroEditOpen && hasFullAccess && !loading}
-              daySwap={{
-                phase: daySwap.phase,
-                isSwapMode: daySwap.isSwapMode,
-                isDragging: daySwap.isDragging,
-                draggingDay: daySwap.draggingDay,
-                pendingDay: daySwap.pendingDay,
-                targetDay: daySwap.targetDay,
-                ghostStyle: daySwap.ghostStyle,
-                focusReady: daySwap.focusReady,
-                onChipPointerDown: onDayChipPointerDown,
-                chipRefs: dayChipRefs,
-                scrollRef: dayChipsScrollRef,
-              }}
-              getDayState={(day) => {
-                const peek =
-                  previewDayMapsReady && premiumRestriction && !hasFullAccess && !isPlanning
-                    ? getPremiumDayTotals(premiumRestriction, day)
-                    : null
-                const dayLockedPremium =
-                  previewDayMapsReady && peek?.totalOnDay > 0 && peek.visibleOnDay === 0
-                const dayPartialPremium =
-                  previewDayMapsReady &&
-                  peek != null &&
-                  peek.totalOnDay > 0 &&
-                  peek.visibleOnDay > 0 &&
-                  peek.totalOnDay > peek.visibleOnDay
-                return {
-                  dayLockedPremium,
-                  dayPartialPremium,
-                  isActive: effectiveSelectedDay === day,
-                }
-              }}
-            />
+        {showRoteiroSidebar ? (
+          <div
+            className={`itinerary-day-chips-slot ${
+              !tdvOverlayOpen || tdvOverlayExitTo === 'roteiro'
+                ? 'itinerary-day-chips-slot--open'
+                : ''
+            }`}
+            aria-hidden={tdvOverlayOpen && tdvOverlayExitTo !== 'roteiro' ? true : undefined}
+          >
+            <div className="itinerary-day-chips-slot__inner">
+              <div className="mt-2 pt-1 pb-1 sm:mt-3 sm:pt-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
+                <ItineraryDayChips
+                  days={days}
+                  selectedDay={effectiveSelectedDay}
+                  onSelectDay={handleSelectDay}
+                  swapEnabled={roteiroEditOpen && hasFullAccess && !loading && !likeReplace.open}
+                  daySwap={{
+                    phase: daySwap.phase,
+                    isSwapMode: daySwap.isSwapMode,
+                    isDragging: daySwap.isDragging,
+                    draggingDay: daySwap.draggingDay,
+                    pendingDay: daySwap.pendingDay,
+                    targetDay: daySwap.targetDay,
+                    ghostStyle: daySwap.ghostStyle,
+                    focusReady: daySwap.focusReady,
+                    onChipPointerDown: onDayChipPointerDown,
+                    chipRefs: dayChipRefs,
+                    scrollRef: dayChipsScrollRef,
+                  }}
+                  getDayState={(day) => {
+                    const peek =
+                      previewDayMapsReady && premiumRestriction && !hasFullAccess && !isPlanning
+                        ? getPremiumDayTotals(premiumRestriction, day)
+                        : null
+                    const dayLockedPremium =
+                      previewDayMapsReady && peek?.totalOnDay > 0 && peek.visibleOnDay === 0
+                    const dayPartialPremium =
+                      previewDayMapsReady &&
+                      peek != null &&
+                      peek.totalOnDay > 0 &&
+                      peek.visibleOnDay > 0 &&
+                      peek.totalOnDay > peek.visibleOnDay
+                    return {
+                      dayLockedPremium,
+                      dayPartialPremium,
+                      isActive: effectiveSelectedDay === day,
+                    }
+                  }}
+                />
+              </div>
+            </div>
           </div>
-        )}
+        ) : null}
       </header>
+
+      {tdvLockHint ? (
+        <div
+          className="flex-shrink-0 px-4 sm:px-6 py-2.5 bg-amber-500/10 border-b border-amber-500/25 text-amber-900 dark:text-amber-200 text-sm flex items-start gap-2"
+          role="status"
+        >
+          <Icon name="lock" className="text-base shrink-0 mt-0.5" aria-hidden />
+          <p className="min-w-0 flex-1 leading-snug">{tdvLockHint}</p>
+          <button
+            type="button"
+            onClick={() => setTdvLockHint(null)}
+            className="shrink-0 p-0.5 rounded-md hover:bg-amber-500/15"
+            aria-label="Fechar aviso"
+          >
+            <Icon name="close" className="text-base" />
+          </button>
+        </div>
+      ) : null}
 
       {finalizeError ? (
         <div
@@ -1226,7 +1527,7 @@ export function Itinerary() {
       ) : null}
 
       <div
-        className={`flex-1 flex min-w-0 min-h-0 overflow-hidden ${
+        className={`flex-1 flex min-w-0 min-h-0 overflow-hidden relative ${
           mode === MODE_ROTEIRO ? 'flex-col lg:flex-row' : ''
         }`}
       >
@@ -1237,7 +1538,9 @@ export function Itinerary() {
               (dragReorder.isOverlayActive ? 'roteiro-list-drag-active z-40 ' : '') +
               (mobileMapOpen ? 'roteiro-mobile-map-open ' : '') +
               (mode === MODE_ROTEIRO
-                ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-10 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
+                ? likeReplace.open
+                  ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
+                  : 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-10 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
                 : 'w-full max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5')
             }
             aria-label="Paradas do dia"
@@ -1251,19 +1554,23 @@ export function Itinerary() {
             >
               {isPlanning ? (
                 <div className="mb-5 rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/[0.08] to-transparent dark:from-primary/15 p-4 sm:p-5">
-                  <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Concluir planejamento</p>
+                  <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">{t('tdv.conclude_title')}</p>
                   <p className="text-xs sm:text-sm text-text-secondary mt-1.5 leading-relaxed">
-                    Gere o roteiro com a IA a partir do formulário da viagem. O TDV (aba ao lado) é opcional para
-                    indicar lugares que prefere.
+                    {t('tdv.conclude_body')}
                   </p>
                   <Button
                     className="mt-4 w-full sm:w-auto rounded-full font-bold"
-                    onClick={handleFinalizeTdv}
+                    onClick={requestFinalizeTdv}
                     disabled={finalizingTdv}
                   >
                     <Icon name="auto_awesome" />
-                    {finalizingTdv ? 'Gerando roteiro…' : 'Gerar roteiro e ativar viagem'}
+                    {finalizingTdv ? t('tdv.finalize_generating') : t('tdv.conclude_cta')}
                   </Button>
+                  {!hasFullAccess ? (
+                    <p className="mt-2 text-[11px] leading-snug text-text-secondary sm:text-xs">
+                      {t('tdv.lock_warn_body')}
+                    </p>
+                  ) : null}
                   {finalizeError ? (
                     <p className="mt-2 text-xs text-red-600 dark:text-red-400 leading-relaxed" role="alert">
                       {finalizeError}
@@ -1306,8 +1613,10 @@ export function Itinerary() {
                   ) : null}
                 </div>
               ) : null}
-              {!isSelectedDayPremiumLockedUi && (roteiroEditOpen || dayActivities.length > 0) ? (
+              {!isSelectedDayPremiumLockedUi &&
+              (roteiroEditOpen || likeReplace.open || dayActivities.length > 0) ? (
                 <div className="relative isolate pb-2">
+                  <div className="min-w-0">
                   {roteiroEditOpen && draftActivities ? (
                     <div className="mb-4 flex flex-col gap-2">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1348,6 +1657,14 @@ export function Itinerary() {
                       </p>
                     </div>
                   ) : null}
+                  {likeReplace.open && dayActivities.length === 0 ? (
+                    <div className="mb-6 rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-text-secondary">
+                      <p className="font-semibold text-[#1c1c0d] dark:text-white">Nenhuma parada neste dia</p>
+                      <p className="text-xs mt-1">
+                        Selecione uma curtida e use «Inserir no dia atual», ou troque de dia nas chips acima.
+                      </p>
+                    </div>
+                  ) : null}
                   <div ref={roteiroCardsListRef} className="relative space-y-0">
                     <ItineraryDragInsertLine
                       top={dragReorder.ghostStyle?.lineTop}
@@ -1362,6 +1679,28 @@ export function Itinerary() {
                         frozen?.isLast && actId in frozen.isLast
                           ? frozen.isLast[actId]
                           : idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0
+
+                      if (likeReplace.open) {
+                        return (
+                          <RoteiroModifyActivityRow
+                            key={String(act.id || `${effectiveSelectedDay}-${idx}`)}
+                            act={act}
+                            index={idx}
+                            isLast={idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0}
+                            swapArmed={Boolean(likeReplace.selectedLike)}
+                            motion={likeReplace.rowMotion?.[String(act.id)] || null}
+                            cardRef={(el) => likeReplace.registerRowCardRef(String(act.id), el)}
+                            onSwap={() => likeReplace.swapWithActivity(act.id)}
+                            onRemove={() => {
+                              if (String(act.id) === String(trackedStopId)) {
+                                setTrackedStopId(null)
+                                trackedFollowRef.current = { id: null, reason: null }
+                              }
+                              likeReplace.removeActivity(act.id)
+                            }}
+                          />
+                        )
+                      }
 
                       return (
                       <ItineraryActivityCard
@@ -1381,11 +1720,28 @@ export function Itinerary() {
                           else stopCardRefs.current.delete(key)
                         }}
                         onDraftPatch={(patch) => {
-                          setDraftActivities((prev) =>
-                            (prev ?? []).map((item) =>
-                              String(item.id) === String(act.id) ? { ...item, ...patch } : item,
-                            ),
-                          )
+                          setDraftActivities((prev) => {
+                            const list = prev ?? []
+                            if (isScheduleTimePatch(patch)) {
+                              const current =
+                                list.find((item) => String(item.id) === String(act.id)) ?? act
+                              const dayNum =
+                                getActivityDayNumber(current, dateToDayMap) ??
+                                effectiveSelectedDay
+                              return applyRoteiroScheduleEdit(
+                                list,
+                                dateToDayMap,
+                                dayNum,
+                                act.id,
+                                patch,
+                              )
+                            }
+                            return list.map((item) =>
+                              String(item.id) === String(act.id)
+                                ? { ...item, ...patch }
+                                : item,
+                            )
+                          })
                         }}
                         onRemove={() => {
                           if (String(act.id) === String(trackedStopId)) {
@@ -1416,12 +1772,18 @@ export function Itinerary() {
                           }
                           setDraftActivities((prev) =>
                             prev
-                              ? reorderActivityInSameDay(
+                              ? applyRoteiroScheduleReorder(
                                   prev,
                                   dateToDayMap,
                                   effectiveSelectedDay,
-                                  act.id,
-                                  -1,
+                                  (list) =>
+                                    reorderActivityInSameDay(
+                                      list,
+                                      dateToDayMap,
+                                      effectiveSelectedDay,
+                                      act.id,
+                                      -1,
+                                    ),
                                 )
                               : prev,
                           )
@@ -1448,12 +1810,18 @@ export function Itinerary() {
                           }
                           setDraftActivities((prev) =>
                             prev
-                              ? reorderActivityInSameDay(
+                              ? applyRoteiroScheduleReorder(
                                   prev,
                                   dateToDayMap,
                                   effectiveSelectedDay,
-                                  act.id,
-                                  1,
+                                  (list) =>
+                                    reorderActivityInSameDay(
+                                      list,
+                                      dateToDayMap,
+                                      effectiveSelectedDay,
+                                      act.id,
+                                      1,
+                                    ),
                                 )
                               : prev,
                           )
@@ -1537,9 +1905,14 @@ export function Itinerary() {
                       </div>
                     </>
                   ) : null}
+                  </div>
                 </div>
               ) : null}
-              {!isSelectedDayPremiumLockedUi && dayActivities.length === 0 && activities.length > 0 && !roteiroEditOpen ? (
+              {!isSelectedDayPremiumLockedUi &&
+              dayActivities.length === 0 &&
+              activities.length > 0 &&
+              !roteiroEditOpen &&
+              !likeReplace.open ? (
                 <div className="text-center py-10 px-4 text-text-secondary rounded-2xl border border-dashed border-border-light dark:border-border-dark mb-4">
                   <Icon name="event_busy" className="text-4xl mb-3 opacity-40 mx-auto text-primary" />
                   <p className="text-sm font-medium text-[#1c1c0d] dark:text-white">Nenhuma parada neste dia</p>
@@ -1593,7 +1966,7 @@ export function Itinerary() {
                 </Button>
               </div>
             ) : null}
-            {mode === MODE_ROTEIRO ? (
+            {mode === MODE_ROTEIRO && !likeReplace.open ? (
               <ItineraryMobileMapDrawer
                 open={mobileMapOpen}
                 onOpenChange={setMobileMapOpen}
@@ -1616,12 +1989,19 @@ export function Itinerary() {
         <section
           className={`min-w-0 flex flex-col relative overflow-hidden ${
             mode === MODE_ROTEIRO
-              ? 'hidden lg:flex flex-1 min-h-0 bg-gray-200 dark:bg-gray-900/50'
+              ? likeReplace.open
+                ? 'flex max-lg:max-h-[42vh] flex-1 min-h-0 bg-background-light dark:bg-background-dark/40 lg:max-h-none'
+                : 'hidden lg:flex flex-1 min-h-0 bg-gray-200 dark:bg-gray-900/50'
               : 'flex-1 min-h-0'
           }`}
         >
-          {isPlanning && mode === MODE_TDV ? (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {isPlanning ? (
+            <div
+              className={`flex-1 flex flex-col min-h-0 overflow-hidden ${
+                mode === MODE_TDV ? '' : 'hidden'
+              }`}
+              aria-hidden={mode !== MODE_TDV}
+            >
               <TinderView
                 tripId={tripId}
                 trip={trip}
@@ -1629,6 +2009,8 @@ export function Itinerary() {
                 isActive={mode === MODE_TDV}
                 onTdvSatisfied={handleFinalizeTdv}
                 finalizingTdv={finalizingTdv}
+                tdvMode="planning"
+                warnTdvLockOnGenerate={!hasFullAccess}
               />
             </div>
           ) : null}
@@ -1649,7 +2031,23 @@ export function Itinerary() {
               }}
             />
           </div>
-          {mode === MODE_ROTEIRO ? (
+          {mode === MODE_ROTEIRO && likeReplace.open ? (
+            <div className="flex h-full min-h-0 flex-1 flex-col p-3 sm:p-4">
+              <RoteiroModifyPanel
+                availableLikes={likeReplace.availableLikes}
+                selectedLikeId={likeReplace.selectedLikeId}
+                onSelectLike={likeReplace.selectLike}
+                onInsert={likeReplace.insertSelectedLike}
+                onConclude={handleConcludeModifyRoteiro}
+                onCancel={likeReplace.cancel}
+                saving={likeReplace.saving}
+                likeMotion={likeReplace.likeMotion}
+                registerLikeCardRef={likeReplace.registerLikeCardRef}
+                className="h-full min-h-0"
+              />
+            </div>
+          ) : null}
+          {mode === MODE_ROTEIRO && !likeReplace.open ? (
             <div className="roteiro-map-surface relative flex-1 min-h-0 w-full h-full">
               <ItineraryDayMap
                 tripId={tripId}
@@ -1668,6 +2066,32 @@ export function Itinerary() {
             </div>
           ) : null}
         </section>
+
+        {tdvOverlayOpen ? (
+          <div className="tdv-overlay-shell" aria-hidden={!tdvOverlayAnimIn}>
+            <div
+              ref={tdvOverlayPanelRef}
+              className={`tdv-overlay-panel ${tdvOverlayAnimIn ? 'tdv-overlay-panel--open' : ''}`}
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('tdv.title')}
+            >
+              {tdvOverlayContentReady ? (
+                <TinderView
+                  tripId={tripId}
+                  trip={trip}
+                  onItineraryUpdate={refetchItinerary}
+                  isActive={tdvOverlayAnimIn}
+                  onModifyRoteiro={handleStartModifyRoteiro}
+                  onRequestClose={() => closeTdvOverlay('roteiro')}
+                  finalizingTdv={false}
+                  tdvMode="postUnlock"
+                  warnTdvLockOnGenerate={false}
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <DeletePlanningOverlay

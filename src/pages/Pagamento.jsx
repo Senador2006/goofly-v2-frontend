@@ -81,11 +81,29 @@ function hasPixPayload(result) {
   return Boolean(result?.qr_code || result?.qr_code_base64 || result?.ticket_url)
 }
 
+function normalizeBrickSubmit(raw) {
+  // Brick passa { selectedPaymentMethod, formData } — às vezes o próprio formData.
+  const selectedPaymentMethod = raw?.selectedPaymentMethod || raw?.paymentType || null
+  const data = raw?.formData ?? raw
+  let paymentMethodId = data?.payment_method_id
+  if (!paymentMethodId && (selectedPaymentMethod === 'bank_transfer' || selectedPaymentMethod === 'bankTransfer')) {
+    paymentMethodId = 'pix'
+  }
+  return { data, selectedPaymentMethod, paymentMethodId }
+}
+
+function isPixSubmit(paymentMethodId, selectedPaymentMethod, result) {
+  if (hasPixPayload(result)) return true
+  if (String(paymentMethodId || '').toLowerCase() === 'pix') return true
+  return selectedPaymentMethod === 'bank_transfer' || selectedPaymentMethod === 'bankTransfer'
+}
+
 export function Pagamento() {
   useDocumentTitle('Planejamento Completo')
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tripId = normalizeTripId(searchParams.get('tripId'))
+  const fromTdv = searchParams.get('from') === 'tdv'
   const { user, isAdmin } = useAuth()
 
   const [trips, setTrips] = useState([])
@@ -102,6 +120,13 @@ export function Pagamento() {
   const brickControllerRef = useRef(null)
   const isMountedRef = useRef(false)
   const pollTimerRef = useRef(null)
+  /** Evita que o unmount intencional do Brick (ao ir para a tela PIX) vire mensagem de erro. */
+  const suppressBrickErrorRef = useRef(false)
+  const startPixPollingRef = useRef(null)
+  const finishUnlockRef = useRef(null)
+  const tripIdRef = useRef(tripId)
+  const userEmailRef = useRef(user?.email)
+  const planningAmountRef = useRef(null)
 
   const selectedTrip = useMemo(
     () => trips.find((t) => String(t.id) === String(tripId)) ?? null,
@@ -119,6 +144,10 @@ export function Pagamento() {
 
   const planningAmount =
     priceQuote?.amountBrl != null ? Number(priceQuote.amountBrl) : null
+
+  tripIdRef.current = tripId
+  userEmailRef.current = user?.email
+  planningAmountRef.current = planningAmount
 
   const clearPoll = useCallback(() => {
     if (pollTimerRef.current) {
@@ -151,21 +180,24 @@ export function Pagamento() {
       setPixPending(null)
       setPollHint(null)
       setTimeout(() => {
-        navigate(`/trips/${id}/itinerary?unlocked=1`, { replace: true })
+        // Sempre reabre o TDV pós-unlock: aba (planejando) ou overlay (ativa).
+        navigate(`/trips/${id}/itinerary?tab=tdv&unlocked=1`, { replace: true })
       }, 1200)
     },
-    [navigate, planningAmount]
+    [navigate, planningAmount, fromTdv]
   )
 
   const startPixPolling = useCallback(
     (id, pixPayload) => {
       clearPoll()
+      suppressBrickErrorRef.current = true
+      setError(null)
       setPixPending(pixPayload)
       setShowBrick(false)
       setPollHint('Aguardando confirmação do PIX…')
       const startedAt = Date.now()
 
-      pollTimerRef.current = setInterval(async () => {
+      const checkStatus = async () => {
         if (!isMountedRef.current) {
           clearPoll()
           return
@@ -207,10 +239,20 @@ export function Pagamento() {
         } catch (err) {
           logger.error('Poll status PIX:', err)
         }
-      }, POLL_INTERVAL_MS)
+      }
+
+      // Primeiro check após 3s — dá tempo de o usuário ver o QR antes de um redirect imediato
+      // se o pagamento já tiver sido confirmado muito rápido.
+      pollTimerRef.current = setInterval(checkStatus, POLL_INTERVAL_MS)
+      setTimeout(() => {
+        if (pollTimerRef.current) checkStatus()
+      }, 3000)
     },
     [clearPoll, finishUnlock]
   )
+
+  startPixPollingRef.current = startPixPolling
+  finishUnlockRef.current = finishUnlock
 
   useEffect(() => {
     let cancelled = false
@@ -290,9 +332,10 @@ export function Pagamento() {
   }
 
   useEffect(() => {
-    if (!showBrick || pixPending) return
+    if (!showBrick) return
 
     let cancelled = false
+    suppressBrickErrorRef.current = false
 
     const mountBrick = async () => {
       try {
@@ -302,7 +345,8 @@ export function Pagamento() {
           throw new Error('A chave pública do Mercado Pago não está configurada.')
         }
 
-        if (planningAmount == null || Number.isNaN(planningAmount)) {
+        const amountNow = planningAmountRef.current
+        if (amountNow == null || Number.isNaN(amountNow)) {
           throw new Error('Preço não disponível. Recarregue a página.')
         }
 
@@ -316,72 +360,89 @@ export function Pagamento() {
 
         const mp = new MercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY)
         const bricksBuilder = mp.bricks()
-        const amountForBrick = Number(planningAmount.toFixed(2))
+        const amountForBrick = Number(Number(amountNow).toFixed(2))
         brickControllerRef.current = await bricksBuilder.create('payment', 'paymentBrick_container', {
           initialization: {
             amount: amountForBrick,
           },
           customization: {
             paymentMethods: {
+              // Crédito + débito. Sem boleto (ticket). PIX via bankTransfer.
               creditCard: 'all',
               debitCard: 'all',
-              bankTransfer: 'all',
+              bankTransfer: ['pix'],
             },
           },
           callbacks: {
             onReady: () => {},
-            onSubmit: async (formData) => {
-              setLoading(true)
-              setError(null)
-              try {
-                const data = formData.formData ?? formData
-                const payload = {
-                  tripId: tripId || undefined,
-                  token: data.token,
-                  payment_method_id: data.payment_method_id,
-                  transaction_amount:
-                    data.transaction_amount != null ? data.transaction_amount : amountForBrick,
-                  payer: {
-                    email: data.payer?.email || user?.email,
-                    identification: {
-                      type: data.payer?.identification?.type,
-                      number: data.payer?.identification?.number,
+            onSubmit: (rawSubmit) =>
+              new Promise((resolve, reject) => {
+                ;(async () => {
+                  setLoading(true)
+                  setError(null)
+                  try {
+                    const { data, selectedPaymentMethod, paymentMethodId } = normalizeBrickSubmit(rawSubmit)
+                    const currentTripId = tripIdRef.current
+                    const payload = {
+                      tripId: currentTripId || undefined,
+                      token: data.token,
+                      payment_method_id: paymentMethodId,
+                      transaction_amount:
+                        data.transaction_amount != null ? data.transaction_amount : amountForBrick,
+                      payer: {
+                        email: data.payer?.email || userEmailRef.current,
+                        identification: {
+                          type: data.payer?.identification?.type,
+                          number: data.payer?.identification?.number,
+                        },
+                      },
+                    }
+
+                    const paymentResult = await paymentService.pay(payload)
+
+                    if (isApprovedPayment(paymentResult)) {
+                      await finishUnlockRef.current?.(currentTripId, paymentResult)
+                      resolve()
+                      return
+                    }
+
+                    if (isRefusedPayment(paymentResult)) {
+                      throw new Error('O pagamento foi recusado. Verifique os dados ou tente outro cartão.')
+                    }
+
+                    if (
+                      isPixSubmit(paymentMethodId, selectedPaymentMethod, paymentResult) &&
+                      (isPendingPayment(paymentResult) || hasPixPayload(paymentResult) || !isApprovedPayment(paymentResult))
+                    ) {
+                      // Sucesso do Brick: PIX criado. Mostra QR e faz poll — não rejeitar a Promise.
+                      startPixPollingRef.current?.(currentTripId, paymentResult)
+                      resolve()
+                      return
+                    }
+
+                    if (isPendingPayment(paymentResult)) {
+                      throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
+                    }
+
+                    throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
+                  } catch (err) {
+                    if (isMountedRef.current && !suppressBrickErrorRef.current) {
+                      setError(
+                        err.response?.data?.error?.message ||
+                          err.message ||
+                          'Erro ao processar o pagamento.'
+                      )
+                    }
+                    reject(err)
+                  } finally {
+                    if (isMountedRef.current) {
+                      setLoading(false)
                     }
                   }
-                }
-
-                const paymentResult = await paymentService.pay(payload)
-
-                if (isApprovedPayment(paymentResult)) {
-                  await finishUnlock(tripId, paymentResult)
-                  return
-                }
-
-                if (isRefusedPayment(paymentResult)) {
-                  throw new Error('O pagamento foi recusado. Verifique os dados ou tente outro cartão.')
-                }
-
-                if (isPendingPayment(paymentResult) || hasPixPayload(paymentResult)) {
-                  if (String(payload.payment_method_id || '').toLowerCase() === 'pix' || hasPixPayload(paymentResult)) {
-                    startPixPolling(tripId, paymentResult)
-                    return
-                  }
-                  throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
-                }
-
-                throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
-              } catch (err) {
-                if (isMountedRef.current) {
-                  setError(err.response?.data?.error?.message || err.message || 'Erro ao processar o pagamento.')
-                }
-                throw err
-              } finally {
-                if (isMountedRef.current) {
-                  setLoading(false)
-                }
-              }
-            },
+                })()
+              }),
             onError: (brickError) => {
+              if (suppressBrickErrorRef.current || cancelled) return
               logger.error('Erro no Brick:', brickError)
               if (isMountedRef.current) {
                 setError('O checkout apresentou um problema ao carregar. Recarregue a página e tente novamente.')
@@ -405,7 +466,8 @@ export function Pagamento() {
       }
       brickControllerRef.current = null
     }
-  }, [showBrick, pixPending, navigate, tripId, user?.email, planningAmount, finishUnlock, startPixPolling])
+    // Só remonta quando o usuário abre o Brick de novo — callbacks via refs.
+  }, [showBrick])
 
   if (success) {
     return (
@@ -511,6 +573,13 @@ export function Pagamento() {
           </a>
         )}
 
+        {!qrSrc && !pixPending.qr_code && !pixPending.ticket_url && (
+          <p className="text-sm text-text-secondary mb-6">
+            O PIX foi gerado. Se o QR não aparecer, conclua pelo e-mail ou app do Mercado Pago — esta
+            página libera o roteiro automaticamente após a confirmação.
+          </p>
+        )}
+
         {pollHint && (
           <p className="text-sm text-text-secondary mb-4 flex items-center gap-2">
             <Icon name="hourglass_empty" className="text-primary" />
@@ -530,6 +599,7 @@ export function Pagamento() {
           disabled={loading}
           onClick={() => {
             clearPoll()
+            suppressBrickErrorRef.current = false
             setPixPending(null)
             setPollHint(null)
             setError(null)
@@ -650,22 +720,27 @@ export function Pagamento() {
       )}
 
       {!showBrick ? (
-        <Button
-          className="w-full rounded-full py-4 font-bold"
-          onClick={() => {
-            trackMetaEvent('InitiateCheckout', {
-              value: planningAmount,
-              currency: 'BRL',
-              content_ids: tripId ? [String(tripId)] : undefined,
-              content_type: 'product',
-              content_name: 'planejamento_completo',
-            })
-            setShowBrick(true)
-          }}
-          disabled={loading || !canPay}
-        >
-          Pagar agora
-        </Button>
+        <>
+          <p className="text-xs text-text-secondary mb-3 text-center">
+            Aceitamos cartão de crédito, cartão de débito e PIX. Boleto não está disponível.
+          </p>
+          <Button
+            className="w-full rounded-full py-4 font-bold"
+            onClick={() => {
+              trackMetaEvent('InitiateCheckout', {
+                value: planningAmount,
+                currency: 'BRL',
+                content_ids: tripId ? [String(tripId)] : undefined,
+                content_type: 'product',
+                content_name: 'planejamento_completo',
+              })
+              setShowBrick(true)
+            }}
+            disabled={loading || !canPay}
+          >
+            Pagar agora
+          </Button>
+        </>
       ) : (
         <div id="paymentBrick_container" />
       )}
@@ -685,7 +760,7 @@ export function Pagamento() {
               await userService.activatePlanningAdmin(tripId)
               setSuccess(true)
               setTimeout(() => {
-                navigate(`/trips/${tripId}/itinerary?unlocked=1`, { replace: true })
+                navigate(`/trips/${tripId}/itinerary?tab=tdv&unlocked=1`, { replace: true })
               }, 1500)
             } catch (err) {
               setError(err.response?.data?.error?.message || 'Não foi possível ativar o planejamento.')

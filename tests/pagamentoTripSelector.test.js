@@ -59,8 +59,9 @@ describe('U-10 — Pagamento com seletor de viagem', () => {
   })
 
   it('Brick oferece cartão e PIX sem boleto (ticket)', () => {
-    assert.match(pagamento, /bankTransfer:\s*'all'/)
+    assert.match(pagamento, /bankTransfer:\s*\[\s*'pix'\s*\]/)
     assert.match(pagamento, /creditCard:\s*'all'/)
+    assert.match(pagamento, /debitCard:\s*'all'/)
     assert.doesNotMatch(pagamento, /ticket:\s*'all'/)
   })
 

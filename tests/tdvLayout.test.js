@@ -62,3 +62,19 @@ test('TinderView: prefetch libera inFlight ao cancelar (evita spinner preso)', (
   assert.match(tinderViewSource, /prefetchInFlightRef\.current = false/)
   assert.match(tinderViewSource, /if \(cancelled \|\| ac\.signal\.aborted\) return/)
 })
+
+test('TinderView: paywall free_cap com Gerar roteiro e Desbloquear', () => {
+  assert.match(tinderViewSource, /freeCapReached/)
+  assert.match(tinderViewSource, /isHardFreeCap/)
+  assert.match(tinderViewSource, /FREE_CAP_SOFT_RETRY_MAX/)
+  assert.match(tinderViewSource, /placesSource === 'free_cap'/)
+  assert.match(tinderViewSource, /tdv\.free_cap_generate/)
+  assert.match(tinderViewSource, /tdv\.free_cap_unlock/)
+  assert.match(tinderViewSource, /from=tdv/)
+  assert.match(tinderViewSource, /deckUnavailable \|\| freeCapReached \|\| finalizingTdv/)
+  // Reativa aba com baralho local sem novo discover; prefetch free_cap não latcheia com deck
+  assert.match(tinderViewSource, /if \(placesRef\.current\.length > 0\) return/)
+  assert.match(tinderViewSource, /if \(n > 0\) return/)
+  assert.match(tinderViewSource, /keepalive: true/)
+  assert.match(tinderViewSource, /pagehide/)
+})
