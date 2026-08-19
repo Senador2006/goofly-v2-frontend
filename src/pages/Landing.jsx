@@ -1,7 +1,6 @@
 import 'driver.js/dist/driver.css'
 import { LandingNavbar } from '../components/landing/LandingNavbar'
 import { LandingHero } from '../components/landing/LandingHero'
-import { LandingOffers } from '../components/landing/LandingOffers'
 import { LandingBenefits } from '../components/landing/LandingBenefits'
 import { LandingSteps } from '../components/landing/LandingSteps'
 import { LandingPlans } from '../components/landing/LandingPlans'
@@ -22,7 +21,6 @@ export default function Landing() {
       <LandingNavbar />
       <main>
         <LandingHero />
-        <LandingOffers />
         <LandingBenefits />
         <LandingSteps />
         <LandingPlans />

@@ -14,7 +14,7 @@ export function buildTourSteps(registerHref = '/register') {
       popover: {
         title: 'Bem-vindo à Goofly',
         description:
-          'Em menos de um minuto você vai conhecer como planejar viagens personalizadas, economizar até 30% e começar grátis.',
+          'Em menos de um minuto você vai conhecer como o roteiro perfeito começa muito antes do embarque — e como começar grátis.',
         side: 'over',
         showButtons: ['next', 'close'],
         nextBtnText: 'Começar tour',
@@ -23,9 +23,9 @@ export function buildTourSteps(registerHref = '/register') {
     {
       element: TOUR_SELECTORS.hero,
       popover: {
-        title: 'Viagens incríveis pelo menor preço',
+        title: 'O roteiro perfeito começa aqui',
         description:
-          'A Goofly monta roteiros sob medida em minutos. Use <strong>Começar agora — é grátis</strong> para criar sua conta ou <strong>Já tenho conta</strong> se você já é viajante.',
+          'Menos estresse, mais experiências. Use <strong>Começar agora — é grátis</strong> para criar sua conta ou <strong>Já tenho conta</strong> se você já é viajante.',
         side: 'right',
         align: 'start',
       },
@@ -35,17 +35,17 @@ export function buildTourSteps(registerHref = '/register') {
       popover: {
         title: 'Inspirações para sua próxima viagem',
         description:
-          'Explore destinos com preços de referência e badges como “Mais pedido”. Quando estiver pronto, <strong>Montar meu roteiro</strong> leva você ao planejamento personalizado.',
-        side: 'bottom',
+          'Maldivas, Paris e Bali são só o começo. Clique em um destino para começar a montar seu roteiro personalizado.',
+        side: 'left',
         align: 'start',
       },
     },
     {
       element: TOUR_SELECTORS.beneficios,
       popover: {
-        title: 'Tudo em um só lugar',
+        title: 'Tudo o que você precisa',
         description:
-          'Roteiro com IA, dicas locais, suporte 24/7 e flexibilidade total — você ajusta datas, destino e orçamento quando quiser.',
+          'Roteiro com IA, dicas locais e flexibilidade total — o plano se adapta a você, não o contrário.',
         side: 'bottom',
         align: 'start',
       },
@@ -53,9 +53,9 @@ export function buildTourSteps(registerHref = '/register') {
     {
       element: TOUR_SELECTORS.comoFunciona,
       popover: {
-        title: 'Planeje em 3 passos',
+        title: 'Deixe a parte difícil com a Goofly',
         description:
-          '1) Conte seus sonhos → 2) Receba o roteiro em minutos → 3) Viaje economizando. Simples assim.',
+          '1) Conte destino e preferências → 2) Use o Tinder de viagem → 3) Receba um roteiro pensado para o seu perfil.',
         side: 'top',
         align: 'center',
       },
@@ -63,9 +63,9 @@ export function buildTourSteps(registerHref = '/register') {
     {
       element: TOUR_SELECTORS.planos,
       popover: {
-        title: 'Escolha seu caminho',
+        title: 'Por onde você quer começar?',
         description:
-          '<strong>Procurar destino</strong> é gratuito para explorar e comparar. <strong>Monte seu roteiro</strong> é o caminho completo com IA — roteiro dia a dia, passagens, hospedagem e suporte na viagem.',
+          '<strong>Explorar destinos</strong> se você ainda está escolhendo. <strong>Criar meu roteiro</strong> se já sabe para onde vai — a Goofly é gratuita para começar.',
         side: 'top',
         align: 'center',
       },
@@ -73,9 +73,9 @@ export function buildTourSteps(registerHref = '/register') {
     {
       element: TOUR_SELECTORS.depoimentos,
       popover: {
-        title: 'Viajantes felizes',
+        title: 'Feito para você',
         description:
-          'Mais de 10.000 viajantes já usaram a Goofly. Veja relatos reais de economia e experiências que só locais conhecem.',
+          'Veja como um roteiro personalizado transforma o planejamento. Junte-se a quem já começou a próxima viagem com a Goofly.',
         side: 'top',
         align: 'start',
       },

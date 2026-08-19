@@ -125,6 +125,7 @@ export default {
     modify_panel_hint:
       'Selecione uma curtida e troque por uma parada, ou insira no dia atual. Remova paradas pelo ícone da lixeira.',
     modify_insert: 'Inserir no dia atual',
+    modify_insert_short: 'Inserir',
     modify_swap_hint: 'Toque numa parada do roteiro para trocar com a curtida selecionada',
     modify_conclude: 'Concluir',
     modify_cancel: 'Cancelar',

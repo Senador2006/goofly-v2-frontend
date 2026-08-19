@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { getActivityDayNumber } from '../utils/itineraryDayHelpers'
+import { scheduleActivityInsertedAtEnd } from '../utils/roteiroScheduleContract'
 import { CROSS_SWAP_MS, playCrossContainerSwap } from '../utils/playCrossContainerSwap'
 
 const MOTION_MS = 320
@@ -29,7 +30,6 @@ function activityFromLike(like, day) {
     day,
     dayNumber: day,
     order: 999,
-    startTime: '10:00',
     ticketRequired: false,
     source: 'tdv_like',
   }
@@ -236,7 +236,9 @@ export function useRoteiroLikeReplace({ dateToDayMap, selectedDay }) {
     const likeSnapshot = selectedLike
     pulseLikeExit(likeSnapshot)
     setSelectedLikeId(null)
-    setDraftActivities((prev) => [...(prev || []), nextAct])
+    setDraftActivities((prev) =>
+      scheduleActivityInsertedAtEnd(prev || [], dateToDayMap, day, nextAct),
+    )
     if (!prefersReducedMotion()) {
       setRowMotion((prev) => ({ ...prev, [String(nextAct.id)]: 'enter' }))
       later(() => {
@@ -247,7 +249,7 @@ export function useRoteiroLikeReplace({ dateToDayMap, selectedDay }) {
         })
       }, MOTION_MS)
     }
-  }, [selectedLike, selectedDay, pulseLikeExit, later])
+  }, [selectedLike, selectedDay, dateToDayMap, pulseLikeExit, later])
 
   const swapWithActivity = useCallback(
     (activityId) => {

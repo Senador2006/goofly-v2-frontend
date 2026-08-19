@@ -2,7 +2,7 @@ import { useTheme } from '../../context/ThemeContext'
 
 /**
  * Wordmarks em canvas 774×244: `/public/logo.jpeg` (claro) e `/public/goofly_so_fly_branco.png` (escuro).
- * `forceLight` mantém a logo padrão — útil na landing, que é sempre clara.
+ * `forceLight` / `forceDark` ignoram o tema — a landing usa `forceDark` no header preto.
  */
 export function GooflyLogo({
   className = '',
@@ -10,10 +10,11 @@ export function GooflyLogo({
   width,
   loading = 'lazy',
   forceLight = false,
+  forceDark = false,
 }) {
   const { isDark } = useTheme()
   const base = String(import.meta.env.BASE_URL ?? '/').replace(/\/?$/, '/')
-  const useDark = isDark && !forceLight
+  const useDark = forceDark || (isDark && !forceLight)
   const file = useDark ? 'goofly_so_fly_branco.png' : 'logo.jpeg'
   return (
     <span

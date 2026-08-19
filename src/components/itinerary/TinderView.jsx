@@ -21,6 +21,20 @@ function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
 }
 
+/** Mescla listas de lugares por id; itens locais prevalecem (swipes recentes). */
+function mergePlaceListsById(incoming, local) {
+  const map = new Map()
+  for (const p of incoming || []) {
+    const id = String(getPlaceId(p) || '').trim()
+    if (id) map.set(id, p)
+  }
+  for (const p of local || []) {
+    const id = String(getPlaceId(p) || '').trim()
+    if (id) map.set(id, p)
+  }
+  return [...map.values()]
+}
+
 function videoLinkLabel(url) {
   try {
     const u = new URL(url)
@@ -359,10 +373,51 @@ export function TinderView({
     const ac = new AbortController()
     loadAbortRef.current = ac
     const gen = ++loadGenRef.current
+    prefetchEmptyAttemptsRef.current = 0
+
+    const localDeck = readTdvDeckSession(tripId)
+    // Preferir baralho local (free e pago): ao sair da viagem o agente unlocked
+    // devolveria um lote novo e apagaria o ponto onde o usuário parou.
+    if (localDeck.length > 0) {
+      const restoredFromSession = true
+      sessionDeckBaselineRef.current = localDeck.length
+      consumedSinceSessionRef.current = false
+      hadDeckRef.current = true
+      setPlaces(localDeck)
+      setUndoStack([])
+      setPlacesSource(restoredFromSession ? 'cache' : null)
+      setFreeCapReached(false)
+      setDeckUnavailable(false)
+      setCurrentIndex(0)
+      setIntroReady(true)
+      setLoading(false)
+      setError(null)
+      placeService
+        .getTdvSummary(tripId)
+        .then((summary) => {
+          if (gen !== loadGenRef.current) return
+          const likedFromRes = Array.isArray(summary.likedPlaces) ? summary.likedPlaces : []
+          const dislikedFromRes = Array.isArray(summary.dislikedPlaces)
+            ? summary.dislikedPlaces
+            : []
+          const likesCount = summary.likesCount ?? likedFromRes.length
+          if (consumedSinceSessionRef.current) {
+            setLikedPlaces((prev) => mergePlaceListsById(likedFromRes, prev))
+            setDislikedPlaces((prev) => mergePlaceListsById(dislikedFromRes, prev))
+            setTotalLikes((prev) => Math.max(Number(prev) || 0, likesCount))
+            return
+          }
+          setLikedPlaces(likedFromRes)
+          setDislikedPlaces(dislikedFromRes)
+          setTotalLikes(likesCount)
+        })
+        .catch(() => {})
+      return
+    }
+
     setLoading(true)
     setIntroReady(false)
     setError(null)
-    prefetchEmptyAttemptsRef.current = 0
     try {
       const res = await placeService.discoverSession(tripId, undefined, { signal: ac.signal })
       if (gen !== loadGenRef.current) return

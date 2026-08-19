@@ -11,6 +11,8 @@ import { minutesBetweenStarts } from './formatActivityDuration.js'
 
 const DAY_MINUTES = 24 * 60
 const DEFAULT_DURATION_MINUTES = 120
+/** Intervalo padrão ao inserir uma atividade no fim do dia (não altera reorder/edit). */
+export const INSERT_END_GAP_MINUTES = 15
 
 const TIME_PATCH_KEYS = new Set([
   'startTime',
@@ -395,4 +397,47 @@ export function applyRoteiroScheduleReorder(
   ).map((a) => a.id)
 
   return relayoutDaySchedule(next, dateToDayMap, dayNum, orderedIds, snapshot)
+}
+
+/**
+ * Anexa uma atividade no fim do dia com horário após a última parada.
+ * Dia vazio: 09:00. Dia com paradas: fim da última + INSERT_END_GAP_MINUTES.
+ *
+ * @param {unknown[]} allActivities
+ * @param {Map<string, number>} dateToDayMap
+ * @param {number} dayNum
+ * @param {Record<string, unknown>} newAct
+ * @returns {unknown[]}
+ */
+export function scheduleActivityInsertedAtEnd(
+  allActivities,
+  dateToDayMap,
+  dayNum,
+  newAct,
+) {
+  const list = Array.isArray(allActivities) ? allActivities : []
+  if (!newAct || typeof newAct !== 'object') return list
+
+  const day = Math.max(1, Math.floor(Number(dayNum) || 1))
+  const onDay = sortDayActivities(
+    list.filter((a) => getActivityDayNumber(a, dateToDayMap) === day),
+  )
+
+  const duration = resolveActivityDurationMinutes(newAct)
+  let startMins = 9 * 60
+  if (onDay.length > 0) {
+    const last = onDay[onDay.length - 1]
+    const lastStart = parseTimeToMinutes(readStartRaw(last)) ?? 9 * 60
+    startMins = lastStart + resolveActivityDurationMinutes(last) + INSERT_END_GAP_MINUTES
+  }
+
+  const start = minutesToTime(startMins)
+  const end = endFromStartAndDuration(startMins, duration)
+  const scheduled = writeScheduleFields(
+    { ...newAct, day, dayNumber: day, order: 999 },
+    start,
+    end,
+    duration,
+  )
+  return [...list, scheduled]
 }

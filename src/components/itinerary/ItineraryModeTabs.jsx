@@ -108,7 +108,7 @@ export function ItineraryModeTabs({
 
   const tabClass = (id) => {
     const selected = activeTab === id
-    return `relative z-[1] shrink-0 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors disabled:cursor-not-allowed ${
+    return `relative z-[1] shrink-0 px-2.5 sm:px-3.5 lg:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors disabled:cursor-not-allowed ${
       selected
         ? 'text-black'
         : id === 'tdv' && tdvLocked

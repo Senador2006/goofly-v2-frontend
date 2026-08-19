@@ -3,10 +3,12 @@ import assert from 'node:assert/strict'
 import {
   applyRoteiroScheduleEdit,
   applyRoteiroScheduleReorder,
+  INSERT_END_GAP_MINUTES,
   isScheduleTimePatch,
   minutesToTime,
   parseTimeToMinutes,
   resolveActivityDurationMinutes,
+  scheduleActivityInsertedAtEnd,
 } from '../src/utils/roteiroScheduleContract.js'
 import {
   getActivityDayNumber,
@@ -322,5 +324,92 @@ describe('applyRoteiroScheduleReorder', () => {
     assert.equal(gapBetween(ordered[0], ordered[1]), 30)
     assert.equal(ordered[1].startTime, '09:30')
     assert.equal(ordered[1].endTime, '10:30')
+  })
+})
+
+describe('scheduleActivityInsertedAtEnd', () => {
+  it('dia vazio: 09:00–11:00 (120 min), sem gap', () => {
+    const next = scheduleActivityInsertedAtEnd([], emptyDayMap, 1, {
+      id: 'n',
+      day: 1,
+    })
+    assert.equal(next.length, 1)
+    assert.equal(next[0].startTime, '09:00')
+    assert.equal(next[0].endTime, '11:00')
+    assert.equal(durationOf(next[0]), 120)
+    assert.equal(INSERT_END_GAP_MINUTES, 15)
+  })
+
+  it('append após última: início = fim + 15 min, sem overlap', () => {
+    const day = [
+      act({
+        id: 'a',
+        order: 0,
+        startTime: '09:00',
+        endTime: '11:00',
+        duration_minutes: 120,
+      }),
+      act({
+        id: 'b',
+        order: 1,
+        startTime: '14:00',
+        endTime: '16:00',
+        duration_minutes: 120,
+      }),
+    ]
+    const next = scheduleActivityInsertedAtEnd(day, emptyDayMap, 1, {
+      id: 'n',
+      day: 1,
+    })
+    const ordered = sortDayActivities(
+      next.filter((x) => getActivityDayNumber(x, emptyDayMap) === 1),
+    )
+    assert.deepEqual(
+      ordered.map((x) => x.id),
+      ['a', 'b', 'n'],
+    )
+    const inserted = ordered[2]
+    assert.equal(inserted.startTime, '16:15')
+    assert.equal(inserted.endTime, '18:15')
+    assert.equal(durationOf(inserted), 120)
+    assert.equal(gapBetween(ordered[1], inserted), INSERT_END_GAP_MINUTES)
+    assert.equal(ordered[0].startTime, '09:00')
+    assert.equal(ordered[1].startTime, '14:00')
+    const startN = parseTimeToMinutes(inserted.startTime)
+    const endA = parseTimeToMinutes(ordered[0].endTime)
+    const endB = parseTimeToMinutes(ordered[1].endTime)
+    assert.ok(startN > endA)
+    assert.ok(startN > endB)
+  })
+
+  it('não altera atividades de outros dias', () => {
+    const mixed = [
+      act({
+        id: 'd1',
+        day: 1,
+        order: 0,
+        startTime: '10:00',
+        endTime: '12:00',
+        duration_minutes: 120,
+      }),
+      act({
+        id: 'd2',
+        day: 2,
+        order: 0,
+        startTime: '08:00',
+        endTime: '09:00',
+        duration_minutes: 60,
+      }),
+    ]
+    const next = scheduleActivityInsertedAtEnd(mixed, emptyDayMap, 1, {
+      id: 'n',
+      day: 1,
+    })
+    const other = next.find((x) => x.id === 'd2')
+    assert.equal(other.startTime, '08:00')
+    assert.equal(other.endTime, '09:00')
+    const inserted = next.find((x) => x.id === 'n')
+    assert.equal(inserted.startTime, '12:15')
+    assert.equal(inserted.endTime, '14:15')
   })
 })

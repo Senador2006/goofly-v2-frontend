@@ -11,7 +11,7 @@ export function LandingOffers() {
             <p className="text-xs font-bold uppercase tracking-widest text-primary mb-2">
               Inspirações de destinos
             </p>
-            <h2 className="font-display text-3xl sm:text-4xl font-black text-foreground leading-tight">
+            <h2 className="font-display text-3xl sm:text-4xl font-black text-foreground">
               Pra onde vamos te levar?
             </h2>
           </div>

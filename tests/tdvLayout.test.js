@@ -77,4 +77,5 @@ test('TinderView: paywall free_cap com Gerar roteiro e Desbloquear', () => {
   assert.match(tinderViewSource, /if \(n > 0\) return/)
   assert.match(tinderViewSource, /keepalive: true/)
   assert.match(tinderViewSource, /pagehide/)
+  assert.match(tinderViewSource, /getTdvSummary/)
 })

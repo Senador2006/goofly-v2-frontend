@@ -24,8 +24,8 @@ export function LandingNavbar() {
 
   const headerClass = [
     'fixed inset-x-0 top-0 z-50 h-[70px] flex items-center transition-shadow',
-    'bg-[#FFFDF7]/95 backdrop-blur-md border-b border-foreground/5',
-    scrolled ? 'shadow-[0_4px_24px_rgba(18,16,14,0.10)]' : '',
+    'bg-[#0A0A0A]/95 backdrop-blur-md border-b border-white/10',
+    scrolled ? 'shadow-[0_4px_24px_rgba(0,0,0,0.45)]' : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -33,7 +33,7 @@ export function LandingNavbar() {
       <header className={headerClass}>
         <div className="mx-auto w-full max-w-[1200px] px-6 lg:px-8 flex items-center gap-8">
           <Link to="/" className="flex items-center shrink-0">
-            <GooflyLogo forceLight heightClass="h-14 sm:h-16" className="max-w-[min(100%,18rem)]" />
+            <GooflyLogo forceDark heightClass="h-10 sm:h-12" className="max-w-[min(100%,14rem)]" />
           </Link>
 
           <nav className="hidden lg:flex mx-auto">
@@ -42,7 +42,7 @@ export function LandingNavbar() {
                 <li key={l.href}>
                   <a
                     href={l.href}
-                    className="px-4 py-2 text-sm font-medium text-text-secondary rounded-lg hover:bg-background-light hover:text-foreground transition-colors"
+                    className="px-3.5 py-2 text-[13px] font-medium text-white/80 rounded-lg hover:bg-white/5 hover:text-white transition-colors"
                   >
                     {l.label}
                   </a>
@@ -56,7 +56,7 @@ export function LandingNavbar() {
               Entrar
             </Link>
             <Link to="/register" className="landing-btn landing-btn-nav-primary">
-              <Icon name="rocket_launch" />
+              <Icon name="flight" />
               Começar agora
             </Link>
           </div>
@@ -64,7 +64,7 @@ export function LandingNavbar() {
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="lg:hidden ml-auto p-2 text-foreground"
+            className="lg:hidden ml-auto p-2 text-white"
             aria-label="Abrir menu"
           >
             <Icon name={open ? 'close' : 'menu'} className="text-2xl" />
@@ -73,18 +73,18 @@ export function LandingNavbar() {
       </header>
 
       <div
-        className={`fixed inset-x-0 top-[70px] z-40 lg:hidden bg-white border-b border-border-light shadow-lg transition-all duration-200 origin-top ${
+        className={`fixed inset-x-0 top-[70px] z-40 lg:hidden bg-[#0A0A0A] border-b border-white/10 shadow-lg transition-all duration-200 origin-top ${
           open ? 'opacity-100 scale-y-100' : 'pointer-events-none opacity-0 scale-y-95'
         }`}
       >
         <div className="px-6 py-5">
           <ul className="mb-4">
             {links.map((l) => (
-              <li key={l.href} className="border-b border-border-light">
+              <li key={l.href} className="border-b border-white/10">
                 <a
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="block py-3 font-medium text-foreground"
+                  className="block py-3 font-medium text-white"
                 >
                   {l.label}
                 </a>
@@ -96,7 +96,7 @@ export function LandingNavbar() {
               Entrar
             </Link>
             <Link to="/register" className="landing-btn landing-btn-nav-primary w-full justify-center">
-              <Icon name="rocket_launch" />
+              <Icon name="flight" />
               Começar agora
             </Link>
           </div>

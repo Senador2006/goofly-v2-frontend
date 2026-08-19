@@ -9,6 +9,7 @@ import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivity
 import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
+import { ItineraryExportSheet } from '../components/itinerary/ItineraryExportSheet'
 import { FinalizeItineraryOverlay } from '../components/itinerary/FinalizeItineraryOverlay'
 import { RoteiroModifyPanel } from '../components/itinerary/RoteiroModifyPanel'
 import { RoteiroModifyActivityRow } from '../components/itinerary/RoteiroModifyActivityRow'
@@ -49,6 +50,7 @@ import {
   applyRoteiroScheduleEdit,
   applyRoteiroScheduleReorder,
   isScheduleTimePatch,
+  scheduleActivityInsertedAtEnd,
 } from '../utils/roteiroScheduleContract'
 import { resolveAccommodationsForDay } from '../utils/accommodationDayResolver'
 import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
@@ -272,6 +274,7 @@ export function Itinerary() {
   const [draftActivities, setDraftActivities] = useState(null)
   const [savingRoteiro, setSavingRoteiro] = useState(false)
   const [mobileMapOpen, setMobileMapOpen] = useState(false)
+  const [exportSheetOpen, setExportSheetOpen] = useState(false)
   const [showAccommodationRoutes, setShowAccommodationRoutes] = useState(
     () => readShowAccommodationRoutesPreference(),
   )
@@ -283,6 +286,9 @@ export function Itinerary() {
   /** Destino da aba ao fechar o overlay (pill muda na hora; mode/conteúdo após a animação). */
   const [tdvOverlayExitTo, setTdvOverlayExitTo] = useState(null)
   const [tdvLockHint, setTdvLockHint] = useState(null)
+  const [isLgUp, setIsLgUp] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
+  )
   const deleteInFlightRef = useRef(false)
   const finalizeInFlightRef = useRef(false)
   const tdvOverlayCloseTimerRef = useRef(null)
@@ -439,6 +445,14 @@ export function Itinerary() {
       main.classList.remove('tdv-mobile-lock')
     }
   }, [tdvUiActive])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const sync = () => setIsLgUp(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
 
   const unlockedFlag = searchParams.get('unlocked')
   const tdvTabFlag = searchParams.get('tab')
@@ -1049,12 +1063,14 @@ export function Itinerary() {
   const canPrintItinerary =
     showRoteiroSidebar &&
     !isPlanning &&
+    hasFullAccess &&
     !roteiroEditOpen &&
     !likeReplace.open &&
     persistedActivities.length > 0
 
   const handlePrintItinerary = () => {
-    if (roteiroEditOpen || likeReplace.open) return
+    if (!hasFullAccess || roteiroEditOpen || likeReplace.open) return
+    setExportSheetOpen(false)
     globalThis.print?.()
   }
 
@@ -1071,6 +1087,7 @@ export function Itinerary() {
   }
 
   const handleStartRoteiroEdit = () => {
+    setExportSheetOpen(false)
     if (likeReplace.open) likeReplace.cancel()
     closeTdvOverlay('roteiro', { skipFollowUp: true })
     setDraftActivities(ensureActivitiesHaveStableIds([...persistedActivities]))
@@ -1147,20 +1164,16 @@ export function Itinerary() {
     const nextDay = Math.max(1, Math.floor(Number(effectiveSelectedDay) || 1))
     setDraftActivities((prev) => {
       const base = prev ?? ensureActivitiesHaveStableIds([...persistedActivities])
-      return [
-        ...base,
-        {
-          id: nid,
-          title: 'Nova parada',
-          description: '',
-          day: nextDay,
-          dayNumber: nextDay,
-          order: 999,
-          startTime: '10:00',
-          ticketRequired: false,
-          source: 'user_edit',
-        },
-      ]
+      return scheduleActivityInsertedAtEnd(base, dateToDayMap, nextDay, {
+        id: nid,
+        title: 'Nova parada',
+        description: '',
+        day: nextDay,
+        dayNumber: nextDay,
+        order: 999,
+        ticketRequired: false,
+        source: 'user_edit',
+      })
     })
     setTrackedStopId(nid)
     trackedFollowRef.current = { id: nid, reason: 'create' }
@@ -1280,23 +1293,28 @@ export function Itinerary() {
 
   const planCompleteBadge = hasFullAccess && !isPlanning ? (
     <span
-      className={`inline-flex items-center shrink-0 text-green-700 dark:text-green-400 bg-green-500/15 rounded-full ${
-        roteiroEditOpen
-          ? 'justify-center w-8 h-8 sm:w-auto sm:h-auto sm:gap-1 sm:px-2 sm:py-0.5'
-          : 'gap-1 px-2 py-0.5'
-      }`}
+      className="inline-flex items-center shrink-0 gap-1 px-2 py-0.5 text-green-700 dark:text-green-400 bg-green-500/15 rounded-full"
       title="Plano completo"
+      aria-label="Plano completo"
     >
       <Icon name="verified" className="text-sm" aria-hidden />
-      <span
-        className={`text-[10px] font-bold uppercase tracking-wide ${
-          roteiroEditOpen ? 'hidden sm:inline' : ''
-        }`}
-      >
+      <span className="text-[10px] font-bold uppercase tracking-wide">
         Plano completo
       </span>
     </span>
   ) : null
+
+  const modifyPanelSharedProps = {
+    availableLikes: likeReplace.availableLikes,
+    selectedLikeId: likeReplace.selectedLikeId,
+    onSelectLike: likeReplace.selectLike,
+    onInsert: likeReplace.insertSelectedLike,
+    onConclude: handleConcludeModifyRoteiro,
+    onCancel: likeReplace.cancel,
+    saving: likeReplace.saving,
+    likeMotion: likeReplace.likeMotion,
+    registerLikeCardRef: likeReplace.registerLikeCardRef,
+  }
 
   return (
     <>
@@ -1350,11 +1368,10 @@ export function Itinerary() {
               ) : null}
             </p>
           </div>
-          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
+          <div className="flex w-full min-w-0 flex-col gap-2 lg:justify-end">
             <div className="itinerary-header-mode-cluster">
               <div className="itinerary-header-tabs">
                 {modeTabs}
-                {planCompleteBadge}
               </div>
               <div
                 className={`itinerary-header-actions ${
@@ -1362,47 +1379,29 @@ export function Itinerary() {
                 }`}
                 aria-hidden={tdvOverlayOpen && !tdvOverlayExitTo ? true : undefined}
               >
-                {canPrintItinerary ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="rounded-xl shrink-0 font-bold"
-                    onClick={handlePrintItinerary}
-                    type="button"
-                    tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
-                    title="Abrir diálogo de impressão — escolha «Salvar como PDF» para exportar"
-                  >
-                    <Icon name="picture_as_pdf" />
-                    <span className="hidden sm:inline">Exportar PDF</span>
-                    <span className="sm:hidden">PDF</span>
-                  </Button>
-                ) : null}
+                {planCompleteBadge}
                 {roteiroEditAllowed ? (
                   !roteiroEditOpen ? (
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="rounded-xl shrink-0 font-bold"
+                      className="rounded-xl shrink-0 font-bold max-lg:gap-1 max-lg:px-2.5 max-lg:py-1.5 max-lg:text-xs"
                       onClick={handleStartRoteiroEdit}
                       type="button"
                       tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
+                      aria-label="Editar roteiro"
+                      title="Editar roteiro"
                     >
-                      <Icon name="edit" />
-                      <span className="hidden sm:inline">Editar roteiro</span>
-                      <span className="sm:hidden">Editar</span>
+                      <Icon name="edit" className="text-base max-lg:text-sm" />
+                      Editar roteiro
                     </Button>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 max-w-[min(18rem,100%)] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-primary/20 text-[#45340a] dark:text-primary border border-primary/40 leading-tight text-center shrink-0 whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 lg:px-3 rounded-full text-[10px] font-black uppercase tracking-wide bg-primary/20 text-[#45340a] dark:text-primary border border-primary/40 leading-tight text-center shrink-0 whitespace-nowrap">
                       <Icon name="edit_note" aria-hidden />
-                      Editando — guarde ou cancele antes de mudar de aba
+                      <span className="lg:hidden">Editando</span>
+                      <span className="hidden lg:inline">Editando — guarde ou cancele antes de mudar de aba</span>
                     </span>
                   )
-                ) : null}
-                {likeReplace.open ? (
-                  <span className="inline-flex items-center gap-1.5 max-w-[min(18rem,100%)] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-amber-500/15 text-[#5c4810] dark:text-primary border border-amber-500/35 leading-tight text-center shrink-0 whitespace-nowrap">
-                    <Icon name="swap_horiz" aria-hidden />
-                    Modificando com curtidas
-                  </span>
                 ) : null}
                 {!isPlanning && !hasFullAccess && activities.length > 0 ? (
                   <Link
@@ -1410,9 +1409,14 @@ export function Itinerary() {
                     tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
                     className="shrink-0"
                   >
-                    <Button size="sm" className="rounded-xl shrink-0">
+                    <Button
+                      size="sm"
+                      className="rounded-xl shrink-0"
+                      aria-label="Roteiro completo"
+                      title="Roteiro completo"
+                    >
                       <Icon name="workspace_premium" />
-                      <span className="hidden sm:inline">Roteiro completo</span>
+                      Roteiro completo
                     </Button>
                   </Link>
                 ) : null}
@@ -1429,6 +1433,22 @@ export function Itinerary() {
                   >
                     <Icon name="delete" />
                     <span>Apagar</span>
+                  </Button>
+                ) : null}
+                {canPrintItinerary ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl shrink-0 font-bold size-8 min-w-8 min-h-8 p-0 px-0 max-lg:ml-auto lg:size-auto lg:min-w-10 lg:min-h-10 lg:px-2.5"
+                    onClick={() => setExportSheetOpen(true)}
+                    type="button"
+                    tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
+                    aria-label="Exportar"
+                    title="Exportar"
+                    aria-haspopup="dialog"
+                    aria-expanded={exportSheetOpen}
+                  >
+                    <Icon name="ios_share" className="text-lg" />
                   </Button>
                 ) : null}
               </div>
@@ -1966,6 +1986,12 @@ export function Itinerary() {
                 </Button>
               </div>
             ) : null}
+            {mode === MODE_ROTEIRO && likeReplace.open && !isLgUp ? (
+              <RoteiroModifyPanel
+                layout="dock"
+                {...modifyPanelSharedProps}
+              />
+            ) : null}
             {mode === MODE_ROTEIRO && !likeReplace.open ? (
               <ItineraryMobileMapDrawer
                 open={mobileMapOpen}
@@ -1990,7 +2016,7 @@ export function Itinerary() {
           className={`min-w-0 flex flex-col relative overflow-hidden ${
             mode === MODE_ROTEIRO
               ? likeReplace.open
-                ? 'flex max-lg:max-h-[42vh] flex-1 min-h-0 bg-background-light dark:bg-background-dark/40 lg:max-h-none'
+                ? 'hidden lg:flex flex-1 min-h-0 bg-background-light dark:bg-background-dark/40'
                 : 'hidden lg:flex flex-1 min-h-0 bg-gray-200 dark:bg-gray-900/50'
               : 'flex-1 min-h-0'
           }`}
@@ -2031,18 +2057,11 @@ export function Itinerary() {
               }}
             />
           </div>
-          {mode === MODE_ROTEIRO && likeReplace.open ? (
+          {mode === MODE_ROTEIRO && likeReplace.open && isLgUp ? (
             <div className="flex h-full min-h-0 flex-1 flex-col p-3 sm:p-4">
               <RoteiroModifyPanel
-                availableLikes={likeReplace.availableLikes}
-                selectedLikeId={likeReplace.selectedLikeId}
-                onSelectLike={likeReplace.selectLike}
-                onInsert={likeReplace.insertSelectedLike}
-                onConclude={handleConcludeModifyRoteiro}
-                onCancel={likeReplace.cancel}
-                saving={likeReplace.saving}
-                likeMotion={likeReplace.likeMotion}
-                registerLikeCardRef={likeReplace.registerLikeCardRef}
+                layout="sidebar"
+                {...modifyPanelSharedProps}
                 className="h-full min-h-0"
               />
             </div>
@@ -2094,6 +2113,11 @@ export function Itinerary() {
         ) : null}
       </div>
 
+      <ItineraryExportSheet
+        open={exportSheetOpen}
+        onClose={() => setExportSheetOpen(false)}
+        onExportPdf={handlePrintItinerary}
+      />
       <DeletePlanningOverlay
         open={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}

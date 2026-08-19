@@ -30,3 +30,24 @@ test('TinderView: prioriza baralho do sessionStorage (free e pago)', () => {
     /Preferir baralho local \(free e pago\)/
   )
 })
+
+test('TinderView: baralho local restaura sem spinner nem discoverSession', () => {
+  const loadStart = tinderSource.indexOf('const loadPlaces = useCallback')
+  const loadEnd = tinderSource.indexOf('const lastTripIdRef', loadStart)
+  assert.ok(loadStart >= 0 && loadEnd > loadStart)
+  const loadPlaces = tinderSource.slice(loadStart, loadEnd)
+
+  const readIdx = loadPlaces.indexOf('readTdvDeckSession(tripId)')
+  const loadingIdx = loadPlaces.indexOf('setLoading(true)')
+  assert.ok(readIdx >= 0, 'lê sessionStorage no loadPlaces')
+  assert.ok(loadingIdx > readIdx, 'lê o baralho local antes de setLoading(true)')
+
+  const localIf = loadPlaces.indexOf('if (localDeck.length > 0)')
+  const discoverIdx = loadPlaces.indexOf('discoverSession')
+  assert.ok(localIf >= 0 && discoverIdx > localIf)
+  const restoreBranch = loadPlaces.slice(localIf, discoverIdx)
+  assert.match(restoreBranch, /\breturn\b/)
+  assert.match(restoreBranch, /getTdvSummary/)
+  assert.doesNotMatch(restoreBranch, /discoverSession/)
+  assert.doesNotMatch(restoreBranch, /cacheSkippedPlaces/)
+})
