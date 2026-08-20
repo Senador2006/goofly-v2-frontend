@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
@@ -7,12 +8,31 @@ import { EmptyState } from '../common/EmptyState'
 import { placeService } from '../../services/placeService'
 import { getPlaceCoverImageUrl, getPlaceVideoUrls } from '../../utils/placeImages'
 import { buildTdvLikePlaceData } from '../../utils/tdvLikePlaceData'
+import {
+  clearTdvDeckSession,
+  readTdvDeckSession,
+  saveTdvDeckSession,
+} from '../../utils/tdvDeckSession'
 import { getRequestErrorMessage } from '../../utils/errors'
 import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
 
 function getPlaceId(p) {
   return p?.id ?? p?.placeId ?? p?.place_id
+}
+
+/** Mescla listas de lugares por id; itens locais prevalecem (swipes recentes). */
+function mergePlaceListsById(incoming, local) {
+  const map = new Map()
+  for (const p of incoming || []) {
+    const id = String(getPlaceId(p) || '').trim()
+    if (id) map.set(id, p)
+  }
+  for (const p of local || []) {
+    const id = String(getPlaceId(p) || '').trim()
+    if (id) map.set(id, p)
+  }
+  return [...map.values()]
 }
 
 function videoLinkLabel(url) {
@@ -36,19 +56,94 @@ const DECK_MAX_PLACES = 15
 /** Retentativas quando o baralho esvazia aguardando resposta do agente (máx. 3; n8n já retornou vazio → sem retry). */
 const EMPTY_DECK_PREFETCH_MAX_ATTEMPTS = 3
 const EMPTY_DECK_PREFETCH_RETRY_MS = 2000
+/** free_cap com issued < 10: race de re-cache — retry curto, não latchear paywall. */
+const FREE_CAP_SOFT_RETRY_MAX = 2
+const FREE_CAP_SOFT_RETRY_MS = 400
+const FREE_CAP_MAX_PLACES = 10
+
+function isHardFreeCap(res, swipeCount = 0) {
+  if (res?.placesSource !== 'free_cap') return false
+  // Paywall = 10 swipes (curtidas+descartes). Prefetch/issued sozinho não bloqueia.
+  const swiped = res?.tdvLimit?.placesSwiped
+  if (typeof swiped === 'number') return swiped >= FREE_CAP_MAX_PLACES
+  return swipeCount >= FREE_CAP_MAX_PLACES
+}
+
+function tdvIntroStorageKey(tripId) {
+  return `goofly:tdv-intro:${tripId}`
+}
+
+function tdvModifyIntroStorageKey(tripId) {
+  return `goofly:tdv-modify-intro:${tripId}`
+}
+
+function readIntroAcknowledged(tripId) {
+  if (!tripId || typeof sessionStorage === 'undefined') return false
+  try {
+    return sessionStorage.getItem(tdvIntroStorageKey(tripId)) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeIntroAcknowledged(tripId) {
+  if (!tripId || typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(tdvIntroStorageKey(tripId), '1')
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function readModifyIntroAcknowledged(tripId) {
+  if (!tripId || typeof sessionStorage === 'undefined') return false
+  try {
+    return sessionStorage.getItem(tdvModifyIntroStorageKey(tripId)) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeModifyIntroAcknowledged(tripId) {
+  if (!tripId || typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(tdvModifyIntroStorageKey(tripId), '1')
+  } catch {
+    /* ignore */
+  }
+}
 
 /**
  * TDV — layout fixo sem scroll de página: card relativo à viewport + barra inferior
  * com undo / dislike / like / finalizar. Histórico na lateral (lg+) ou sheet (mobile).
+ *
+ * @param {'planning' | 'postUnlock'} [tdvMode]
  */
-export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSatisfied, finalizingTdv = false }) {
+export function TinderView({
+  tripId,
+  trip,
+  onItineraryUpdate,
+  isActive,
+  onTdvSatisfied,
+  onModifyRoteiro,
+  onRequestClose,
+  finalizingTdv = false,
+  tdvMode = 'planning',
+  warnTdvLockOnGenerate = false,
+}) {
   const t = useT()
+  const navigate = useNavigate()
+  const isPostUnlock = tdvMode === 'postUnlock'
   const [places, setPlaces] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [totalLikes, setTotalLikes] = useState(0)
   const [likedPlaces, setLikedPlaces] = useState([])
   const [dislikedPlaces, setDislikedPlaces] = useState([])
   const [loading, setLoading] = useState(false)
+  const [introAcknowledged, setIntroAcknowledged] = useState(() =>
+    isPostUnlock ? readModifyIntroAcknowledged(tripId) : readIntroAcknowledged(tripId),
+  )
+  const [introReady, setIntroReady] = useState(false)
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const [sheetDragY, setSheetDragY] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
@@ -65,6 +160,9 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const [undoLoading, setUndoLoading] = useState(false)
   const [undoNotice, setUndoNotice] = useState(null)
   const [finalizeConfirmOpen, setFinalizeConfirmOpen] = useState(false)
+  const [balloonLockWarnOpen, setBalloonLockWarnOpen] = useState(false)
+  const [panelLockWarnOpen, setPanelLockWarnOpen] = useState(false)
+  const [freeCapLockWarnOpen, setFreeCapLockWarnOpen] = useState(false)
   const undoBusyRef = useRef(false)
   const finalizeConfirmRef = useRef(null)
 
@@ -187,20 +285,27 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   const prefetchGenRef = useRef(0)
   const prefetchAbortRef = useRef(null)
   const prefetchEmptyAttemptsRef = useRef(0)
+  const freeCapSoftRetryRef = useRef(0)
+  const freeCapSoftRetryTimerRef = useRef(null)
   const [emptyDeckRetryTick, setEmptyDeckRetryTick] = useState(0)
   const [placesSource, setPlacesSource] = useState(null)
   const [deckUnavailable, setDeckUnavailable] = useState(false)
+  const [freeCapReached, setFreeCapReached] = useState(false)
 
   const placesRef = useRef(places)
   const tripIdRef = useRef(tripId)
   placesRef.current = places
   tripIdRef.current = tripId
 
-  const releaseDeckToServer = useCallback(async (targetTripId = tripIdRef.current) => {
+  const releaseDeckToServer = useCallback(async (targetTripId = tripIdRef.current, opts = {}) => {
     const deck = placesRef.current
     if (!targetTripId || deck.length === 0) return
+    // Sync primeiro: sobrevive a navegação SPA mesmo se o POST for abortado.
+    saveTdvDeckSession(targetTripId, deck)
     try {
-      await placeService.cacheSkippedPlaces(targetTripId, deck)
+      await placeService.cacheSkippedPlaces(targetTripId, deck, {
+        keepalive: Boolean(opts.keepalive),
+      })
     } catch {
       // best-effort: cartas não consumidas voltam ao cache no servidor
     }
@@ -211,33 +316,167 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     [currentPlace]
   )
 
+  // Mantém backup do baralho a cada mudança (troca de rota SPA / remount).
+  // Não limpa no mount com places=[] — isso apagaria o backup antes do loadPlaces.
+  const hadDeckRef = useRef(false)
+  useEffect(() => {
+    if (!tripId) return
+    if (places.length > 0) {
+      hadDeckRef.current = true
+      saveTdvDeckSession(tripId, places)
+    } else if (hadDeckRef.current && consumedSinceSessionRef.current) {
+      clearTdvDeckSession(tripId)
+      hadDeckRef.current = false
+    }
+  }, [tripId, places])
+
+  const applyFreeCapFromResponse = useCallback((res, listLength, swipeCount = 0) => {
+    if (listLength > 0) {
+      freeCapSoftRetryRef.current = 0
+      setFreeCapReached(false)
+      return { hard: false, softRetry: false }
+    }
+    if (res?.placesSource !== 'free_cap') {
+      freeCapSoftRetryRef.current = 0
+      setFreeCapReached(false)
+      return { hard: false, softRetry: false }
+    }
+    const swiped = res?.tdvLimit?.placesSwiped ?? swipeCount
+    if (swiped < FREE_CAP_MAX_PLACES) {
+      // Prefetch/issued esgotado sem 10 swipes — não é paywall.
+      setFreeCapReached(false)
+      if (freeCapSoftRetryRef.current >= FREE_CAP_SOFT_RETRY_MAX) {
+        return { hard: false, softRetry: false }
+      }
+      freeCapSoftRetryRef.current += 1
+      return { hard: false, softRetry: true }
+    }
+    if (isHardFreeCap(res, swipeCount)) {
+      freeCapSoftRetryRef.current = 0
+      setFreeCapReached(true)
+      return { hard: true, softRetry: false }
+    }
+    setFreeCapReached(false)
+    return { hard: false, softRetry: false }
+  }, [])
+
   const loadPlaces = useCallback(async () => {
     if (!tripId) {
       setLoading(false)
       return
     }
     loadAbortRef.current?.abort()
+    if (freeCapSoftRetryTimerRef.current) {
+      clearTimeout(freeCapSoftRetryTimerRef.current)
+      freeCapSoftRetryTimerRef.current = null
+    }
     const ac = new AbortController()
     loadAbortRef.current = ac
     const gen = ++loadGenRef.current
-    setLoading(true)
-    setError(null)
     prefetchEmptyAttemptsRef.current = 0
+
+    const localDeck = readTdvDeckSession(tripId)
+    // Preferir baralho local (free e pago): ao sair da viagem o agente unlocked
+    // devolveria um lote novo e apagaria o ponto onde o usuário parou.
+    if (localDeck.length > 0) {
+      const restoredFromSession = true
+      sessionDeckBaselineRef.current = localDeck.length
+      consumedSinceSessionRef.current = false
+      hadDeckRef.current = true
+      setPlaces(localDeck)
+      setUndoStack([])
+      setPlacesSource(restoredFromSession ? 'cache' : null)
+      setFreeCapReached(false)
+      setDeckUnavailable(false)
+      setCurrentIndex(0)
+      setIntroReady(true)
+      setLoading(false)
+      setError(null)
+      placeService
+        .getTdvSummary(tripId)
+        .then((summary) => {
+          if (gen !== loadGenRef.current) return
+          const likedFromRes = Array.isArray(summary.likedPlaces) ? summary.likedPlaces : []
+          const dislikedFromRes = Array.isArray(summary.dislikedPlaces)
+            ? summary.dislikedPlaces
+            : []
+          const likesCount = summary.likesCount ?? likedFromRes.length
+          if (consumedSinceSessionRef.current) {
+            setLikedPlaces((prev) => mergePlaceListsById(likedFromRes, prev))
+            setDislikedPlaces((prev) => mergePlaceListsById(dislikedFromRes, prev))
+            setTotalLikes((prev) => Math.max(Number(prev) || 0, likesCount))
+            return
+          }
+          setLikedPlaces(likedFromRes)
+          setDislikedPlaces(dislikedFromRes)
+          setTotalLikes(likesCount)
+        })
+        .catch(() => {})
+      return
+    }
+
+    setLoading(true)
+    setIntroReady(false)
+    setError(null)
     try {
       const res = await placeService.discoverSession(tripId, undefined, { signal: ac.signal })
       if (gen !== loadGenRef.current) return
-      const p = res.places ?? []
-      const list = Array.isArray(p) ? p : []
+
+      const likedFromRes = Array.isArray(res.likedPlaces) ? res.likedPlaces : []
+      const dislikedFromRes = Array.isArray(res.dislikedPlaces) ? res.dislikedPlaces : []
+      const swipedIds = new Set(
+        [...likedFromRes, ...dislikedFromRes]
+          .map((p) => String(p?.placeId || p?.place_id || p?.id || '').trim())
+          .filter(Boolean)
+      )
+
+      const localDeck = readTdvDeckSession(tripId).filter((p) => {
+        const id = String(getPlaceId(p) || '').trim()
+        return id && !swipedIds.has(id)
+      })
+      const serverList = Array.isArray(res.places) ? res.places : []
+
+      // Preferir baralho local (free e pago): ao sair da viagem o agente unlocked
+      // devolveria um lote novo e apagaria o ponto onde o usuário parou.
+      let list
+      let restoredFromSession = false
+      if (localDeck.length > 0) {
+        list = localDeck
+        restoredFromSession = true
+        placeService.cacheSkippedPlaces(tripId, localDeck).catch(() => {})
+        saveTdvDeckSession(tripId, localDeck)
+      } else {
+        list = serverList
+        if (list.length > 0) saveTdvDeckSession(tripId, list)
+        else clearTdvDeckSession(tripId)
+      }
+
       sessionDeckBaselineRef.current = list.length
       consumedSinceSessionRef.current = false
       setPlaces(list)
       setUndoStack([])
       setTotalLikes(res.totalLikes ?? 0)
-      setLikedPlaces(res.likedPlaces || [])
-      setDislikedPlaces(res.dislikedPlaces || [])
-      setPlacesSource(res.placesSource ?? null)
-      setDeckUnavailable(list.length === 0 && res.placesSource === 'none')
+      setLikedPlaces(likedFromRes)
+      setDislikedPlaces(dislikedFromRes)
+      setPlacesSource(restoredFromSession ? 'cache' : res.placesSource ?? null)
+      const swipeCount = likedFromRes.length + dislikedFromRes.length
+      const { softRetry, hard } = applyFreeCapFromResponse(
+        restoredFromSession ? { ...res, placesSource: 'cache' } : res,
+        list.length,
+        swipeCount
+      )
+      if (hard && list.length === 0) clearTdvDeckSession(tripId)
+      setDeckUnavailable(
+        list.length === 0 && !restoredFromSession && res.placesSource === 'none'
+      )
       setCurrentIndex(0)
+      setIntroReady(true)
+      if (softRetry && !restoredFromSession) {
+        freeCapSoftRetryTimerRef.current = window.setTimeout(() => {
+          freeCapSoftRetryTimerRef.current = null
+          if (gen === loadGenRef.current) loadPlaces()
+        }, FREE_CAP_SOFT_RETRY_MS)
+      }
     } catch (err) {
       if (gen !== loadGenRef.current) return
       const aborted =
@@ -246,11 +485,23 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         err.name === 'CanceledError' ||
         err.message === 'canceled'
       if (aborted) return
+      // Rede falhou ao voltar: ainda tenta o backup local.
+      const localDeck = readTdvDeckSession(tripId)
+      if (localDeck.length > 0) {
+        setPlaces(localDeck)
+        setFreeCapReached(false)
+        setDeckUnavailable(false)
+        setCurrentIndex(0)
+        setIntroReady(true)
+        setError(null)
+        return
+      }
+      setIntroReady(false)
       setError(getRequestErrorMessage(err))
     } finally {
       if (gen === loadGenRef.current) setLoading(false)
     }
-  }, [tripId])
+  }, [tripId, applyFreeCapFromResponse])
 
   const lastTripIdRef = useRef(null)
   useEffect(() => {
@@ -267,28 +518,44 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       setTotalLikes(0)
       setPlacesSource(null)
       setDeckUnavailable(false)
+      setFreeCapReached(false)
+      freeCapSoftRetryRef.current = 0
       setError(null)
       setUndoStack([])
+      setIntroAcknowledged(
+        isPostUnlock ? readModifyIntroAcknowledged(tripId) : readIntroAcknowledged(tripId),
+      )
+      setIntroReady(false)
       sessionDeckBaselineRef.current = 0
       consumedSinceSessionRef.current = false
+      hadDeckRef.current = false
+    }
+  }, [tripId, releaseDeckToServer, isPostUnlock])
+
+  // Persistência ao sair da viagem / fechar aba: keepalive para o POST completar.
+  useEffect(() => {
+    if (!tripId) return undefined
+    return () => {
+      releaseDeckToServer(tripId, { keepalive: true })
     }
   }, [tripId, releaseDeckToServer])
 
-  // Devolve cartas não consumidas ao cache quando o usuário sai da aba TDV.
-  useEffect(() => {
-    if (!isActive || !tripId) return undefined
-    return () => {
-      releaseDeckToServer(tripId)
-    }
-  }, [isActive, tripId, releaseDeckToServer])
-
   useEffect(() => {
     const onPageHide = () => {
-      releaseDeckToServer()
+      releaseDeckToServer(undefined, { keepalive: true })
     }
     window.addEventListener('pagehide', onPageHide)
     return () => window.removeEventListener('pagehide', onPageHide)
   }, [releaseDeckToServer])
+
+  useEffect(() => {
+    return () => {
+      if (freeCapSoftRetryTimerRef.current) {
+        clearTimeout(freeCapSoftRetryTimerRef.current)
+        freeCapSoftRetryTimerRef.current = null
+      }
+    }
+  }, [])
 
   const deckKey = places
     .map((p) => getPlaceId(p))
@@ -300,22 +567,42 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
   }, [deckKey])
 
   const handleRetryDeck = useCallback(() => {
-    if (finalizingTdv) return
+    if (finalizingTdv || freeCapReached) return
     prefetchEmptyAttemptsRef.current = 0
+    freeCapSoftRetryRef.current = 0
     setDeckUnavailable(false)
     loadPlaces()
-  }, [finalizingTdv, loadPlaces])
+  }, [finalizingTdv, freeCapReached, loadPlaces])
 
-  // Carrega ao ativar a aba / mudar viagem. Não incluir places.length nem loading nas deps:
-  // com lista vazia (API ok) ou erro (ex.: 429), isso re-disparava o efeito em loop.
+  // Carrega ao ativar a aba / mudar viagem. Com deck local, reexibe na hora (sem discover).
   useEffect(() => {
     if (!isActive || !tripId) return
+    if (placesRef.current.length > 0) return
     loadPlaces()
   }, [isActive, tripId, loadPlaces])
 
+  // Após unlock do planejamento, busca novos batches além do limite free (uma vez).
+  const planningUnlockedAt = trip?.planning_unlocked_at ?? trip?.planningUnlockedAt ?? null
+  const unlockReloadDoneRef = useRef(false)
+  useEffect(() => {
+    unlockReloadDoneRef.current = false
+  }, [tripId])
+  useEffect(() => {
+    if (!isActive || !tripId || !planningUnlockedAt || !freeCapReached) return
+    if (unlockReloadDoneRef.current) return
+    unlockReloadDoneRef.current = true
+    setFreeCapReached(false)
+    freeCapSoftRetryRef.current = 0
+    loadPlaces()
+  }, [isActive, tripId, planningUnlockedAt, freeCapReached, loadPlaces])
+
+  useEffect(() => {
+    if (!freeCapReached) setFreeCapLockWarnOpen(false)
+  }, [freeCapReached])
+
   // Antecipa o próximo lote quando o baralho encolheu (inclui baralho vazio — continuidade TDV).
   useEffect(() => {
-    if (!isActive || !tripId || loading || deckUnavailable || finalizingTdv) return
+    if (!isActive || !tripId || loading || deckUnavailable || freeCapReached || finalizingTdv) return
     const n = places.length
     if (n >= DECK_MAX_PLACES) return
     if (n > PREFETCH_WHEN_REMAINING_AT_MOST) return
@@ -355,6 +642,22 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         const incoming = Array.isArray(res.places) ? res.places : []
         if (res.placesSource) setPlacesSource(res.placesSource)
 
+        if (res.placesSource === 'free_cap') {
+          // Ainda há cartas locais: só para o prefetch — não mostra paywall.
+          if (n > 0) return
+          const swipeCount = likedPlaces.length + dislikedPlaces.length
+          const { hard, softRetry } = applyFreeCapFromResponse(res, incoming.length, swipeCount)
+          if (hard) return
+          if (softRetry) {
+            window.setTimeout(() => {
+              if (!cancelled && prefetchGen === prefetchGenRef.current) {
+                setEmptyDeckRetryTick((t) => t + 1)
+              }
+            }, FREE_CAP_SOFT_RETRY_MS)
+          }
+          return
+        }
+
         if (res.placesSource === 'none') {
           if (n === 0) setDeckUnavailable(true)
           return
@@ -366,6 +669,7 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         }
 
         prefetchEmptyAttemptsRef.current = 0
+        freeCapSoftRetryRef.current = 0
         let wouldAdd = 0
         for (const p of incoming) {
           const id = getPlaceId(p)
@@ -412,7 +716,19 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       ac.abort()
       prefetchInFlightRef.current = false
     }
-  }, [isActive, tripId, loading, places, deckUnavailable, emptyDeckRetryTick, finalizingTdv])
+  }, [
+    isActive,
+    tripId,
+    loading,
+    places,
+    deckUnavailable,
+    freeCapReached,
+    emptyDeckRetryTick,
+    finalizingTdv,
+    applyFreeCapFromResponse,
+    likedPlaces,
+    dislikedPlaces,
+  ])
 
   // Congela o TDV durante finalize: aborta discover/prefetch em voo (não compete com n8n).
   useEffect(() => {
@@ -429,21 +745,27 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        setFinalizeConfirmOpen(false)
+        if (balloonLockWarnOpen) setBalloonLockWarnOpen(false)
+        else setFinalizeConfirmOpen(false)
       }
     }
     const onPointerDown = (e) => {
       if (finalizeConfirmRef.current?.contains(e.target)) return
       setFinalizeConfirmOpen(false)
+      setBalloonLockWarnOpen(false)
     }
     window.addEventListener('keydown', onKeyDown)
-    // Capture: fecha ao tocar fora antes de outros handlers do card.
     document.addEventListener('pointerdown', onPointerDown, true)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('pointerdown', onPointerDown, true)
     }
-  }, [finalizeConfirmOpen])
+  }, [finalizeConfirmOpen, balloonLockWarnOpen])
+
+  const closeFinalizeBalloon = useCallback(() => {
+    setFinalizeConfirmOpen(false)
+    setBalloonLockWarnOpen(false)
+  }, [])
 
   const handleLike = useCallback(async () => {
     if (finalizingTdv || !currentPlace || !tripId) return
@@ -688,31 +1010,104 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
 
   const choicesPanel = renderChoicesPanel('sidebar')
 
-  const renderFinalizeConfirm = () => (
-    <>
-      <p className="mb-2 text-[11px] leading-snug text-text-secondary sm:text-xs lg:mb-3 lg:text-[13px] lg:leading-relaxed">
-        Ao finalizar, a IA usa o formulário da viagem e, se houver, suas curtidas e descartes. Sem curtidas, o roteiro
-        vem só do planejamento.
-      </p>
-      <Button
-        onClick={() => {
-          setFinalizeConfirmOpen(false)
-          onTdvSatisfied?.()
-        }}
-        disabled={finalizingTdv}
-        className="w-full rounded-full py-2.5 sm:py-3 lg:py-3.5 lg:text-[15px]"
-      >
-        {finalizingTdv ? t('tdv.finalize_generating') : t('tdv.finalize_cta')}
-      </Button>
-      {totalLikes < 1 && (
-        <p className="mt-1.5 text-center text-[10px] text-text-secondary lg:mt-2 lg:text-[11px]">{t('tdv.finalize_hint')}</p>
-      )}
-    </>
-  )
+  const requestGenerateFromTdv = useCallback((opts = {}) => {
+    onTdvSatisfied?.()
+  }, [onTdvSatisfied])
+
+  const requestModifyRoteiro = useCallback(() => {
+    onModifyRoteiro?.(likedPlaces)
+  }, [onModifyRoteiro, likedPlaces])
+
+  const renderFinalizeFlow = ({
+    lockWarnOpen,
+    onRequestLockWarn,
+    onCancelLockWarn,
+    onAfterConfirm,
+  }) => {
+    if (isPostUnlock) {
+      return (
+        <>
+          <p className="mb-2 text-[11px] leading-snug text-text-secondary sm:text-xs lg:mb-3 lg:text-[13px] lg:leading-relaxed">
+            {t('tdv.modify_confirm_body')}
+          </p>
+          <Button
+            onClick={() => {
+              onAfterConfirm?.()
+              requestModifyRoteiro()
+            }}
+            disabled={finalizingTdv}
+            className="w-full rounded-full py-2.5 sm:py-3 lg:py-3.5 lg:text-[15px]"
+          >
+            {t('tdv.modify_cta')}
+          </Button>
+        </>
+      )
+    }
+
+    if (lockWarnOpen) {
+      return (
+        <>
+          <p className="mb-2 text-[11px] leading-snug text-text-secondary sm:text-xs lg:mb-3 lg:text-[13px] lg:leading-relaxed">
+            {t('tdv.lock_warn_body')}
+          </p>
+          <Button
+            onClick={() => {
+              onAfterConfirm?.()
+              requestGenerateFromTdv()
+            }}
+            disabled={finalizingTdv}
+            className="w-full rounded-full py-2.5 sm:py-3 lg:py-3.5 lg:text-[15px]"
+          >
+            {finalizingTdv ? t('tdv.finalize_generating') : t('tdv.lock_warn_confirm')}
+          </Button>
+          <button
+            type="button"
+            onClick={onCancelLockWarn}
+            className="mt-2 w-full text-center text-[11px] font-semibold text-text-secondary transition-colors hover:text-[#1c1c0d] dark:hover:text-white"
+          >
+            {t('tdv.lock_warn_cancel')}
+          </button>
+        </>
+      )
+    }
+
+    return (
+      <>
+        <p className="mb-2 text-[11px] leading-snug text-text-secondary sm:text-xs lg:mb-3 lg:text-[13px] lg:leading-relaxed">
+          Ao finalizar, a IA usa o formulário da viagem e, se houver, suas curtidas e descartes. Sem
+          curtidas, o roteiro vem só do planejamento.
+        </p>
+        <Button
+          onClick={() => {
+            if (warnTdvLockOnGenerate) {
+              onRequestLockWarn?.()
+              return
+            }
+            onAfterConfirm?.()
+            requestGenerateFromTdv()
+          }}
+          disabled={finalizingTdv}
+          className="w-full rounded-full py-2.5 sm:py-3 lg:py-3.5 lg:text-[15px]"
+        >
+          {finalizingTdv ? t('tdv.finalize_generating') : t('tdv.finalize_cta')}
+        </Button>
+        {totalLikes < 1 ? (
+          <p className="mt-1.5 text-center text-[10px] text-text-secondary lg:mt-2 lg:text-[11px]">
+            {t('tdv.finalize_hint')}
+          </p>
+        ) : null}
+      </>
+    )
+  }
 
   const finalizePanel = (
     <div className="relative z-[1] mx-auto w-full max-w-xl shrink-0 rounded-2xl border border-border-light bg-white p-3 shadow-sm dark:border-white/[0.08] dark:bg-surface-dark dark:shadow-none sm:p-3.5 lg:mx-0 lg:max-w-none">
-      {renderFinalizeConfirm()}
+      {renderFinalizeFlow({
+        lockWarnOpen: panelLockWarnOpen,
+        onRequestLockWarn: () => setPanelLockWarnOpen(true),
+        onCancelLockWarn: () => setPanelLockWarnOpen(false),
+        onAfterConfirm: () => setPanelLockWarnOpen(false),
+      })}
     </div>
   )
 
@@ -725,6 +1120,38 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
       {choicesPanel}
     </div>
   )
+
+  if (!introAcknowledged && (loading || introReady)) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden bg-[#f0f0ee] px-6 py-8 dark:bg-[#0e0e0e]"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
+          {loading ? <LoadingSpinner className="p-4" /> : null}
+          <p className="text-sm leading-relaxed text-text-secondary">
+            {isPostUnlock ? t('tdv.modify_intro_body') : t('tdv.intro_body')}
+          </p>
+          <Button
+            type="button"
+            className="rounded-full"
+            disabled={loading || !introReady}
+            onClick={() => {
+              if (isPostUnlock) {
+                writeModifyIntroAcknowledged(tripId)
+              } else {
+                writeIntroAcknowledged(tripId)
+              }
+              setIntroAcknowledged(true)
+            }}
+          >
+            {isPostUnlock ? t('tdv.modify_intro_understood') : t('tdv.intro_understood')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -804,9 +1231,20 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
             className="absolute bottom-[calc(100%+0.65rem)] right-0 z-[50] w-[min(17.5rem,calc(100vw-1.25rem))] rounded-2xl border border-border-light bg-white p-3 shadow-xl dark:border-white/[0.1] dark:bg-surface-dark lg:bottom-[calc(100%+1.5rem)] lg:left-1/2 lg:right-auto lg:w-[22.5rem] lg:-translate-x-1/2 lg:p-4 lg:shadow-2xl"
             role="dialog"
             aria-modal="true"
-            aria-label={t('tdv.finalize_action')}
+            aria-label={
+              isPostUnlock
+                ? t('tdv.modify_cta')
+                : balloonLockWarnOpen
+                  ? t('tdv.lock_warn_title')
+                  : t('tdv.finalize_action')
+            }
           >
-            {renderFinalizeConfirm()}
+            {renderFinalizeFlow({
+              lockWarnOpen: balloonLockWarnOpen,
+              onRequestLockWarn: () => setBalloonLockWarnOpen(true),
+              onCancelLockWarn: () => setBalloonLockWarnOpen(false),
+              onAfterConfirm: closeFinalizeBalloon,
+            })}
             <span
               className="pointer-events-none absolute -bottom-1.5 right-3 size-3 rotate-45 border-b border-r border-border-light bg-white dark:border-white/[0.1] dark:bg-surface-dark lg:left-1/2 lg:right-auto lg:-translate-x-1/2"
               aria-hidden
@@ -815,18 +1253,29 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
         ) : null}
         <button
           type="button"
-          onClick={() => setFinalizeConfirmOpen((open) => !open)}
+          onClick={() => {
+            setFinalizeConfirmOpen((open) => {
+              if (open) setBalloonLockWarnOpen(false)
+              return !open
+            })
+          }}
           disabled={finalizingTdv}
           className={`${finalizeBtnClass} ${
             finalizeConfirmOpen ? 'ring-2 ring-emerald-500/40 dark:ring-emerald-400/40' : ''
           }`}
-          aria-label={finalizingTdv ? t('tdv.finalize_generating') : t('tdv.finalize_action')}
+          aria-label={
+            isPostUnlock
+              ? t('tdv.modify_cta')
+              : finalizingTdv
+                ? t('tdv.finalize_generating')
+                : t('tdv.finalize_action')
+          }
           aria-expanded={finalizeConfirmOpen}
           aria-haspopup="dialog"
-          title={t('tdv.finalize_action')}
+          title={isPostUnlock ? t('tdv.modify_cta') : t('tdv.finalize_action')}
         >
           <Icon
-            name={finalizingTdv ? 'progress_activity' : 'task_alt'}
+            name={finalizingTdv ? 'progress_activity' : isPostUnlock ? 'swap_horiz' : 'task_alt'}
             className={`text-lg lg:text-2xl ${finalizingTdv ? 'animate-spin' : ''}`}
             filled={!finalizingTdv}
           />
@@ -938,6 +1387,77 @@ export function TinderView({ tripId, trip, onItineraryUpdate, isActive, onTdvSat
             <div className="absolute inset-0">
               {currentPlace ? (
                 placeCard
+              ) : freeCapReached ? (
+                <div className="flex h-full w-full flex-col items-center justify-center px-3">
+                  <EmptyState
+                    icon="lock"
+                    title={t('tdv.free_cap_title')}
+                    description={t('tdv.free_cap_body')}
+                    action={
+                      <div className="flex w-full max-w-sm flex-col gap-2">
+                        {freeCapLockWarnOpen && warnTdvLockOnGenerate ? (
+                          <div
+                            className="rounded-2xl border border-border-light bg-white p-3 text-left shadow-xl dark:border-white/[0.1] dark:bg-surface-dark sm:p-4"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label={t('tdv.lock_warn_title')}
+                          >
+                            <p className="mb-2 text-[11px] leading-snug text-text-secondary sm:text-xs lg:mb-3 lg:text-[13px] lg:leading-relaxed">
+                              {t('tdv.lock_warn_body')}
+                            </p>
+                            <Button
+                              onClick={() => {
+                                setFreeCapLockWarnOpen(false)
+                                requestGenerateFromTdv()
+                              }}
+                              disabled={finalizingTdv}
+                              className="w-full rounded-full py-2.5 sm:py-3 lg:py-3.5 lg:text-[15px]"
+                            >
+                              {finalizingTdv
+                                ? t('tdv.finalize_generating')
+                                : t('tdv.lock_warn_confirm')}
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => setFreeCapLockWarnOpen(false)}
+                              className="mt-2 w-full text-center text-[11px] font-semibold text-text-secondary transition-colors hover:text-[#1c1c0d] dark:hover:text-white"
+                            >
+                              {t('tdv.lock_warn_cancel')}
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <Button
+                              onClick={() => {
+                                if (warnTdvLockOnGenerate) {
+                                  setFreeCapLockWarnOpen(true)
+                                  return
+                                }
+                                requestGenerateFromTdv()
+                              }}
+                              disabled={finalizingTdv}
+                              className="w-full rounded-full"
+                            >
+                              {t('tdv.free_cap_generate')}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() =>
+                                navigate(
+                                  `/pagamento?tripId=${encodeURIComponent(tripId)}&from=tdv`,
+                                )
+                              }
+                              disabled={finalizingTdv}
+                              className="w-full rounded-full"
+                            >
+                              {t('tdv.free_cap_unlock')}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    }
+                  />
+                </div>
               ) : deckUnavailable ? (
                 <div className="flex h-full w-full flex-col items-center justify-center px-3">
                   <EmptyState

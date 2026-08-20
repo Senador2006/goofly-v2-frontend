@@ -77,16 +77,60 @@ export default {
     finalize_preparing_subtitle: 'Isso pode levar alguns instantes',
     finalize_error: 'Não foi possível finalizar o TDV',
     finalize_hint: 'Sem curtidas, o roteiro será gerado apenas com os dados do formulário.',
+    conclude_title: 'Concluir planejamento',
+    conclude_body:
+      'Gere o roteiro com a IA a partir do formulário da viagem. O TDV é opcional para indicar lugares que você prefere.',
+    conclude_body_tdv:
+      'A IA usa o formulário da viagem e, se houver, suas curtidas no TDV.',
+    conclude_cta: 'Gerar roteiro e ativar viagem',
     mock_banner: 'Modo demonstração — recomendações de exemplo (não são sugestões reais da IA).',
     empty_title: 'Sem mais lugares',
     fetching: 'Buscando lugares...',
     retry: 'Tentar de novo',
     agent_unavailable:
       'Não foi possível carregar recomendações. Verifique sua conexão ou tente novamente em instantes.',
+    free_cap_title: 'Limite do modo gratuito',
+    free_cap_body:
+      'Você explorou até 10 lugares no TDV gratuito. Gere o roteiro com o que curtiu ou desbloqueie o plano completo para continuar descobrindo.',
+    free_cap_generate: 'Gerar roteiro',
+    free_cap_unlock: 'Desbloquear plano completo',
     already_liked: 'Este lugar já recebeu seu like',
     skip: 'Pular',
     like: 'Adicionar ao roteiro',
-    dislike: 'Não me interessa'
+    dislike: 'Não me interessa',
+    intro_body:
+      'Tinder de Viagem: Descubra seu estilo! Dê like nas experiências que você curte e deslike nas que não fazem seu estilo. Quando estiver satisfeito, dê um check ✓ e deixe a Goofly completar seu roteiro.',
+    intro_understood: 'Entendido',
+    lock_warn_title: 'TDV ficará bloqueado',
+    lock_warn_body:
+      'Ao gerar o roteiro no modo gratuito, você perde o acesso à aba TDV até desbloquear o planejamento completo desta viagem. Deseja continuar?',
+    lock_warn_confirm: 'Gerar mesmo assim',
+    lock_warn_cancel: 'Voltar',
+    lock_tab_hint: 'Desbloqueie o planejamento para voltar a usar o TDV',
+    lock_banner_title: 'TDV bloqueado',
+    lock_banner_body:
+      'A aba TDV fica bloqueada no modo gratuito após gerar o roteiro. Desbloqueie o planejamento completo para voltar a explorar e modificar paradas.',
+    unlock_tdv_ready_title: 'TDV liberado',
+    unlock_tdv_ready_body:
+      'Toque na aba TDV para abrir o Tinder de Viagens sobre o roteiro e usar Modificar Roteiro com suas curtidas.',
+    unlock_tdv_ready_cta: 'Abrir TDV',
+    modify_intro_body:
+      'Agora suas curtidas entram no roteiro pelo Modificar Roteiro. Continue explorando no TDV e, quando quiser, troque, inclua ou remova paradas com as picks que curtir.',
+    modify_intro_understood: 'Entendi',
+    modify_cta: 'Modificar Roteiro',
+    modify_confirm_body:
+      'Vamos abrir suas curtidas ao lado do roteiro para você inserir, remover ou trocar paradas. Nada é gerado pela IA — só você edita e conclui.',
+    modify_panel_title: 'Curtidas para o roteiro',
+    modify_panel_empty: 'Nenhuma curtida disponível para incluir. Explore no TDV e volte aqui.',
+    modify_panel_hint:
+      'Selecione uma curtida e troque por uma parada, ou insira no dia atual. Remova paradas pelo ícone da lixeira.',
+    modify_insert: 'Inserir no dia atual',
+    modify_insert_short: 'Inserir',
+    modify_swap_hint: 'Toque numa parada do roteiro para trocar com a curtida selecionada',
+    modify_conclude: 'Concluir',
+    modify_cancel: 'Cancelar',
+    modify_saving: 'Salvando…',
+    overlay_close: 'Fechar TDV',
   },
 
   documents: {

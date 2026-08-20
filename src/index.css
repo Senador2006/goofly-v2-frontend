@@ -34,6 +34,7 @@ body {
 
 :root {
   --z-roteiro-drag-overlay: 1200;
+  --z-tdv-overlay: 1100;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -89,6 +90,260 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+}
+
+/* TDV pós-unlock: painel desliza de cima sobre o roteiro */
+.tdv-overlay-shell {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-tdv-overlay);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tdv-overlay-panel {
+  pointer-events: auto;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f0f0ee;
+  transform: translate3d(0, -105%, 0);
+  transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  backface-visibility: hidden;
+}
+
+.dark .tdv-overlay-panel {
+  background: #0e0e0e;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.tdv-overlay-panel--open {
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tdv-overlay-panel {
+    transition: none;
+  }
+}
+
+/* Abas + ações: só opacity/transform (compositor) — sem max-width a cada frame */
+.itinerary-header-mode-cluster {
+  position: relative;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.itinerary-header-tabs {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.itinerary-header-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  opacity: 0;
+  transform: translate3d(-12px, 0, 0);
+  transition:
+    opacity 220ms ease,
+    transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+  /* Fora do fluxo sem animar largura (evita jank de layout). */
+  width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.itinerary-header-actions--open {
+  width: auto;
+  margin-left: 0.5rem;
+  overflow: visible;
+  visibility: visible;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  pointer-events: auto;
+}
+
+/* Mobile: abas numa faixa, selo + ações na outra — sem width:0 (corta ícones). */
+@media (max-width: 1023.98px) {
+  .itinerary-header-mode-cluster {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .itinerary-header-tabs {
+    width: 100%;
+    min-width: 0;
+    flex-shrink: 1;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .itinerary-header-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .itinerary-header-actions {
+    width: 100%;
+    margin-left: 0;
+    overflow: hidden;
+    max-height: 0;
+    transform: translate3d(0, -8px, 0);
+  }
+
+  .itinerary-header-actions--open {
+    width: 100%;
+    margin-left: 0;
+    max-height: 2.75rem;
+    overflow: visible;
+    visibility: visible;
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    pointer-events: auto;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 0.375rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itinerary-header-actions {
+    transition: none;
+  }
+}
+
+/* Barra Dia 1/2 — um reflow instantâneo + fade/slide GPU (sem grid-template-rows animado) */
+.itinerary-day-chips-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  pointer-events: none;
+}
+
+.itinerary-day-chips-slot--open {
+  grid-template-rows: 1fr;
+  pointer-events: auto;
+}
+
+.itinerary-day-chips-slot__inner {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translate3d(0, -10px, 0);
+  transition:
+    opacity 240ms ease,
+    transform 400ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.itinerary-day-chips-slot--open .itinerary-day-chips-slot__inner {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itinerary-day-chips-slot__inner {
+    transition: none;
+  }
+}
+
+/* Modificar Roteiro — enter / exit / swap */
+@keyframes roteiro-modify-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes roteiro-modify-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    max-height: 5rem;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-12px) scale(0.96);
+    max-height: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+@keyframes roteiro-modify-like-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    max-height: 4.5rem;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(14px) scale(0.94);
+    max-height: 0;
+    margin: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+.roteiro-modify-row--enter {
+  animation: roteiro-modify-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.roteiro-modify-row--exit {
+  animation: roteiro-modify-exit 300ms cubic-bezier(0.4, 0, 1, 1) both;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.roteiro-modify-row--swap-hide .roteiro-modify-stop-card,
+.roteiro-modify-like--swap-hide .roteiro-modify-stop-card {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.roteiro-modify-like--exit {
+  animation: roteiro-modify-like-exit 300ms cubic-bezier(0.4, 0, 1, 1) both;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.roteiro-modify-swap-ghost {
+  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roteiro-modify-row--enter,
+  .roteiro-modify-row--exit,
+  .roteiro-modify-like--exit {
+    animation: none;
+  }
+
+  .roteiro-modify-row--swap-hide .roteiro-modify-stop-card,
+  .roteiro-modify-like--swap-hide .roteiro-modify-stop-card {
+    visibility: visible;
   }
 }
 
@@ -161,11 +416,11 @@ body {
   border-color: rgb(254 193 7 / 0.4) !important;
 }
 
-/* Cards de benefícios — hover com borda amarela e lift */
+/* Cards de benefícios — borda dourada da referência */
 .landing-page .landing-benefit-card {
-  background: #1E1B17;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1.5rem;
+  background: #141414;
+  border: 1px solid rgba(197, 145, 46, 0.55);
+  border-radius: 1.25rem;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
     background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
     border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -173,26 +428,73 @@ body {
 }
 
 .landing-page .landing-benefit-card:hover {
-  background: #2C2820;
-  border-color: rgba(254, 193, 7, 0.35);
+  background: #1C1C1C;
+  border-color: rgba(254, 193, 7, 0.7);
   transform: translateY(-4px);
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.28),
-    0 0 0 1px rgba(254, 193, 7, 0.18);
+    0 0 18px rgba(254, 193, 7, 0.12);
 }
 
-.landing-page .landing-benefit-icon {
-  transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+.landing-page .landing-check-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--landing-yellow);
+  color: var(--landing-yellow);
 }
 
-.landing-page .landing-benefit-card:hover .landing-benefit-icon {
-  border-color: rgba(254, 193, 7, 0.45);
-  background: rgba(254, 193, 7, 0.14);
+.landing-page .landing-stat-card {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.9rem;
+}
+
+.landing-page .landing-dest-card {
+  border-radius: 1.35rem;
+}
+
+.landing-page .landing-dest-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--landing-yellow);
+  color: var(--landing-yellow);
+  background: rgba(0, 0, 0, 0.45);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.landing-page .landing-dest-card:hover .landing-dest-arrow {
+  background: var(--landing-yellow);
+  color: #111111;
+  transform: translateX(2px);
+}
+
+.landing-page .landing-callout-dark {
+  border: 1px solid rgba(254, 193, 7, 0.45);
+  border-radius: 1rem;
+  box-shadow: 0 0 18px rgba(254, 193, 7, 0.08);
+}
+
+.landing-page .landing-callout-light {
+  background: #FFF6E8;
+  border-radius: 9999px;
+}
+
+.landing-page .landing-step-card {
+  box-shadow: 0 10px 30px rgba(18, 16, 14, 0.07);
+  border: 1px solid rgba(18, 16, 14, 0.05);
 }
 
 .landing-page .font-display {
   font-family: 'Playfair Display', Georgia, serif;
+  line-height: 1.4;
 }
 
 .landing-page .fade-up {
@@ -254,22 +556,22 @@ body {
 
 .landing-page .landing-btn-nav-secondary {
   padding: 0.5rem 1.25rem;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #111111;
+  color: #ffffff;
   background: transparent;
-  border: 1.5px solid rgba(17, 17, 17, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
 }
 
 .landing-page .landing-btn-nav-secondary:hover {
-  border-color: #111111;
-  background: #F5F2ED;
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .landing-page .landing-btn-nav-primary {
   padding: 0.625rem 1.25rem;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 0.875rem;
   font-weight: 700;
   color: #111111;
@@ -280,20 +582,20 @@ body {
 }
 
 .landing-page .landing-btn-nav-primary .material-icons-outlined {
-  font-size: 1.375rem;
+  font-size: 1.25rem;
   line-height: 1;
 }
 
 .landing-page .landing-btn-nav-primary:hover {
-  background: var(--landing-yellow-dark);
-  color: #FFFDF7;
+  background: var(--landing-yellow-hover);
+  color: #111111;
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(212, 160, 10, 0.32);
 }
 
 .landing-page .landing-btn-card-primary {
-  padding: 0.75rem 1.5rem;
-  border-radius: 10px;
+  padding: 0.85rem 1.5rem;
+  border-radius: 9999px;
   font-size: 0.875rem;
   font-weight: 700;
   color: #111111;
@@ -305,6 +607,21 @@ body {
 .landing-page .landing-btn-card-primary:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(212, 160, 10, 0.28);
+}
+
+.landing-page .landing-btn-card-outline {
+  padding: 0.85rem 1.5rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #111111;
+  background: #ffffff;
+  border: 2px solid #111111;
+}
+
+.landing-page .landing-btn-card-outline:hover {
+  background: #111111;
+  color: #ffffff;
 }
 
 .goofly-tour-popover.driver-popover {
@@ -368,6 +685,11 @@ body {
 
 .goofly-tour-popover .driver-popover-close-btn:hover {
   color: #ffffff;
+}
+
+.landing-page .guide-button-fab:hover span:first-of-type {
+  background: #111111;
+  color: var(--landing-yellow);
 }
 
 body.site-tour-active .guide-button-fab {

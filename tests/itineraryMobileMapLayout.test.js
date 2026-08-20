@@ -28,7 +28,8 @@ describe('Itinerary mobile map layout contracts', () => {
   })
 
   it('mapa embutido oculto no mobile em modo roteiro (desktop lg+)', () => {
-    assert.match(itinerarySource, /mode === MODE_ROTEIRO\s*\?\s*'hidden lg:flex flex-1 min-h-0/)
+    assert.match(itinerarySource, /hidden lg:flex flex-1 min-h-0 bg-gray-200/)
+    assert.match(itinerarySource, /hidden lg:flex flex-1 min-h-0 bg-background-light/)
   })
 
   it('roteiro não encolhe com mapa aberto (overlay cobre tudo)', () => {
@@ -44,16 +45,17 @@ describe('Itinerary mobile map layout contracts', () => {
       /showRoteiroSidebar \? \([\s\S]*?<section[\s\S]*?aria-label="Paradas do dia"[\s\S]*?>/m
     )
     assert.ok(sidebarMatch, 'section Paradas do dia')
-    const sectionChunk = itinerarySource.slice(sidebarMatch.index, sidebarMatch.index + 1200)
-    const roteiroBranch = sectionChunk.match(
-      /mode === MODE_ROTEIRO\s*\?\s*'([^']+)'/
-    )
-    assert.ok(roteiroBranch, 'branch MODE_ROTEIRO')
-    assert.doesNotMatch(roteiroBranch[1], /max-h-\[48vh\]/)
+    assert.match(sidebarMatch[0], /max-lg:flex-1/)
+    assert.match(sidebarMatch[0], /max-lg:max-h-none/)
+    const roteiroClasses = [...sidebarMatch[0].matchAll(/'w-full max-lg:flex-1[^']*'/g)].map((m) => m[0])
+    assert.ok(roteiroClasses.length >= 1, 'branch MODE_ROTEIRO com flex-1')
+    for (const cls of roteiroClasses) {
+      assert.doesNotMatch(cls, /max-h-\[48vh\]/)
+    }
   })
 
   it('renderiza drawer apenas em MODE_ROTEIRO', () => {
-    assert.match(itinerarySource, /mode === MODE_ROTEIRO \? \([\s\S]*?<ItineraryMobileMapDrawer/)
+    assert.match(itinerarySource, /mode === MODE_ROTEIRO && !likeReplace.open \? \([\s\S]*?<ItineraryMobileMapDrawer/)
   })
 })
 

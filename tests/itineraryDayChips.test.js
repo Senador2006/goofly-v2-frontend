@@ -55,7 +55,7 @@ describe('Itinerary — wiring swap de dias', () => {
       itinerarySource,
       /enabled:\s*roteiroEditOpen\s*&&\s*!loading\s*&&\s*Boolean\(trip\)\s*&&\s*hasFullAccess/,
     )
-    assert.match(itinerarySource, /swapEnabled=\{roteiroEditOpen && hasFullAccess && !loading\}/)
+    assert.match(itinerarySource, /swapEnabled=\{roteiroEditOpen && hasFullAccess && !loading && !likeReplace.open\}/)
   })
 
   it('foca o dia do swap com ghost na mão (delay curto)', () => {

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useMemo } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react'
 import api, { gatewayApi } from '../services/api'
 import { resolveIsAdmin } from '../utils/jwtRole'
 
@@ -30,29 +30,35 @@ function clearLocalAuthCache() {
   localStorage.removeItem(REFRESH_TOKEN_KEY)
 }
 
+function isRateLimitedError(err) {
+  return err?.response?.status === 429 || err?.response?.data?.error?.code === 'RATE_LIMIT_EXCEEDED'
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
       const res = await api.get('/users/me')
       const userData = res.body?.data || res.data?.data || res.data
       setUser(userData)
       return cacheUser(userData)
-    } catch (_) {
+    } catch (err) {
+      // 429 não invalida sessão — evita logout em rajada pós-pagamento/unlock.
+      if (isRateLimitedError(err)) return null
       return null
     }
-  }
+  }, [])
 
-  const applyUserUpdate = (patch) => {
+  const applyUserUpdate = useCallback((patch) => {
     if (!patch || typeof patch !== 'object') return
     setUser((prev) => {
       const next = { ...(prev || {}), ...patch }
       localStorage.setItem(USER_KEY, JSON.stringify(next))
       return next
     })
-  }
+  }, [])
 
   useEffect(() => {
     // O token agora é cookie httpOnly (invisível ao JS). Usamos o cache do
@@ -77,7 +83,9 @@ export function AuthProvider({ children }) {
         setUser(userData)
         cacheUser(userData)
       })
-      .catch(() => {
+      .catch((err) => {
+        // Rate limit não é sessão inválida — mantém cache local.
+        if (isRateLimitedError(err)) return
         // Cookie ausente/expirado e refresh falhou → sessão inválida.
         clearLocalAuthCache()
         setUser(null)
@@ -85,7 +93,7 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     // O gateway seta os cookies httpOnly nesta resposta; o body traz só `user`.
     const res = await api.post('/auth/login', { email, password })
     const payload = res.body?.data || res.data?.data || res.data || {}
@@ -95,9 +103,9 @@ export function AuthProvider({ children }) {
       cacheUser(userData)
     }
     return res.data
-  }
+  }, [refreshUser])
 
-  const register = async (name, email, password, captchaToken) => {
+  const register = useCallback(async (name, email, password, captchaToken) => {
     const res = await gatewayApi.post('/auth/register', { name, email, password, captchaToken })
     const payload = res.body?.data || res.data?.data || res.data || {}
     const userData = (await refreshUser()) || payload.user || payload
@@ -106,9 +114,9 @@ export function AuthProvider({ children }) {
       cacheUser(userData)
     }
     return res.data
-  }
+  }, [refreshUser])
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     // Limpa os cookies httpOnly no gateway (best-effort) e o estado local.
     try {
       await api.post('/auth/logout', {}, { _skipAuthRetry: true })
@@ -117,27 +125,26 @@ export function AuthProvider({ children }) {
     }
     clearLocalAuthCache()
     setUser(null)
-  }
+  }, [])
 
   const isAdmin = useMemo(() => resolveIsAdmin(user), [user])
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        login,
-        register,
-        logout,
-        refreshUser,
-        applyUserUpdate,
-        loading,
-        isAuthenticated: !!user,
-        isAdmin,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      user,
+      login,
+      register,
+      logout,
+      refreshUser,
+      applyUserUpdate,
+      loading,
+      isAuthenticated: !!user,
+      isAdmin,
+    }),
+    [user, login, register, logout, refreshUser, applyUserUpdate, loading, isAdmin]
   )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export const useAuth = () => useContext(AuthContext)

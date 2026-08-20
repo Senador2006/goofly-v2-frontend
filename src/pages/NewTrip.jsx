@@ -30,7 +30,7 @@ const INTERESTS = [
 ]
 
 const ITINERARY_STYLES = [
-  { value: 'relaxante', label: 'Relaxante', desc: 'Mais tempo livre' },
+  { value: 'relaxante', label: 'Tranquilo', desc: 'Mais tempo livre' },
   { value: 'equilibrado', label: 'Equilibrado', desc: 'Balanceia atividades e tempo livre' },
   { value: 'ativo', label: 'Ativo', desc: 'Muitas atividades por dia' },
 ]
@@ -151,7 +151,7 @@ export function NewTrip() {
     avoidCustom: '',
     prioritizeCustom: '',
     budget: '',
-    currency: 'USD',
+    currency: 'BRL',
     travelers: { adults: 1, children: 0 },
   })
 
@@ -325,7 +325,7 @@ export function NewTrip() {
       avoidPreferences: avoid,
       prioritizePreferences: prior,
       budget: formData.budget ? Number(formData.budget) : undefined,
-      currency: formData.currency || 'USD',
+      currency: formData.currency || 'BRL',
       travelers: {
         adults: Math.max(1, Number(formData.travelers.adults) || 1),
         children: Math.max(0, Number(formData.travelers.children) || 0),
@@ -489,20 +489,48 @@ export function NewTrip() {
                   </div>
                 </div>
               ))}
-              <Button type="button" variant="secondary" onClick={addDestination}>
-                <Icon name="add" />
-                Adicionar destino
-              </Button>
+              <div className="space-y-3">
+                <Button type="button" variant="secondary" onClick={addDestination}>
+                  <Icon name="add" />
+                  Adicionar destino
+                </Button>
+                <div
+                  className="flex gap-2 rounded-md border border-amber-500/15 bg-amber-500/[0.05] px-2.5 py-2 text-xs leading-snug text-amber-900/80 dark:border-amber-400/15 dark:bg-amber-400/[0.05] dark:text-amber-100/80"
+                  role="note"
+                >
+                  <Icon
+                    name="warning"
+                    className="mt-0.5 shrink-0 text-sm text-amber-600/80 dark:text-amber-300/80"
+                    aria-hidden
+                  />
+                  <div className="space-y-1">
+                    <p>
+                      <span className="font-semibold">Atenção:</span> Se sua viagem tiver mais de
+                      um destino, adicione todos eles nesta etapa. Depois de avançar, não será
+                      possível voltar e adicionar novos destinos.
+                    </p>
+                    <p className="text-amber-800/65 dark:text-amber-100/55">
+                      Exemplo: Orlando e Nova York.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
           {step === 2 && (
             <div className="space-y-6">
               <h3 className="text-lg font-bold">Locais de Estadia</h3>
-              <p className="text-sm text-text-secondary">
-                Opcional. Adicione quantas hospedagens quiser por destino — cada uma com datas
-                próprias aparecerá no mapa do roteiro (com endereço válido).
-              </p>
+              <div className="space-y-2">
+                <p className="text-sm text-text-secondary">
+                  Você já tem uma estadia reservada? Se sim, informe os detalhes aqui. Caso
+                  contrário, pule esta etapa.
+                </p>
+                <p className="text-sm text-text-secondary">
+                  Adicione quantas hospedagens quiser por destino — cada uma com datas próprias
+                  aparecerá no mapa do roteiro (com endereço válido).
+                </p>
+              </div>
               {formData.destinations.map((dest) => {
                 const destAccs = getAccommodationsForDestination(formData.accommodations, dest.id)
                 return (

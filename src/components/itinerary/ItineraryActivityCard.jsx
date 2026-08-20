@@ -595,7 +595,10 @@ function CardEditFields({
         </button>
         <button
           type="button"
-          onClick={onRemove}
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove?.()
+          }}
           className="inline-flex items-center gap-1 rounded-xl border border-red-500/35 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-700 dark:text-red-400 min-h-[2.25rem] ml-auto"
         >
           <Icon name="delete" className="text-sm" aria-hidden />

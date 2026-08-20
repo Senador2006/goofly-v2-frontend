@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { moveActivityToIndexInSameDay } from '../utils/itineraryDayHelpers'
+import { applyRoteiroScheduleReorder } from '../utils/roteiroScheduleContract'
 import { prefersReducedFlipMotion } from '../utils/flipListAnimation'
 import {
   buildGhostRect,
@@ -370,7 +371,11 @@ export function useRoteiroDragReorder({
 
     if (didReorder) {
       setDraftActivities((prev) =>
-        prev ? moveActivityToIndexInSameDay(prev, dateToDayMap, dayNum, id, targetIndex) : prev,
+        prev
+          ? applyRoteiroScheduleReorder(prev, dateToDayMap, dayNum, (list) =>
+              moveActivityToIndexInSameDay(list, dateToDayMap, dayNum, id, targetIndex),
+            )
+          : prev,
       )
     }
 
