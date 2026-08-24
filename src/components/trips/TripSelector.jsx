@@ -10,7 +10,7 @@ export function TripSelector({ trips, selectedId, onChange, disabledIds = new Se
 
   return (
     <div
-      className="flex gap-2 mb-4 overflow-x-auto no-scrollbar"
+      className="mb-4 flex w-full min-w-0 gap-2 overflow-x-auto overscroll-x-contain no-scrollbar"
       role="listbox"
       aria-label="Selecione a viagem para desbloquear"
     >

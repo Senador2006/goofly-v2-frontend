@@ -21,6 +21,7 @@ export function RoteiroModifyStopCard({
   tabIndex,
   'aria-label': ariaLabel,
   'aria-pressed': ariaPressed,
+  'aria-grabbed': ariaGrabbed,
   disabled = false,
 }) {
   const highlight = selected || Boolean(hint)
@@ -39,6 +40,7 @@ export function RoteiroModifyStopCard({
       tabIndex={tabIndex}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
+      aria-grabbed={ariaGrabbed}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">

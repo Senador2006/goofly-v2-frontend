@@ -79,6 +79,11 @@ describe('ItineraryMobileMapDrawer contracts', () => {
     assert.match(drawerSource, /lg:hidden/)
   })
 
+  it('monta ItineraryDayMap só com drawer aberto ou em arraste', () => {
+    assert.match(drawerSource, /\{\(open \|\| isDragging\) \? \(/)
+    assert.match(drawerSource, /<ItineraryDayMap/)
+  })
+
   it('painel full-screen ancorado à direita (entra da direita)', () => {
     assert.match(drawerSource, /right-0 z-20 w-full/)
     assert.match(drawerSource, /computeHandleInset/)

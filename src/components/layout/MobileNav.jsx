@@ -13,7 +13,7 @@ export function MobileNav({ className = '' }) {
     if (!el) return undefined
 
     const publishHeight = () => {
-      const height = Math.ceil(el.getBoundingClientRect().height)
+      const height = el.offsetHeight
       if (height > 0) {
         document.documentElement.style.setProperty(MOBILE_NAV_HEIGHT_VAR, `${height}px`)
       }
@@ -23,13 +23,9 @@ export function MobileNav({ className = '' }) {
     const ro = new ResizeObserver(publishHeight)
     ro.observe(el)
     window.addEventListener('orientationchange', publishHeight)
-    window.visualViewport?.addEventListener('resize', publishHeight)
-    window.visualViewport?.addEventListener('scroll', publishHeight)
     return () => {
       ro.disconnect()
       window.removeEventListener('orientationchange', publishHeight)
-      window.visualViewport?.removeEventListener('resize', publishHeight)
-      window.visualViewport?.removeEventListener('scroll', publishHeight)
       document.documentElement.style.removeProperty(MOBILE_NAV_HEIGHT_VAR)
     }
   }, [])

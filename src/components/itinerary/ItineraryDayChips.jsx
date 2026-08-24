@@ -278,8 +278,16 @@ export function ItineraryDayChips({
 
   useLayoutEffect(() => {
     placeIndicator(true)
+    let cancelled = false
+    const fontsReady = globalThis.document?.fonts?.ready
+    if (fontsReady && typeof fontsReady.then === 'function') {
+      fontsReady.then(() => {
+        if (!cancelled) placeIndicator(false)
+      })
+    }
 
     return () => {
+      cancelled = true
       if (slideTimerRef.current) {
         clearTimeout(slideTimerRef.current)
         slideTimerRef.current = null
@@ -320,8 +328,14 @@ export function ItineraryDayChips({
 
   useLayoutEffect(() => {
     if (isDragging) return
+    const container = containerRef.current
     const activeEl = chipRefs.current.get(selectedDay)
-    activeEl?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
+    if (!container || !activeEl) return
+    const cRect = container.getBoundingClientRect()
+    const aRect = activeEl.getBoundingClientRect()
+    if (aRect.left >= cRect.left && aRect.right <= cRect.right) return
+    const delta = aRect.left - cRect.left - (cRect.width - aRect.width) / 2
+    container.scrollTo({ left: Math.max(0, container.scrollLeft + delta), behavior: 'smooth' })
   }, [selectedDay, chipRefs, isDragging])
 
   useLayoutEffect(() => {

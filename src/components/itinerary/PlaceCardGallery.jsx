@@ -707,6 +707,10 @@ export function PlaceCardGallery({ place, className = '', variant = 'full' }) {
                   <img
                     src={url}
                     alt=""
+                    width={800}
+                    height={600}
+                    loading={i === safeIndex ? 'eager' : 'lazy'}
+                    decoding="async"
                     className={`absolute inset-0 h-full w-full object-cover object-center transition-transform duration-700 ease-out motion-reduce:transition-none ${
                       isActive && !isCompact ? 'group-hover:scale-105' : ''
                     } ${isPlaceholder ? 'opacity-90' : ''}`}
@@ -920,6 +924,10 @@ function SingleImage({ src, onError, enableHoverScale = true }) {
     <img
       src={src}
       alt=""
+      width={800}
+      height={600}
+      loading="lazy"
+      decoding="async"
       className={`absolute inset-0 h-full w-full object-cover object-center transition-transform duration-700 ease-out motion-reduce:transition-none ${
         enableHoverScale ? 'group-hover:scale-105' : ''
       } ${isPlaceholder ? 'opacity-90' : ''}`}

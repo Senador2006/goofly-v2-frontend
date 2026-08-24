@@ -29,20 +29,33 @@ export function getActivityDayNumber(act, dateToDayMap) {
   return null
 }
 
-/** Mapa `YYYY-MM-DD` → número do dia (1-based) na ordem das datas da trip. */
+function isoCalendarPrefix(raw) {
+  if (raw == null || raw === '') return null
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(raw).trim())
+  return m ? m[1] : null
+}
+
+function addUtcCalendarDay(iso) {
+  const [y, month, d] = iso.split('-').map(Number)
+  const next = new Date(Date.UTC(y, month - 1, d))
+  next.setUTCDate(next.getUTCDate() + 1)
+  return next.toISOString().slice(0, 10)
+}
+
+/** Mapa `YYYY-MM-DD` → número do dia (1-based), iterando calendário (sem TZ local). */
 export function buildDateToDayMap(trip) {
   const map = new Map()
   if (!trip) return map
   let dayNum = 1
   for (const dest of trip?.destinations || []) {
-    const start = new Date(dest.arrivalDate)
-    const end = new Date(dest.departureDate)
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue
-    const d = new Date(start)
-    while (d <= end) {
-      map.set(d.toISOString().split('T')[0], dayNum)
+    const start = isoCalendarPrefix(dest.arrivalDate ?? dest.arrival_date)
+    const end = isoCalendarPrefix(dest.departureDate ?? dest.departure_date)
+    if (!start || !end || start > end) continue
+    let cur = start
+    while (cur <= end) {
+      map.set(cur, dayNum)
       dayNum += 1
-      d.setDate(d.getDate() + 1)
+      cur = addUtcCalendarDay(cur)
     }
   }
   return map
@@ -137,7 +150,8 @@ export function moveActivityToIndexInSameDay(all, dateToDayMap, dayNum, activity
 export function groupActivitiesByDay(activities, dateToDayMap, dayNumbers = []) {
   const byDay = new Map()
   for (const act of activities || []) {
-    const day = getActivityDayNumber(act, dateToDayMap) ?? 1
+    const day = getActivityDayNumber(act, dateToDayMap)
+    if (day == null) continue
     if (!byDay.has(day)) byDay.set(day, [])
     byDay.get(day).push(act)
   }

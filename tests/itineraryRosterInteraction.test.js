@@ -40,7 +40,7 @@ describe('Itinerary roster interaction', () => {
   it('mapa recebe highlightedIndex da parada rastreada', () => {
     assert.match(itinerarySource, /highlightedIndex=\{trackedMapHighlight\}/)
     assert.match(itinerarySource, /trackedMapIndex/)
-    assert.match(itinerarySource, /preferLocalRoute=\{roteiroEditOpen\}/)
+    assert.match(itinerarySource, /preferLocalRoute=\{roteiroEditOpen \|\| likeReplace\.open\}/)
   })
 
   it('botão Nova parada exibe hint visual quando bloqueado', () => {

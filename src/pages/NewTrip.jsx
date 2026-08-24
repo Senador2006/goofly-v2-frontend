@@ -1,14 +1,36 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Header } from '../components/layout/Header'
 import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
+import { DateInput } from '../components/common/DateInput'
 import { GooglePlaceAutocompleteField } from '../components/planning/GooglePlaceAutocompleteField'
+import { AccommodationDestinationGroup } from '../components/planning/AccommodationStayForm'
 import { tripService } from '../services/tripService'
 import { hasGoogleMapsApiKey } from '../services/googleMapsPlacesLoader'
-import { readLatLng } from '../utils/coordinates'
+import { stepErrorKey } from '../utils/newTripStep1Validation'
+import {
+  collectStepErrors,
+  fieldErrorMessage,
+  furthestUnlockedStep as computeFurthestUnlocked,
+  stepFieldErrorMessage,
+} from '../utils/newTripFormValidation'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { trackMetaEvent } from '../utils/metaPixel'
+import {
+  accommodationHasContent,
+  createEmptyAccommodation,
+  generateAccommodationId,
+  getAccommodationsForDestination,
+  serializeAccommodation,
+} from '../utils/accommodationForm'
+import { resolveAccommodationDayOverlaps, previewAccommodationReplacements, suggestStayWindowAllowingOverlap } from '../utils/accommodationStayContract'
+import { AccommodationReplaceConfirmDialog } from '../components/itinerary/AccommodationReplaceConfirmDialog'
+import {
+  addCalendarDaysIso,
+  todayIsoCalendarDate,
+  tripSpanMaxDepartureIso,
+} from '../utils/dateInput'
 
 // Constantes do PRE_TRIP_FORM.md
 const INTERESTS = [
@@ -33,14 +55,6 @@ const ITINERARY_STYLES = [
   { value: 'relaxante', label: 'Tranquilo', desc: 'Mais tempo livre' },
   { value: 'equilibrado', label: 'Equilibrado', desc: 'Balanceia atividades e tempo livre' },
   { value: 'ativo', label: 'Ativo', desc: 'Muitas atividades por dia' },
-]
-
-const ACCOMMODATION_TYPES = [
-  { value: 'hotel', label: 'Hotel' },
-  { value: 'airbnb', label: 'Airbnb' },
-  { value: 'hostel', label: 'Hostel' },
-  { value: 'apartment', label: 'Residência' },
-  { value: 'other', label: 'Outro' },
 ]
 
 const AVOID_OPTIONS = [
@@ -82,64 +96,33 @@ function generateId() {
   return 'dest-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9)
 }
 
-function generateAccommodationId() {
-  return 'acc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9)
+function applyDestinationDateRules(destinations, index, updates) {
+  // Mantém datas inválidas no estado para a validação explicar o motivo real
+  // (ex.: "saída após chegada"), em vez de limpar e cair em "preencha a data".
+  const dests = destinations.map((d, i) => (i === index ? { ...d, ...updates } : { ...d }))
+  return { dests, notices: [] }
 }
 
-/** Indica se o usuário preencheu algum dado de hospedagem (nome ou endereço). */
-function accommodationHasContent(acc) {
-  return Boolean(String(acc?.name || acc?.address || '').trim())
-}
-
-function createEmptyAccommodation(dest) {
-  return {
-    id: generateAccommodationId(),
-    destinationId: dest?.id,
-    type: 'hotel',
-    name: '',
-    address: '',
-    checkIn: dest?.arrivalDate || '',
-    checkOut: dest?.departureDate || '',
-    nights: 0,
-  }
-}
-
-function getAccommodationsForDestination(accommodations, destinationId) {
-  return (accommodations || []).filter((a) => a.destinationId === destinationId)
-}
-
-function toIsoDate(raw) {
-  if (!raw) return null
-  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(raw).trim())
-  return m ? m[1] : null
-}
-
-function validateAccommodationOverlaps(destinations, accommodations) {
-  for (const dest of destinations || []) {
-    const destAccs = (accommodations || []).filter(
-      (a) => accommodationHasContent(a) && a.destinationId === dest.id,
-    )
-    for (let i = 0; i < destAccs.length; i += 1) {
-      for (let j = i + 1; j < destAccs.length; j += 1) {
-        const aStart = toIsoDate(destAccs[i].checkIn)
-        const aEnd = toIsoDate(destAccs[i].checkOut)
-        const bStart = toIsoDate(destAccs[j].checkIn)
-        const bEnd = toIsoDate(destAccs[j].checkOut)
-        if (aStart && aEnd && bStart && bEnd && aStart <= bEnd && bStart <= aEnd) {
-          return `As datas das hospedagens em ${dest.city || 'um destino'} não podem se sobrepor`
-        }
-      }
-    }
-  }
-  return null
+function FieldHint({ children }) {
+  if (!children) return null
+  return (
+    <p className="mt-1.5 text-xs text-red-600 dark:text-red-400 leading-snug" role="alert">
+      {children}
+    </p>
+  )
 }
 
 export function NewTrip() {
   useDocumentTitle('Nova viagem')
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
+  const [maxReachedStep, setMaxReachedStep] = useState(1)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [errors, setErrors] = useState([])
+  const [apiError, setApiError] = useState(null)
+  const [stayNotice, setStayNotice] = useState(null)
+  const [pendingStayAdvance, setPendingStayAdvance] = useState(null)
+  const errorBannerRef = useRef(null)
   const [formData, setFormData] = useState({
     destinations: [{ id: generateId(), city: '', country: '', arrivalDate: '', departureDate: '', order: 1 }],
     accommodations: [],
@@ -154,18 +137,39 @@ export function NewTrip() {
     currency: 'BRL',
     travelers: { adults: 1, children: 0 },
   })
+  const formDataRef = useRef(formData)
+  formDataRef.current = formData
+  const stepRef = useRef(step)
+  stepRef.current = step
+
+  const step1Options = () => ({ requirePlaceSelection: hasGoogleMapsApiKey() })
+
+  const clearFormErrors = () => {
+    setErrors([])
+    setApiError(null)
+  }
+
+  const showStepErrors = (list) => {
+    setApiError(null)
+    setErrors(list)
+    requestAnimationFrame(() => {
+      errorBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
 
   const updateField = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    setError(null)
+    setApiError(null)
   }
 
   const updateDestination = (index, updates) => {
-    setFormData((prev) => {
-      const dests = [...prev.destinations]
-      dests[index] = { ...dests[index], ...updates }
-      return { ...prev, destinations: dests }
-    })
+    const prev = formDataRef.current
+    const { dests, notices } = applyDestinationDateRules(prev.destinations, index, updates)
+    setFormData({ ...prev, destinations: dests })
+    if (notices.length > 0) {
+      setApiError(null)
+      setErrors(notices)
+    }
   }
 
   const addDestination = () => {
@@ -201,9 +205,26 @@ export function NewTrip() {
 
   const addAccommodation = (destinationId) => {
     const dest = formData.destinations.find((d) => d.id === destinationId)
+    const window = dest
+      ? suggestStayWindowAllowingOverlap(dest, formData.accommodations || [])
+      : null
+    if (!window) {
+      showStepErrors([
+        {
+          code: 'stay_window',
+          message: `Não foi possível sugerir datas em ${dest?.city || 'este destino'}.`,
+          field: 'accommodation',
+        },
+      ])
+      return
+    }
+    clearFormErrors()
     setFormData((prev) => ({
       ...prev,
-      accommodations: [...(prev.accommodations || []), createEmptyAccommodation(dest)],
+      accommodations: [
+        ...(prev.accommodations || []),
+        createEmptyAccommodation(dest, window, prev.accommodations),
+      ],
     }))
   }
 
@@ -222,71 +243,106 @@ export function NewTrip() {
     })
   }
 
-  const validateStep = (s) => {
-    if (s === 1) {
-      const dests = formData.destinations
-      for (const d of dests) {
-        if (!d.city?.trim() || !d.country?.trim()) return 'Preencha cidade e país de cada destino'
-        if (!readLatLng({ coordinates: d.coordinates })) {
-          return `Selecione "${d.city.trim()}" nas sugestões do autocomplete para localizar o destino no mapa`
-        }
-        if (!d.arrivalDate || !d.departureDate) return 'Preencha as datas de cada destino'
-        const arr = new Date(d.arrivalDate)
-        const dep = new Date(d.departureDate)
-        if (arr >= dep) return `Data de chegada deve ser anterior à saída em ${d.city}`
-      }
-      for (let i = 1; i < dests.length; i++) {
-        const prevDep = new Date(dests[i - 1].departureDate)
-        const currArr = new Date(dests[i].arrivalDate)
-        if (currArr < prevDep) return 'Datas dos destinos devem ser sequenciais'
-      }
-      return null
-    }
-    if (s === 2) {
-      const dests = formData.destinations
-      const accs = formData.accommodations || []
-      for (const a of accs) {
-        if (!accommodationHasContent(a)) continue
-        const dest = dests.find((d) => d.id === a.destinationId)
-        if (!dest) return 'Hospedagem sem destino associado'
-        if (!a.type || !a.checkIn || !a.checkOut) {
-          return `Preencha check-in e check-out da hospedagem em ${dest.city || 'um destino'}`
-        }
-        const checkIn = new Date(a.checkIn)
-        const checkOut = new Date(a.checkOut)
-        const arr = new Date(dest.arrivalDate)
-        const dep = new Date(dest.departureDate)
-        if (checkIn < arr) return `Check-in deve ser após a chegada em ${dest.city}`
-        if (checkOut > dep) return `Check-out deve ser antes da saída de ${dest.city}`
-      }
-      return validateAccommodationOverlaps(dests, accs)
-    }
-    if (s === 3) {
-      if (!formData.interests?.length) return 'Selecione pelo menos 1 interesse'
-      const adults = Number(formData.travelers?.adults)
-      if (!Number.isFinite(adults) || adults < 1) return 'Informe o número de adultos'
-      return null
-    }
-    return null
+  const collectForStep = (s, data = formData) =>
+    collectStepErrors(s, data, step1Options())
+
+  const furthestUnlockedStep = (visited, data = formData) =>
+    computeFurthestUnlocked(visited, data, step1Options())
+
+  useEffect(() => {
+    const nextMax = furthestUnlockedStep(maxReachedStep, formData)
+    // Não encolhe maxReachedStep: o pico visitado permanece; o unlock recalcula pelos erros.
+    if (step > nextMax) setStep(nextMax)
+  }, [formData, maxReachedStep, step])
+
+  useEffect(() => {
+    if (errors.length === 0) return
+    const remaining = collectForStep(step, formData)
+    const remainingKeys = new Set(remaining.map(stepErrorKey))
+    const stillValid = errors.filter((e) => remainingKeys.has(stepErrorKey(e)))
+    if (stillValid.length !== errors.length) setErrors(stillValid)
+  }, [formData, step, errors])
+
+  const applyStayStepAndAdvance = (resolved, warnings) => {
+    const empty = (formData.accommodations || []).filter((a) => !accommodationHasContent(a))
+    setFormData((prev) => ({
+      ...prev,
+      accommodations: [...empty, ...resolved],
+    }))
+    setStayNotice(
+      warnings.length > 0 ? warnings.map((w) => w.message).join(' ') : null,
+    )
+    setPendingStayAdvance(null)
+    goToStep(3)
   }
 
-  const advanceStepAfterValidation = (fromStep) => {
-    const err = validateStep(fromStep)
-    if (err) {
-      setError(err)
+  const advanceStepAfterValidation = (fromStep, data = formDataRef.current) => {
+    const list = collectForStep(fromStep, data)
+    if (list.length > 0) {
+      showStepErrors(list)
       return
     }
-    setError(null)
-    if (fromStep < 4) setStep(fromStep + 1)
+    clearFormErrors()
+    if (fromStep === 2) {
+      const filled = (data.accommodations || []).filter(accommodationHasContent)
+      const { accommodations: resolved, warnings } = resolveAccommodationDayOverlaps(filled)
+      if (warnings.length > 0) {
+        setPendingStayAdvance({
+          resolved,
+          warningMessages: warnings.map((w) => w.message),
+        })
+        return
+      }
+      applyStayStepAndAdvance(resolved, warnings)
+      return
+    }
+    setStayNotice(null)
+    if (fromStep < 4) goToStep(fromStep + 1)
   }
 
   const handleNextClick = () => {
-    advanceStepAfterValidation(step)
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        advanceStepAfterValidation(stepRef.current, formDataRef.current)
+      })
+    })
   }
 
   const handleBack = () => {
-    setError(null)
+    clearFormErrors()
+    setStayNotice(null)
+    setPendingStayAdvance(null)
     if (step > 1) setStep(step - 1)
+  }
+
+  const goToStep = (next) => {
+    setStep(next)
+    setMaxReachedStep((prev) => Math.max(prev, next))
+  }
+
+  const tryGoToStep = (next) => {
+    if (next === step) return
+    const allowed = furthestUnlockedStep(maxReachedStep, formData)
+    if (next > allowed) {
+      const blocker = collectForStep(allowed, formData)
+      if (blocker.length > 0) showStepErrors(blocker)
+      return
+    }
+    for (let s = 1; s < next; s += 1) {
+      const list = collectForStep(s, formData)
+      if (list.length > 0) {
+        showStepErrors(list)
+        setMaxReachedStep(s)
+        setStep(s)
+        return
+      }
+    }
+    clearFormErrors()
+    setStayNotice(null)
+    goToStep(next)
   }
 
   const buildPayload = () => {
@@ -299,19 +355,10 @@ export function NewTrip() {
       departureDate: d.departureDate,
       order: i + 1,
     }))
-    const accs = (formData.accommodations || [])
+    const rawAccs = (formData.accommodations || [])
       .filter(accommodationHasContent)
-      .map((a) => ({
-        id: a.id || generateAccommodationId(),
-        destinationId: a.destinationId,
-        type: a.type || 'hotel',
-        name: a.name?.trim() || a.address?.trim() || '',
-        address: a.address?.trim() || a.name?.trim() || '',
-        ...(a.coordinates ? { coordinates: a.coordinates } : {}),
-        checkIn: a.checkIn,
-        checkOut: a.checkOut,
-        nights: a.nights || 0,
-      }))
+      .map((a) => serializeAccommodation({ ...a, id: a.id || generateAccommodationId() }))
+    const { accommodations: accs } = resolveAccommodationDayOverlaps(rawAccs)
     const avoid = [...(formData.avoidPreferences || [])]
     if (formData.avoidCustom?.trim()) avoid.push('custom: ' + formData.avoidCustom.trim())
     const prior = [...(formData.prioritizePreferences || [])]
@@ -335,15 +382,15 @@ export function NewTrip() {
 
   const runCreateTrip = async () => {
     for (let s = 1; s <= 4; s++) {
-      const err = validateStep(s)
-      if (err) {
-        setError(err)
+      const list = collectForStep(s)
+      if (list.length > 0) {
+        showStepErrors(list)
         setStep(s)
         return
       }
     }
     setLoading(true)
-    setError(null)
+    clearFormErrors()
     try {
       const payload = buildPayload()
       const trip = await tripService.createTrip(payload)
@@ -358,7 +405,11 @@ export function NewTrip() {
       })
       navigate(`/trips/${trip.id}/itinerary?tab=tdv`)
     } catch (err) {
-      setError(err.response?.data?.error?.message || err.message || 'Erro ao criar viagem')
+      setApiError(err.response?.data?.error?.message || err.message || 'Erro ao criar viagem')
+      setErrors([])
+      requestAnimationFrame(() => {
+        errorBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      })
     } finally {
       setLoading(false)
     }
@@ -370,50 +421,188 @@ export function NewTrip() {
    */
   const handleFormSubmit = (e) => {
     e.preventDefault()
-    if (step < 4) advanceStepAfterValidation(step)
+    if (step < 4) handleNextClick()
   }
 
   const handleCreateTripClick = () => {
     void runCreateTrip()
   }
 
+  const fieldInputClass =
+    'w-full min-w-0 px-4 py-3 text-base rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark'
+  const fieldInputInvalidClass =
+    'w-full min-w-0 px-4 py-3 text-base rounded-xl border border-red-500/60 dark:border-red-400/50 bg-background-light dark:bg-background-dark'
+  const skipStay =
+    step === 2 && !(formData.accommodations || []).some(accommodationHasContent)
+  const unlockedStep = furthestUnlockedStep(maxReachedStep)
+  const todayIso = todayIsoCalendarDate()
+  const firstArrival = formData.destinations[0]?.arrivalDate || ''
+  const tripMaxDeparture = firstArrival ? tripSpanMaxDepartureIso(firstArrival) : undefined
+  const bannerMessages = [
+    ...errors.map((e) => e.message),
+    ...(apiError ? [apiError] : []),
+  ]
+  const wizardNav = (
+    <div className="grid grid-cols-2 gap-3">
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={handleBack}
+        disabled={step === 1}
+        className="min-h-11 w-full"
+      >
+        Voltar
+      </Button>
+      {step < 4 ? (
+        <Button type="button" onClick={handleNextClick} className="min-h-11 w-full">
+          {skipStay ? 'Pular' : 'Próximo'}
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          disabled={loading}
+          onClick={handleCreateTripClick}
+          className="min-h-11 w-full"
+        >
+          {loading ? 'Criando...' : 'Criar Viagem'}
+        </Button>
+      )}
+    </div>
+  )
+
   return (
-    <div>
-      <Header
-        title="Nova Viagem"
-        subtitle="Preencha o formulário para criar sua próxima aventura"
-      />
-      <div className="max-w-2xl mx-auto">
-        <div className="flex gap-2 mb-8">
-          {STEPS.map((s) => (
+    <div className="mobile-task-shell max-w-2xl mx-auto">
+      <div className="hidden md:block">
+        <Header
+          title="Nova Viagem"
+          subtitle="Preencha o formulário para criar sua próxima aventura"
+        />
+      </div>
+      <div className="md:hidden mb-4 min-w-0">
+        <h1 className="text-xl font-black tracking-tight">Nova Viagem</h1>
+        <p className="mt-1 text-sm text-text-secondary">Etapa {step} de 4</p>
+        <div className="mt-2 grid grid-cols-2 gap-1.5" role="tablist" aria-label="Etapas do formulário">
+          {STEPS.map((s) => {
+            const reachable = s.id <= unlockedStep
+            const isCurrent = step === s.id
+            return (
+              <button
+                key={s.id}
+                type="button"
+                role="tab"
+                aria-selected={isCurrent}
+                aria-label={`${s.label}${reachable ? '' : ' (ainda não disponível)'}`}
+                disabled={!reachable}
+                onClick={() => tryGoToStep(s.id)}
+                className={`flex min-h-8 min-w-0 items-center gap-1.5 overflow-visible rounded-lg px-1.5 py-1 text-left ${
+                  isCurrent
+                    ? 'bg-primary/20'
+                    : 'bg-surface-light dark:bg-surface-dark'
+                } ${reachable ? '' : 'opacity-45'}`}
+              >
+                <span
+                  className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${
+                    isCurrent
+                      ? 'bg-primary text-foreground'
+                      : s.id < step
+                        ? 'bg-primary/35 text-foreground dark:text-white'
+                        : 'bg-white text-text-secondary dark:bg-card-dark'
+                  }`}
+                >
+                  {s.id}
+                </span>
+                <span
+                  className={`min-w-0 flex-1 text-[11px] font-semibold leading-none ${
+                    isCurrent
+                      ? 'text-foreground dark:text-white'
+                      : 'text-text-secondary'
+                  }`}
+                >
+                  {s.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="hidden md:flex gap-2 mb-8">
+        {STEPS.map((s) => {
+          const reachable = s.id <= unlockedStep
+          const isCurrent = step === s.id
+          return (
             <button
               key={s.id}
               type="button"
-              onClick={() => setStep(s.id)}
+              disabled={!reachable}
+              aria-label={`${s.label}${reachable ? '' : ' (ainda não disponível)'}`}
+              onClick={() => {
+                setStayNotice(null)
+                tryGoToStep(s.id)
+              }}
               className={`px-4 py-2 rounded-full text-sm font-bold ${
-                step === s.id ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'
-              }`}
+                isCurrent
+                  ? 'bg-primary text-foreground'
+                  : 'bg-surface-light dark:bg-surface-dark'
+              } ${reachable ? '' : 'opacity-45 cursor-not-allowed'}`}
             >
               {s.label}
             </button>
-          ))}
-        </div>
+          )
+        })}
+      </div>
 
-        <form onSubmit={handleFormSubmit} className="bg-white dark:bg-card-dark rounded-xl p-6 md:p-8 border border-border-light dark:border-border-dark">
-          {error && (
-            <div className="mb-6 p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm">
-              <p>{error}</p>
-              {(error.includes('temporariamente') || error.includes('comunicar')) && (
+      <form
+        onSubmit={handleFormSubmit}
+        className="bg-white dark:bg-card-dark rounded-xl p-4 md:p-8 border border-border-light dark:border-border-dark min-w-0 max-w-full overflow-x-clip md:overflow-visible"
+      >
+          {bannerMessages.length > 0 && (
+            <div
+              ref={errorBannerRef}
+              className="mb-6 p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm"
+              role="alert"
+            >
+              {bannerMessages.length === 1 ? (
+                <p>{bannerMessages[0]}</p>
+              ) : (
+                <ul className="list-disc pl-4 space-y-1">
+                  {bannerMessages.map((msg) => (
+                    <li key={msg}>{msg}</li>
+                  ))}
+                </ul>
+              )}
+              {apiError &&
+                (apiError.includes('temporariamente') || apiError.includes('comunicar')) && (
                 <p className="mt-2 text-xs opacity-90">Tente novamente em alguns segundos ou reinicie o servidor.</p>
               )}
+            </div>
+          )}
+          {stayNotice && (
+            <div
+              className="mb-6 p-4 bg-amber-500/10 text-amber-900 dark:text-amber-100 rounded-xl text-sm leading-relaxed"
+              role="status"
+            >
+              <p>{stayNotice}</p>
             </div>
           )}
 
           {step === 1 && (
             <div className="space-y-6">
               <h3 className="text-lg font-bold">Destinos e Datas</h3>
-              {formData.destinations.map((dest, i) => (
-                <div key={dest.id} className="p-4 rounded-xl border border-border-light dark:border-border-dark space-y-4">
+              {formData.destinations.map((dest, i) => {
+                const cityErr = fieldErrorMessage(errors, i, 'city')
+                const countryErr = fieldErrorMessage(errors, i, 'country')
+                const arrivalErr = fieldErrorMessage(errors, i, 'arrivalDate')
+                const departureErr = fieldErrorMessage(errors, i, 'departureDate')
+                const arrivalMin =
+                  i > 0
+                    ? formData.destinations[i - 1]?.departureDate || todayIso
+                    : todayIso
+                const departureMin = dest.arrivalDate
+                  ? addCalendarDaysIso(dest.arrivalDate, 1) || undefined
+                  : undefined
+                return (
+                <div key={dest.id} className="p-4 rounded-md md:rounded-xl border border-border-light dark:border-border-dark space-y-4">
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-bold text-text-secondary">Destino {i + 1}</span>
                     {formData.destinations.length > 1 && (
@@ -422,8 +611,8 @@ export function NewTrip() {
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <label className="block">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="block min-w-0">
                       <span className="block text-sm font-semibold mb-2 text-[#1c1c0d] dark:text-white">
                         Cidade *
                       </span>
@@ -452,45 +641,59 @@ export function NewTrip() {
                           value={dest.city}
                           onChange={(e) => updateDestination(i, { city: e.target.value })}
                           placeholder="Ex: Paris"
-                          className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                          aria-invalid={cityErr ? 'true' : undefined}
+                          className={cityErr ? fieldInputInvalidClass : fieldInputClass}
                         />
                       )}
+                      <FieldHint>{cityErr}</FieldHint>
                     </label>
-                    <div>
+                    <div className="min-w-0">
                       <label className="block text-sm font-semibold mb-2">País *</label>
                       <input
                         type="text"
                         value={dest.country}
                         onChange={(e) => updateDestination(i, { country: e.target.value })}
                         placeholder="Ex: França"
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                        aria-invalid={countryErr ? 'true' : undefined}
+                        className={countryErr ? fieldInputInvalidClass : fieldInputClass}
                       />
+                      <FieldHint>{countryErr}</FieldHint>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="min-w-0" data-field={`dest-${i}-arrival`}>
                       <label className="block text-sm font-semibold mb-2">Chegada *</label>
-                      <input
-                        type="date"
+                      <DateInput
                         value={dest.arrivalDate}
-                        onChange={(e) => updateDestination(i, { arrivalDate: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                        onChange={(next) => updateDestination(i, { arrivalDate: next })}
+                        aria-label="Chegada"
+                        min={arrivalMin}
+                        max={tripMaxDeparture}
+                        error={arrivalErr}
+                        className={`${fieldInputClass} !pr-10 sm:!pr-11`}
                       />
                     </div>
-                    <div>
+                    <div className="min-w-0" data-field={`dest-${i}-departure`}>
                       <label className="block text-sm font-semibold mb-2">Saída *</label>
-                      <input
-                        type="date"
+                      <DateInput
                         value={dest.departureDate}
-                        onChange={(e) => updateDestination(i, { departureDate: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                        onChange={(next) => updateDestination(i, { departureDate: next })}
+                        aria-label="Saída"
+                        min={departureMin}
+                        max={tripMaxDeparture}
+                        error={departureErr}
+                        className={`${fieldInputClass} !pr-10 sm:!pr-11`}
                       />
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
+              {stepFieldErrorMessage(errors, 'span') ? (
+                <FieldHint>{stepFieldErrorMessage(errors, 'span')}</FieldHint>
+              ) : null}
               <div className="space-y-3">
-                <Button type="button" variant="secondary" onClick={addDestination}>
+                <Button type="button" variant="secondary" onClick={addDestination} className="w-full min-h-11 md:w-auto">
                   <Icon name="add" />
                   Adicionar destino
                 </Button>
@@ -505,9 +708,10 @@ export function NewTrip() {
                   />
                   <div className="space-y-1">
                     <p>
-                      <span className="font-semibold">Atenção:</span> Se sua viagem tiver mais de
-                      um destino, adicione todos eles nesta etapa. Depois de avançar, não será
-                      possível voltar e adicionar novos destinos.
+                      <span className="font-semibold">Atenção:</span> Se a viagem tiver mais de um
+                      destino, adicione todos aqui nesta etapa — com datas em sequência. Você pode
+                      voltar depois para editar, mas é mais simples deixar tudo certo antes de
+                      avançar.
                     </p>
                     <p className="text-amber-800/65 dark:text-amber-100/55">
                       Exemplo: Orlando e Nova York.
@@ -523,163 +727,59 @@ export function NewTrip() {
               <h3 className="text-lg font-bold">Locais de Estadia</h3>
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  Você já tem uma estadia reservada? Se sim, informe os detalhes aqui. Caso
-                  contrário, pule esta etapa.
+                  Você já tem uma estadia reservada? Se sim, informe os detalhes aqui. Não tem
+                  reserva ainda? Pule. Com o plano completo você adiciona a estadia depois, no
+                  roteiro.
                 </p>
                 <p className="text-sm text-text-secondary">
-                  Adicione quantas hospedagens quiser por destino — cada uma com datas próprias
-                  aparecerá no mapa do roteiro (com endereço válido).
+                  Adicione quantas hospedagens quiser por destino, com datas próprias. Se as datas
+                  se cruzarem, a hospedagem mais recente substitui a anterior nos dias em comum.
                 </p>
               </div>
-              {formData.destinations.map((dest) => {
-                const destAccs = getAccommodationsForDestination(formData.accommodations, dest.id)
-                return (
-                  <div
-                    key={dest.id}
-                    className="p-4 rounded-xl border border-border-light dark:border-border-dark space-y-4"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-bold text-text-secondary">
-                        {dest.city || 'Destino'} — hospedagens
-                      </span>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="!py-2 !px-3 text-xs"
-                        onClick={() => addAccommodation(dest.id)}
-                      >
-                        <Icon name="add" />
-                        Adicionar hospedagem
-                      </Button>
-                    </div>
-                    {destAccs.length === 0 ? (
-                      <p className="text-xs text-text-secondary m-0">
-                        Nenhuma hospedagem neste destino. Use o botão acima se quiser informar uma.
-                      </p>
-                    ) : null}
-                    {destAccs.map((acc, accIndex) => (
-                      <div
-                        key={acc.id}
-                        className="p-4 rounded-xl border border-dashed border-border-light dark:border-border-dark space-y-4 bg-background-light/40 dark:bg-background-dark/40"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">
-                            Hospedagem {accIndex + 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeAccommodation(acc.id)}
-                            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline"
-                          >
-                            Remover
-                          </button>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold mb-2">Tipo</label>
-                          <select
-                            value={acc.type || 'hotel'}
-                            onChange={(e) => updateAccommodation(acc.id, { type: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                          >
-                            {ACCOMMODATION_TYPES.map((t) => (
-                              <option key={t.value} value={t.value}>
-                                {t.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold mb-2">Nome / Endereço</label>
-                          {hasGoogleMapsApiKey() ? (
-                            <>
-                              <GooglePlaceAutocompleteField
-                                key={`acc-ac-${acc.id}`}
-                                id={`planning-acc-ac-${acc.id}`}
-                                resultKind="place"
-                                value={acc.name || acc.address || ''}
-                                placeholder="Ex.: Hotel Plaza Athénée"
-                                disabled={loading}
-                                onDraftChange={(text) =>
-                                  updateAccommodation(acc.id, {
-                                    name: text,
-                                    address: text,
-                                    coordinates: null,
-                                  })
-                                }
-                                onResolved={(patch) =>
-                                  updateAccommodation(acc.id, {
-                                    ...(patch.name != null ? { name: patch.name } : {}),
-                                    ...(patch.formattedAddress != null
-                                      ? { address: patch.formattedAddress }
-                                      : {}),
-                                    ...(patch.coordinates ? { coordinates: patch.coordinates } : {}),
-                                  })
-                                }
-                              />
-                              <p className="mt-2 text-[11px] text-text-secondary/90 leading-snug">
-                                Opcional. Escolha uma sugestão do Google para fixar a hospedagem no
-                                mapa do roteiro.
-                              </p>
-                            </>
-                          ) : (
-                            <input
-                              type="text"
-                              value={acc.name || ''}
-                              onChange={(e) =>
-                                updateAccommodation(acc.id, {
-                                  name: e.target.value,
-                                  address: e.target.value,
-                                })
-                              }
-                              placeholder="Ex: Hotel Plaza Athénée"
-                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                            />
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-semibold mb-2">Check-in</label>
-                            <input
-                              type="date"
-                              value={acc.checkIn || ''}
-                              onChange={(e) =>
-                                updateAccommodation(acc.id, { checkIn: e.target.value })
-                              }
-                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-semibold mb-2">Check-out</label>
-                            <input
-                              type="date"
-                              value={acc.checkOut || ''}
-                              onChange={(e) =>
-                                updateAccommodation(acc.id, { checkOut: e.target.value })
-                              }
-                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })}
+              {formData.destinations.map((dest) => (
+                <AccommodationDestinationGroup
+                  key={dest.id}
+                  dest={dest}
+                  destAccs={getAccommodationsForDestination(formData.accommodations, dest.id)}
+                  destinations={formData.destinations}
+                  disabled={loading}
+                  fieldIdPrefix="planning"
+                  onAdd={addAccommodation}
+                  onChange={updateAccommodation}
+                  onRemove={removeAccommodation}
+                />
+              ))}
+              {previewAccommodationReplacements(
+                (formData.accommodations || []).filter(accommodationHasContent),
+              ).map((w) => (
+                <p
+                  key={w.message}
+                  className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed bg-amber-500/10 rounded-xl px-3 py-2"
+                  role="status"
+                >
+                  {w.message}
+                </p>
+              ))}
             </div>
           )}
-
           {step === 3 && (
             <div className="space-y-6">
               <h3 className="text-lg font-bold">Interesses e Preferências</h3>
               <div>
                 <label className="block text-sm font-semibold mb-2">Interesses * (mín. 1)</label>
-                <div className="flex flex-wrap gap-2">
+                <div
+                  className={`newtrip-choice-chips flex flex-wrap gap-2 max-w-full rounded-xl ${
+                    stepFieldErrorMessage(errors, 'interests')
+                      ? 'ring-2 ring-red-500/40 p-1'
+                      : ''
+                  }`}
+                >
                   {INTERESTS.map(({ slug, label }) => (
                     <button
                       key={slug}
                       type="button"
                       onClick={() => toggleMulti('interests', slug)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                      className={`newtrip-choice-chip px-3 py-2 md:py-1.5 rounded-full text-sm font-medium max-w-full transition-all ${
                         formData.interests.includes(slug)
                           ? 'bg-primary text-foreground'
                           : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
@@ -689,6 +789,7 @@ export function NewTrip() {
                     </button>
                   ))}
                 </div>
+                <FieldHint>{stepFieldErrorMessage(errors, 'interests')}</FieldHint>
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-2">Descrição da viagem (opcional)</label>
@@ -698,19 +799,19 @@ export function NewTrip() {
                   placeholder="Descreva como você imagina sua viagem ideal..."
                   rows={3}
                   maxLength={2000}
-                  className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark resize-none"
+                  className={`${fieldInputClass} resize-none`}
                 />
                 <span className="text-xs text-text-secondary">{formData.tripDescription.length}/2000</span>
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-2">Estilo do roteiro</label>
-                <div className="flex flex-wrap gap-2">
+                <div className="newtrip-choice-chips flex flex-wrap gap-2">
                   {ITINERARY_STYLES.map(({ value, label }) => (
                     <button
                       key={value}
                       type="button"
                       onClick={() => updateField('itineraryStyle', value)}
-                      className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                      className={`newtrip-choice-chip px-3 py-2 md:py-1.5 rounded-xl text-sm font-medium transition-all ${
                         formData.itineraryStyle === value
                           ? 'bg-primary text-foreground'
                           : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
@@ -730,6 +831,7 @@ export function NewTrip() {
                       type="number"
                       min={1}
                       aria-label="Adultos"
+                      aria-invalid={stepFieldErrorMessage(errors, 'adults') ? 'true' : undefined}
                       value={formData.travelers.adults}
                       onChange={(e) => {
                         const raw = e.target.value
@@ -743,8 +845,13 @@ export function NewTrip() {
                           updateField('travelers', { ...formData.travelers, adults: 1 })
                         }
                       }}
-                      className="box-border h-10 w-20 rounded-xl border border-border-light bg-background-light px-2 text-center tabular-nums dark:border-border-dark dark:bg-background-dark [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      className={`box-border h-11 w-20 rounded-xl border px-2 text-center text-base tabular-nums bg-background-light dark:bg-background-dark [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                        stepFieldErrorMessage(errors, 'adults')
+                          ? 'border-red-500/60 dark:border-red-400/50'
+                          : 'border-border-light dark:border-border-dark'
+                      }`}
                     />
+                    <FieldHint>{stepFieldErrorMessage(errors, 'adults')}</FieldHint>
                   </div>
                   <div className="flex flex-col items-center gap-1.5">
                     <span className="text-xs leading-none text-text-secondary">Crianças</span>
@@ -765,7 +872,7 @@ export function NewTrip() {
                           updateField('travelers', { ...formData.travelers, children: 0 })
                         }
                       }}
-                      className="box-border h-10 w-20 rounded-xl border border-border-light bg-background-light px-2 text-center tabular-nums dark:border-border-dark dark:bg-background-dark [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      className="box-border h-11 w-20 rounded-xl border border-border-light bg-background-light px-2 text-center text-base tabular-nums dark:border-border-dark dark:bg-background-dark [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
                   </div>
                 </div>
@@ -778,13 +885,13 @@ export function NewTrip() {
               <h3 className="text-lg font-bold">Preferências Detalhadas</h3>
               <div>
                 <label className="block text-sm font-semibold mb-2">Coisas a evitar (opcional)</label>
-                <div className="flex flex-wrap gap-2">
+                <div className="newtrip-choice-chips flex flex-wrap gap-2 max-w-full">
                   {AVOID_OPTIONS.map(({ slug, label }) => (
                     <button
                       key={slug}
                       type="button"
                       onClick={() => toggleMulti('avoidPreferences', slug)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                      className={`newtrip-choice-chip px-3 py-2 md:py-1.5 rounded-full text-sm font-medium max-w-full transition-all ${
                         formData.avoidPreferences.includes(slug)
                           ? 'bg-red-500/20 text-red-600 dark:text-red-400'
                           : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
@@ -799,18 +906,18 @@ export function NewTrip() {
                   value={formData.avoidCustom}
                   onChange={(e) => updateField('avoidCustom', e.target.value)}
                   placeholder="Outro (custom)"
-                  className="mt-2 w-full px-4 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                  className={`mt-2 ${fieldInputClass}`}
                 />
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-2">Coisas a priorizar (opcional)</label>
-                <div className="flex flex-wrap gap-2">
+                <div className="newtrip-choice-chips flex flex-wrap gap-2 max-w-full">
                   {PRIORITIZE_OPTIONS.map(({ slug, label }) => (
                     <button
                       key={slug}
                       type="button"
                       onClick={() => toggleMulti('prioritizePreferences', slug)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                      className={`newtrip-choice-chip px-3 py-2 md:py-1.5 rounded-full text-sm font-medium max-w-full transition-all ${
                         formData.prioritizePreferences.includes(slug)
                           ? 'bg-primary text-foreground'
                           : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
@@ -825,11 +932,11 @@ export function NewTrip() {
                   value={formData.prioritizeCustom}
                   onChange={(e) => updateField('prioritizeCustom', e.target.value)}
                   placeholder="Outro (custom)"
-                  className="mt-2 w-full px-4 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                  className={`mt-2 ${fieldInputClass}`}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="min-w-0">
                   <label className="block text-sm font-semibold mb-2">Orçamento (opcional)</label>
                   <input
                     type="number"
@@ -837,15 +944,15 @@ export function NewTrip() {
                     value={formData.budget}
                     onChange={(e) => updateField('budget', e.target.value)}
                     placeholder="0"
-                    className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                    className={fieldInputClass}
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className="block text-sm font-semibold mb-2">Moeda</label>
                   <select
                     value={formData.currency}
                     onChange={(e) => updateField('currency', e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+                    className={fieldInputClass}
                   >
                     {CURRENCIES.map((c) => (
                       <option key={c} value={c}>{c}</option>
@@ -856,15 +963,13 @@ export function NewTrip() {
             </div>
           )}
 
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-border-light dark:border-border-dark">
+          <div className="hidden md:flex items-center justify-between mt-8 pt-6 border-t border-border-light dark:border-border-dark">
             <Button type="button" variant="secondary" onClick={handleBack} disabled={step === 1}>
               Voltar
             </Button>
             {step < 4 ? (
               <Button type="button" onClick={handleNextClick}>
-                {step === 2 && !(formData.accommodations || []).some(accommodationHasContent)
-                  ? 'Pular'
-                  : 'Próximo'}
+                {skipStay ? 'Pular' : 'Próximo'}
               </Button>
             ) : (
               <Button type="button" disabled={loading} onClick={handleCreateTripClick}>
@@ -873,7 +978,21 @@ export function NewTrip() {
             )}
           </div>
         </form>
-      </div>
+      <div className="mobile-task-cta-spacer md:hidden" aria-hidden />
+      <div className="mobile-task-cta md:hidden">{wizardNav}</div>
+      <AccommodationReplaceConfirmDialog
+        open={Boolean(pendingStayAdvance)}
+        messages={pendingStayAdvance?.warningMessages || []}
+        confirmLabel="Confirmar e continuar"
+        onCancel={() => setPendingStayAdvance(null)}
+        onConfirm={() => {
+          if (!pendingStayAdvance) return
+          applyStayStepAndAdvance(
+            pendingStayAdvance.resolved,
+            pendingStayAdvance.warningMessages.map((message) => ({ message })),
+          )
+        }}
+      />
     </div>
   )
 }

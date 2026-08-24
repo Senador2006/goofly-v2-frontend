@@ -366,6 +366,12 @@ export function Pagamento() {
             amount: amountForBrick,
           },
           customization: {
+            visual: {
+              hideFormTitle: true,
+              style: {
+                theme: 'flat',
+              },
+            },
             paymentMethods: {
               // Crédito + débito. Sem boleto (ticket). PIX via bankTransfer.
               creditCard: 'all',
@@ -471,7 +477,7 @@ export function Pagamento() {
 
   if (success) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6">
+      <div className="mobile-task-shell min-h-[60vh] flex flex-col items-center justify-center py-6">
         <div className="rounded-full bg-primary/20 p-4 mb-6">
           <Icon name="check_circle" className="text-5xl text-primary" />
         </div>
@@ -489,7 +495,7 @@ export function Pagamento() {
 
   if (tripsError) {
     return (
-      <div className="max-w-lg mx-auto p-6">
+      <div className="mobile-task-shell w-full max-w-lg mx-auto py-4">
         <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl">{tripsError}</div>
       </div>
     )
@@ -497,7 +503,7 @@ export function Pagamento() {
 
   if (trips.length === 0) {
     return (
-      <div className="max-w-lg mx-auto p-6">
+      <div className="mobile-task-shell w-full max-w-lg mx-auto py-4">
         <EmptyState
           icon="luggage"
           title="Nenhuma viagem cadastrada"
@@ -522,7 +528,7 @@ export function Pagamento() {
       : null
 
     return (
-      <div className="max-w-lg mx-auto p-6">
+      <div className="mobile-task-shell w-full max-w-lg mx-auto py-4">
         <h1 className="text-2xl md:text-3xl font-black text-foreground dark:text-white mb-2">
           Pague com PIX
         </h1>
@@ -531,8 +537,12 @@ export function Pagamento() {
         </p>
 
         {qrSrc && (
-          <div className="flex justify-center mb-6">
-            <img src={qrSrc} alt="QR Code PIX" className="w-56 h-56 bg-white rounded-xl p-2" />
+          <div className="mb-6 flex justify-center">
+            <img
+              src={qrSrc}
+              alt="QR Code PIX"
+              className="h-auto w-full max-w-[min(14rem,70vw)] bg-white rounded-xl p-2"
+            />
           </div>
         )}
 
@@ -542,7 +552,7 @@ export function Pagamento() {
             <textarea
               readOnly
               value={pixPending.qr_code}
-              className="w-full text-xs p-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-card-dark text-foreground dark:text-white"
+              className="w-full min-w-0 break-all text-base p-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-card-dark text-foreground dark:text-white"
               rows={4}
             />
             <Button
@@ -612,28 +622,49 @@ export function Pagamento() {
     )
   }
 
+  const startCheckout = () => {
+    trackMetaEvent('InitiateCheckout', {
+      value: planningAmount,
+      currency: 'BRL',
+      content_ids: tripId ? [String(tripId)] : undefined,
+      content_type: 'product',
+      content_name: 'planejamento_completo',
+    })
+    setShowBrick(true)
+  }
+
+  const payButton = (
+    <Button
+      className="w-full min-h-11 rounded-full py-4 font-bold"
+      onClick={startCheckout}
+      disabled={loading || !canPay}
+    >
+      Pagar agora
+    </Button>
+  )
+
   return (
-    <div className="max-w-lg mx-auto p-6">
-      <h1 className="text-2xl md:text-3xl font-black text-foreground dark:text-white mb-2">
+    <div className="mobile-task-shell w-full max-w-lg mx-auto min-w-0 overflow-x-clip">
+      <h1 className="text-xl md:text-3xl font-black text-foreground dark:text-white mb-2">
         Desbloqueie seu roteiro
       </h1>
-      <p className="text-text-secondary mb-4">
+      <p className="text-sm md:text-base text-text-secondary mb-4 break-words">
         O Planejamento Completo desbloqueia 100% do roteiro otimizado, checklist de documentos com IA e
         recomendações por viagem. O Tinder de Viagens permanece disponível para todos na fase de
         planejamento.
       </p>
       {isAdmin && (
-        <p className="text-xs text-text-secondary bg-background-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-2 mb-6">
+        <p className="text-xs text-text-secondary bg-background-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-2 mb-6 break-words">
           Como administrador, você pode liberar o planejamento desta viagem sem processar pagamento.
         </p>
       )}
 
-      <div className="mb-6">
+      <div className="mb-6 min-w-0">
         <p className="text-sm font-medium text-foreground dark:text-white mb-2">
           Selecione a viagem que deseja desbloquear
         </p>
         {!tripId && (
-          <p className="text-xs text-text-secondary mb-3">
+          <p className="text-xs text-text-secondary mb-3 break-words">
             O valor depende do destino (nacional ou internacional). Escolha a viagem abaixo para ver o preço correto.
           </p>
         )}
@@ -646,7 +677,7 @@ export function Pagamento() {
       </div>
 
       {tripId && isSelectedUnlocked && (
-        <div className="mb-6 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-800 dark:text-emerald-200">
+        <div className="mb-6 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-800 dark:text-emerald-200 break-words">
           Esta viagem já possui planejamento completo desbloqueado.{' '}
           <Link to={`/trips/${tripId}/itinerary`} className="font-semibold underline">
             Ver roteiro
@@ -655,33 +686,35 @@ export function Pagamento() {
       )}
 
       {tripId && !selectedTrip && !priceLoading && (
-        <div className="mb-6 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-800 dark:text-amber-200">
+        <div className="mb-6 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-800 dark:text-amber-200 break-words">
           A viagem informada na URL não foi encontrada. Selecione uma viagem válida abaixo.
         </div>
       )}
 
-      <div className="bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-2xl p-6 mb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="rounded-full bg-primary/20 p-2">
+      <div className="bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-2xl p-4 md:p-6 mb-6 min-w-0">
+        <div className="flex min-w-0 items-center gap-3 mb-4">
+          <div className="rounded-full bg-primary/20 p-2 shrink-0">
             <Icon name="route" className="text-2xl text-primary" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h2 className="font-bold text-foreground dark:text-white">Planejamento Completo</h2>
             <p className="text-sm text-text-secondary">Sua viagem, sem limite</p>
           </div>
         </div>
         <ul className="space-y-2 text-sm text-text-secondary mb-6">
-          <li className="flex items-center gap-2">
-            <Icon name="check" className="text-primary shrink-0" />
-            Roteiro otimizado completo — todas as paradas e dias
+          <li className="flex items-start gap-2">
+            <Icon name="check" className="text-primary shrink-0 mt-0.5" />
+            <span className="min-w-0 break-words">Roteiro otimizado completo — todas as paradas e dias</span>
           </li>
-          <li className="flex items-center gap-2">
-            <Icon name="check" className="text-primary shrink-0" />
-            Assistente de documentos e recomendações de bagagem por IA (por viagem)
+          <li className="flex items-start gap-2">
+            <Icon name="check" className="text-primary shrink-0 mt-0.5" />
+            <span className="min-w-0 break-words">
+              Assistente de documentos e recomendações de bagagem por IA (por viagem)
+            </span>
           </li>
-          <li className="flex items-center gap-2">
-            <Icon name="check" className="text-primary shrink-0" />
-            Válido para este planejamento
+          <li className="flex items-start gap-2">
+            <Icon name="check" className="text-primary shrink-0 mt-0.5" />
+            <span className="min-w-0 break-words">Válido para este planejamento</span>
           </li>
         </ul>
         {!tripId ? (
@@ -693,62 +726,49 @@ export function Pagamento() {
         ) : planningAmount != null ? (
           <>
             <p className="text-2xl font-black text-foreground dark:text-white">
-              {formatBRL(planningAmount)}{' '}
-              <span className="text-sm font-normal text-text-secondary">
-                {priceQuote?.tier === 'domestic'
-                  ? 'viagem nacional'
-                  : priceQuote?.tier === 'international'
-                    ? 'viagem internacional'
-                    : 'preço vigente'}
-              </span>
+              {formatBRL(planningAmount)}
             </p>
-            <p className="text-xs text-text-secondary mt-2">
+            <p className="text-sm font-normal text-text-secondary mt-0.5">
+              {priceQuote?.tier === 'domestic'
+                ? 'viagem nacional'
+                : priceQuote?.tier === 'international'
+                  ? 'viagem internacional'
+                  : 'preço vigente'}
+            </p>
+            <p className="text-xs text-text-secondary mt-2 break-words">
               Nacional: apenas destinos no Brasil · Internacional: destino em outro país ou país não informado
             </p>
           </>
         ) : (
-          <p className="text-sm text-text-secondary">
+          <p className="text-sm text-text-secondary break-words">
             Valor indisponível — selecione outra viagem ou tente novamente.
           </p>
         )}
       </div>
 
       {error && (
-        <div className="mb-4 p-3 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 text-sm">
+        <div className="mb-4 p-3 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 text-sm break-words">
           {error}
         </div>
       )}
 
       {!showBrick ? (
-        <>
+        <div className="hidden md:block">
           <p className="text-xs text-text-secondary mb-3 text-center">
             Aceitamos cartão de crédito, cartão de débito e PIX. Boleto não está disponível.
           </p>
-          <Button
-            className="w-full rounded-full py-4 font-bold"
-            onClick={() => {
-              trackMetaEvent('InitiateCheckout', {
-                value: planningAmount,
-                currency: 'BRL',
-                content_ids: tripId ? [String(tripId)] : undefined,
-                content_type: 'product',
-                content_name: 'planejamento_completo',
-              })
-              setShowBrick(true)
-            }}
-            disabled={loading || !canPay}
-          >
-            Pagar agora
-          </Button>
-        </>
+          {payButton}
+        </div>
       ) : (
-        <div id="paymentBrick_container" />
+        <div className="w-full min-w-0 overflow-x-clip">
+          <div id="paymentBrick_container" />
+        </div>
       )}
 
       {isAdmin && (
         <Button
           variant="secondary"
-          className="w-full mt-4"
+          className="w-full mt-4 min-h-11"
           disabled={loading || !tripId || isSelectedUnlocked}
           onClick={async () => {
             setLoading(true)
@@ -776,10 +796,22 @@ export function Pagamento() {
       <button
         type="button"
         onClick={() => navigate(-1)}
-        className="w-full mt-4 py-3 text-sm text-text-secondary hover:text-foreground dark:hover:text-white transition-colors"
+        className="w-full mt-4 min-h-11 py-3 text-sm text-text-secondary hover:text-foreground dark:hover:text-white transition-colors"
       >
         Voltar
       </button>
+
+      {!showBrick ? (
+        <>
+          <div className="mobile-task-cta-spacer md:hidden" aria-hidden />
+          <div className="mobile-task-cta md:hidden">
+            <p className="text-xs text-text-secondary mb-2 text-center">
+              Aceitamos cartão, débito e PIX. Sem boleto.
+            </p>
+            {payButton}
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }

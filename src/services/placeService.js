@@ -90,7 +90,7 @@ export const placeService = {
   },
 
   getTdvSummary: (tripId) =>
-    api.get('/places/tdv-summary', { params: { tripId } }).then((res) => {
+    api.get('/places/discover/summary', { params: { tripId } }).then((res) => {
       const data = res.body?.data || {}
       return {
         likedPlaces: data.likedPlaces ?? [],

@@ -11,8 +11,10 @@ const OVERLAY_Z = 'z-[1200]'
  * Loading bloqueante enquanto finalize-tdv (n8n) roda — não dismissível.
  * Renderiza em portal no body para cobrir a navbar mobile (fora do stacking do <main>).
  */
-export function FinalizeItineraryOverlay({ open }) {
+export function FinalizeItineraryOverlay({ open, title, description }) {
   const t = useT()
+  const heading = title || t('tdv.finalize_preparing_title')
+  const body = description || t('tdv.finalize_preparing_subtitle')
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
 
@@ -76,13 +78,13 @@ export function FinalizeItineraryOverlay({ open }) {
           id="finalize-itinerary-title"
           className="text-xl sm:text-2xl font-black tracking-tight text-white dark:text-white leading-tight drop-shadow-sm"
         >
-          {t('tdv.finalize_preparing_title')}
+          {heading}
         </h2>
         <p
           id="finalize-itinerary-desc"
           className="mt-2.5 text-sm sm:text-base text-white/80 dark:text-white/75 leading-relaxed"
         >
-          {t('tdv.finalize_preparing_subtitle')}
+          {body}
         </p>
       </div>
     </div>,

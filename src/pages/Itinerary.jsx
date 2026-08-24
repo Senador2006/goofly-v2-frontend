@@ -10,9 +10,14 @@ import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremi
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
 import { ItineraryExportSheet } from '../components/itinerary/ItineraryExportSheet'
+import { ItineraryStayAnchor } from '../components/itinerary/ItineraryStayAnchor'
+import { AccommodationEditorSheet } from '../components/itinerary/AccommodationEditorSheet'
+import { ReorganizeStayDialog } from '../components/itinerary/ReorganizeStayDialog'
 import { FinalizeItineraryOverlay } from '../components/itinerary/FinalizeItineraryOverlay'
 import { RoteiroModifyPanel } from '../components/itinerary/RoteiroModifyPanel'
 import { RoteiroModifyActivityRow } from '../components/itinerary/RoteiroModifyActivityRow'
+import { RoteiroModifyInsertZone } from '../components/itinerary/RoteiroModifyInsertZone'
+import { RoteiroModifyDragGhost } from '../components/itinerary/RoteiroModifyDragGhost'
 import { ItineraryModeTabs } from '../components/itinerary/ItineraryModeTabs'
 import {
   ItineraryDayMap,
@@ -29,13 +34,16 @@ import { ItineraryDragInsertLine } from '../components/itinerary/ItineraryDragIn
 import { ItineraryDragGhost } from '../components/itinerary/ItineraryDragGhost'
 import { RoteiroDragOverlay } from '../components/itinerary/RoteiroDragOverlay'
 import { tripService } from '../services/tripService'
+import { isRequestAbort } from '../services/api'
 import { userService } from '../services/userService'
 import { placeService } from '../services/placeService'
+import { mergeTdvLikeListsById } from '../utils/tdvLikeEntry'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useRoteiroDragReorder } from '../hooks/useRoteiroDragReorder'
 import { useRoteiroDaySwap } from '../hooks/useRoteiroDaySwap'
 import { useRoteiroLikeReplace } from '../hooks/useRoteiroLikeReplace'
+import { useRoteiroLikeDrag } from '../hooks/useRoteiroLikeDrag'
 import { useT } from '../i18n'
 import {
   assignActivityToDay,
@@ -52,7 +60,10 @@ import {
   isScheduleTimePatch,
   scheduleActivityInsertedAtEnd,
 } from '../utils/roteiroScheduleContract'
-import { resolveAccommodationsForDay } from '../utils/accommodationDayResolver'
+import { resolveAccommodationsForDay, findDestinationCoveringIso } from '../utils/accommodationDayResolver'
+import {
+  accommodationNeedsReorganize,
+} from '../utils/accommodationStayContract'
 import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
 import {
   captureReorderSnapshot,
@@ -85,6 +96,34 @@ function captureDayFrozenLayout(dayActs, premiumHiddenCount) {
     isLast[id] = i === dayActs.length - 1 && premiumHiddenCount === 0
   })
   return { indices, isLast }
+}
+
+function itineraryActivitiesSignature(itineraryData) {
+  return (itineraryData?.activities || [])
+    .map((a) => `${a?.id ?? ''}:${a?.day ?? a?.dayNumber ?? ''}:${a?.title || a?.name || ''}`)
+    .join('|')
+}
+
+function RoteiroStopsSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Carregando paradas">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="h-28 rounded-2xl bg-neutral-100 dark:bg-neutral-800 animate-pulse"
+        />
+      ))}
+    </div>
+  )
+}
+
+function itineraryLoadErrorMessage(err) {
+  const raw = String(err?.response?.data?.error?.message || '').trim()
+  if (!raw) return 'Não foi possível carregar as paradas do roteiro'
+  if (/assignment to constant|cannot read propert|is not a function|unexpected token/i.test(raw)) {
+    return 'Não foi possível carregar as paradas do roteiro'
+  }
+  return raw
 }
 
 function activityStableId(act) {
@@ -260,7 +299,9 @@ export function Itinerary() {
   const [selectedDay, setSelectedDay] = useState(1)
   const [mode, setMode] = useState(MODE_ROTEIRO)
   const [loading, setLoading] = useState(true)
+  const [itineraryLoading, setItineraryLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [itineraryError, setItineraryError] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
   const tripDestCity = trip?.destinations?.[0]?.city
@@ -278,6 +319,12 @@ export function Itinerary() {
   const [showAccommodationRoutes, setShowAccommodationRoutes] = useState(
     () => readShowAccommodationRoutesPreference(),
   )
+  const [stayEditor, setStayEditor] = useState(null)
+  const [staySaving, setStaySaving] = useState(false)
+  const [stayEditorError, setStayEditorError] = useState(null)
+  const [stayToast, setStayToast] = useState(null)
+  const [reorganizePrompt, setReorganizePrompt] = useState(null)
+  const [reorganizingStay, setReorganizingStay] = useState(false)
   const [trackedStopId, setTrackedStopId] = useState(null)
   const [tdvOverlayOpen, setTdvOverlayOpen] = useState(false)
   const [tdvOverlayAnimIn, setTdvOverlayAnimIn] = useState(false)
@@ -300,6 +347,7 @@ export function Itinerary() {
   const dayChipsScrollRef = useRef(null)
   const roteiroListScrollRef = useRef(null)
   const roteiroCardsListRef = useRef(null)
+  const likeInsertZoneRef = useRef(null)
   const flipBeforeReorderRef = useRef(null)
   const reorderFrozenLayoutRef = useRef(null)
   const [, setReorderLayoutEpoch] = useState(0)
@@ -310,11 +358,60 @@ export function Itinerary() {
     writeShowAccommodationRoutesPreference(next)
   }, [])
 
+  useEffect(() => {
+    if (!stayToast) return undefined
+    const timer = setTimeout(() => setStayToast(null), 4200)
+    return () => clearTimeout(timer)
+  }, [stayToast])
+
   const isPlanning = trip?.status === 'planejando'
   const hasFullAccess = hasItineraryFullAccess(itinerary, trip)
   const tdvTabLocked = Boolean(trip) && !isPlanning && !hasFullAccess
   const tdvAsOverlay = Boolean(trip) && !isPlanning && hasFullAccess
   const tdvUiActive = (isPlanning && mode === MODE_TDV) || tdvOverlayOpen
+
+  const persistAccommodations = useCallback(
+    async (nextAccs, { promptReorganize = false, stayName = '', toast } = {}) => {
+      setStaySaving(true)
+      setStayEditorError(null)
+      try {
+        const updated = await tripService.updateTrip(tripId, { accommodations: nextAccs })
+        setTrip(updated)
+        clearItineraryRouteCache(tripId)
+        if ((nextAccs || []).length > 0) {
+          handleShowAccommodationRoutesChange(true)
+        }
+        setStayEditor(null)
+        setStayToast(toast || 'Hospedagens atualizadas.')
+        if (promptReorganize) {
+          setReorganizePrompt({ name: stayName || '' })
+        }
+      } catch (err) {
+        setStayEditorError(
+          err.response?.data?.error?.message || 'Não foi possível salvar a hospedagem',
+        )
+      } finally {
+        setStaySaving(false)
+      }
+    },
+    [tripId, handleShowAccommodationRoutesChange],
+  )
+
+  const handleReorganizeStay = useCallback(async () => {
+    setReorganizePrompt(null)
+    setReorganizingStay(true)
+    try {
+      const data = await tripService.optimizeItinerary(tripId)
+      if (data) setItinerary(data)
+      clearItineraryRouteCache(tripId)
+      const tripData = await tripService.getTrip(tripId)
+      if (tripData) setTrip(tripData)
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Não foi possível reorganizar o roteiro')
+    } finally {
+      setReorganizingStay(false)
+    }
+  }, [tripId])
 
   const handleDeletePlanning = async () => {
     if (deleteInFlightRef.current) return
@@ -333,18 +430,29 @@ export function Itinerary() {
   }
 
   const refetchTimeoutRef = useRef(null)
-  const refetchItineraryImmediate = useCallback(async () => {
+  const itineraryActsSigRef = useRef('')
+  const refetchItineraryImmediate = useCallback(async (options = {}) => {
     if (!tripId) return null
     if (refetchTimeoutRef.current) {
       clearTimeout(refetchTimeoutRef.current)
       refetchTimeoutRef.current = null
     }
     try {
-      const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
-      clearItineraryRouteCache(tripId)
+      const itineraryData = await tripService.getItinerary(tripId, {
+        refresh: true,
+        signal: options.signal,
+      })
+      const nextSig = itineraryActivitiesSignature(itineraryData)
+      if (nextSig !== itineraryActsSigRef.current) {
+        clearItineraryRouteCache(tripId)
+        itineraryActsSigRef.current = nextSig
+      }
       setItinerary(itineraryData)
+      setItineraryError(null)
       return itineraryData
-    } catch {
+    } catch (err) {
+      if (isRequestAbort(err)) return null
+      setItineraryError(itineraryLoadErrorMessage(err))
       return null
     }
   }, [tripId])
@@ -354,29 +462,60 @@ export function Itinerary() {
     refetchTimeoutRef.current = setTimeout(refetchItineraryImmediate, 400)
   }, [tripId, refetchItineraryImmediate])
 
+  const retryItineraryLoad = useCallback(async () => {
+    setItineraryError(null)
+    setItineraryLoading(true)
+    try {
+      await refetchItineraryImmediate()
+    } finally {
+      setItineraryLoading(false)
+    }
+  }, [refetchItineraryImmediate])
+
   useEffect(() => {
     if (!tripId) return
-    let cancelled = false
+    const ac = new AbortController()
     ;(async () => {
+      setError(null)
+      setItineraryError(null)
+      setLoading(true)
+      setItineraryLoading(true)
+
+      const tripPromise = tripService.getTrip(tripId, { signal: ac.signal })
+      const itineraryPromise = tripService.getItinerary(tripId, {
+        refresh: true,
+        signal: ac.signal,
+      })
+
       try {
-        setError(null)
-        setLoading(true)
-        const tripData = await tripService.getTrip(tripId)
-        if (cancelled) return
+        const tripData = await tripPromise
+        if (ac.signal.aborted) return
         setTrip(tripData)
-        await refetchItineraryImmediate()
       } catch (err) {
-        if (!cancelled) {
-          setError(err.response?.data?.error?.message || 'Erro ao carregar roteiro')
-        }
+        if (ac.signal.aborted || isRequestAbort(err)) return
+        setError(err.response?.data?.error?.message || 'Erro ao carregar roteiro')
+        setTrip(null)
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!ac.signal.aborted) setLoading(false)
+      }
+
+      try {
+        const itineraryData = await itineraryPromise
+        if (ac.signal.aborted) return
+        itineraryActsSigRef.current = itineraryActivitiesSignature(itineraryData)
+        setItinerary(itineraryData)
+        setItineraryError(null)
+      } catch (err) {
+        if (ac.signal.aborted || isRequestAbort(err)) return
+        setItineraryError(itineraryLoadErrorMessage(err))
+      } finally {
+        if (!ac.signal.aborted) setItineraryLoading(false)
       }
     })()
     return () => {
-      cancelled = true
+      ac.abort()
     }
-  }, [tripId, refetchItineraryImmediate])
+  }, [tripId])
 
   useEffect(() => {
     // Em planejamento, TDV é aba irmã. Pós-gerar sem unlock, força sair do mode TDV.
@@ -758,6 +897,37 @@ export function Itinerary() {
     dateToDayMap,
   ])
 
+  const likeDragDayActivityIds = useMemo(
+    () => dragListContext.dayActivities.map((a) => String(a.id)),
+    [dragListContext.dayActivities],
+  )
+
+  const handleLikeDropSwap = useCallback(
+    (like, activityId) => {
+      likeReplace.swapLikeWithActivity(like, activityId)
+    },
+    [likeReplace.swapLikeWithActivity],
+  )
+
+  const handleLikeDropInsert = useCallback(
+    (like) => {
+      likeReplace.insertLike(like)
+    },
+    [likeReplace.insertLike],
+  )
+
+  const likeDrag = useRoteiroLikeDrag({
+    enabled: likeReplace.open && !loading && !likeReplace.saving,
+    availableLikes: likeReplace.availableLikes,
+    dayActivityIds: likeDragDayActivityIds,
+    rowCardRefs: likeReplace.rowCardRefs,
+    insertZoneRef: likeInsertZoneRef,
+    scrollRef: roteiroListScrollRef,
+    onDropSwap: handleLikeDropSwap,
+    onDropInsert: handleLikeDropInsert,
+    onTapLike: likeReplace.selectLike,
+  })
+
   const dragReorder = useRoteiroDragReorder({
     enabled: roteiroEditOpen && !loading && Boolean(trip),
     dayActivities: dragListContext.dayActivities,
@@ -931,36 +1101,31 @@ export function Itinerary() {
   }, [draftActivities, roteiroEditOpen])
 
   useEffect(() => {
-    const acts = itinerary?.activities || []
-    if (!acts.length) return
-
-    const prem = itinerary?._premiumRestriction
-      ? normalizedPremiumRestriction(itinerary._premiumRestriction)
-      : null
-    if (
-      prem?.totalByDay &&
-      prem?.visibleByDay &&
-      typeof selectedDay !== 'undefined' &&
-      Number.isFinite(Number(selectedDay))
-    ) {
-      const d = getPremiumDayTotals(prem, selectedDay)
-      if (d && d.totalOnDay > 0 && d.visibleOnDay === 0) return
-    }
-
-    const matches = acts.filter((a) => getActivityDayNumber(a, dateToDayMap) === selectedDay)
-    if (matches.length > 0) return
-    const first = acts
-      .map((a) => getActivityDayNumber(a, dateToDayMap))
-      .find((d2) => d2 != null)
-    if (first == null) return
-    setSelectedDay(first)
-  }, [itinerary, selectedDay, dateToDayMap])
+    if (!trip) return
+    const acts =
+      roteiroEditOpen && Array.isArray(draftActivities)
+        ? draftActivities
+        : likeReplace.open && Array.isArray(likeReplace.draftActivities)
+          ? likeReplace.draftActivities
+          : itinerary?.activities || []
+    const days = computeDaysList(acts, dateToDayMap, trip)
+    if (!days.length) return
+    setSelectedDay((prev) => (days.includes(prev) ? prev : days[0]))
+  }, [
+    trip,
+    itinerary,
+    dateToDayMap,
+    roteiroEditOpen,
+    draftActivities,
+    likeReplace.open,
+    likeReplace.draftActivities,
+  ])
 
   useEffect(() => {
     setMobileMapOpen(false)
   }, [mode])
 
-  if (loading) {
+  if (loading && !trip) {
     return (
       <>
         {finalizingTdv ? null : <LoadingSpinner />}
@@ -1016,6 +1181,12 @@ export function Itinerary() {
     activities.filter((a) => getActivityDayNumber(a, dateToDayMap) === effectiveSelectedDay)
   )
   const dayAccommodations = resolveAccommodationsForDay(trip, effectiveSelectedDay, dateToDayMap)
+  const dayStays = resolveAccommodationsForDay(trip, effectiveSelectedDay, dateToDayMap, {
+    plottableOnly: false,
+  })
+  const primaryStay = dayStays[0] ?? null
+  const selectedDayIso = getIsoDateForDay(dateToDayMap, effectiveSelectedDay)
+  const selectedDayDest = findDestinationCoveringIso(trip, selectedDayIso)
   const trackedMapIndex = trackedStopId
     ? dayActivities.findIndex((a) => String(a.id) === String(trackedStopId))
     : -1
@@ -1060,6 +1231,18 @@ export function Itinerary() {
     persistedActivities.length > 0 &&
     !likeReplace.open
 
+  const canEditStay = roteiroEditAllowed && !roteiroEditOpen
+  const showStayAnchors =
+    showRoteiroSidebar && !isPlanning && activities.length > 0 && !isSelectedDayPremiumLockedUi
+
+  const openStayManager = (opts = {}) => {
+    setStayEditorError(null)
+    const intent = opts.intent || 'manage'
+    setStayEditor({
+      intent,
+      focusStayId: opts.focusStayId || (intent === 'manage' ? primaryStay?.id : null),
+    })
+  }
   const canPrintItinerary =
     showRoteiroSidebar &&
     !isPlanning &&
@@ -1121,12 +1304,12 @@ export function Itinerary() {
     closeTdvOverlay('roteiro', { skipFollowUp: true })
     setMode(MODE_ROTEIRO)
     let likes = Array.isArray(likesFromTdv) ? likesFromTdv : []
-    if (likes.length === 0 && tripId) {
+    if (tripId) {
       try {
         const summary = await placeService.getTdvSummary(tripId)
-        likes = summary.likedPlaces || []
+        likes = mergeTdvLikeListsById(summary.likedPlaces || [], likes)
       } catch {
-        likes = []
+        /* mantém likes locais do TDV */
       }
     }
     likeReplace.start(ensureActivitiesHaveStableIds([...persistedActivities]), likes)
@@ -1314,6 +1497,10 @@ export function Itinerary() {
     saving: likeReplace.saving,
     likeMotion: likeReplace.likeMotion,
     registerLikeCardRef: likeReplace.registerLikeCardRef,
+    draggingLikeId: likeDrag.draggingLikeId,
+    pendingLikeId: likeDrag.pendingLikeId,
+    onLikePointerDown: likeDrag.onLikePointerDown,
+    shouldSuppressClick: likeDrag.shouldSuppressClick,
   }
 
   return (
@@ -1528,6 +1715,26 @@ export function Itinerary() {
         </div>
       ) : null}
 
+      {itineraryError ? (
+        <div
+          className="flex-shrink-0 px-4 sm:px-6 py-2.5 bg-amber-500/10 border-b border-amber-500/25 text-amber-900 dark:text-amber-200 text-sm flex items-start gap-2"
+          role="alert"
+        >
+          <Icon name="wifi_off" className="text-base shrink-0 mt-0.5" aria-hidden />
+          <p className="min-w-0 flex-1 leading-snug">{itineraryError}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="shrink-0 rounded-lg font-bold"
+            onClick={retryItineraryLoad}
+            disabled={itineraryLoading}
+          >
+            Tentar de novo
+          </Button>
+        </div>
+      ) : null}
+
       {finalizeError ? (
         <div
           className="flex-shrink-0 px-4 sm:px-6 py-2.5 bg-red-500/10 border-b border-red-500/25 text-red-700 dark:text-red-400 text-sm flex items-start gap-2"
@@ -1677,13 +1884,23 @@ export function Itinerary() {
                       </p>
                     </div>
                   ) : null}
-                  {likeReplace.open && dayActivities.length === 0 ? (
-                    <div className="mb-6 rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-text-secondary">
-                      <p className="font-semibold text-[#1c1c0d] dark:text-white">Nenhuma parada neste dia</p>
-                      <p className="text-xs mt-1">
-                        Selecione uma curtida e use «Inserir no dia atual», ou troque de dia nas chips acima.
-                      </p>
+                  {stayToast ? (
+                    <div
+                      className="mb-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-[#45340a] dark:text-primary"
+                      role="status"
+                    >
+                      {stayToast}
                     </div>
+                  ) : null}
+                  {showStayAnchors ? (
+                    <ItineraryStayAnchor
+                      placement="start"
+                      stay={primaryStay}
+                      tripId={tripId}
+                      hasFullAccess={hasFullAccess}
+                      canEdit={canEditStay}
+                      onManage={(opts) => openStayManager(opts)}
+                    />
                   ) : null}
                   <div ref={roteiroCardsListRef} className="relative space-y-0">
                     <ItineraryDragInsertLine
@@ -1701,13 +1918,19 @@ export function Itinerary() {
                           : idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0
 
                       if (likeReplace.open) {
+                        const dropHighlight =
+                          likeDrag.phase === 'dragging' &&
+                          likeDrag.overTarget?.type === 'swap' &&
+                          String(likeDrag.overTarget.activityId) === String(act.id)
                         return (
                           <RoteiroModifyActivityRow
                             key={String(act.id || `${effectiveSelectedDay}-${idx}`)}
                             act={act}
                             index={idx}
                             isLast={idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0}
-                            swapArmed={Boolean(likeReplace.selectedLike)}
+                            swapArmed={Boolean(likeReplace.selectedLike) && likeDrag.phase !== 'dragging'}
+                            dropHighlight={dropHighlight}
+                            dragActive={likeDrag.phase === 'dragging'}
                             motion={likeReplace.rowMotion?.[String(act.id)] || null}
                             cardRef={(el) => likeReplace.registerRowCardRef(String(act.id), el)}
                             onSwap={() => likeReplace.swapWithActivity(act.id)}
@@ -1890,10 +2113,28 @@ export function Itinerary() {
                       />
                       )
                     })}
+                    {likeReplace.open ? (
+                      <RoteiroModifyInsertZone
+                        zoneRef={likeInsertZoneRef}
+                        active={likeDrag.phase === 'dragging'}
+                        highlighted={
+                          likeDrag.phase === 'dragging' && likeDrag.overTarget?.type === 'insert'
+                        }
+                      />
+                    ) : null}
                     {hiddenPremiumStopsSameDay >= 1 ? (
                       <ItineraryPremiumNextPeek hiddenCount={hiddenPremiumStopsSameDay} />
                     ) : null}
                   </div>
+                  {showStayAnchors && primaryStay ? (
+                    <ItineraryStayAnchor
+                      placement="end"
+                      stay={primaryStay}
+                      tripId={tripId}
+                      hasFullAccess={hasFullAccess}
+                      canEdit={false}
+                    />
+                  ) : null}
                   {hiddenPremiumStopsSameDay >= 1 ? (
                     <>
                       <div className="pointer-events-none absolute inset-x-[-0.5rem] bottom-0 z-[5] h-[min(13.5rem,40vh)] sm:h-[min(15rem,38vh)] bg-gradient-to-b from-transparent via-white/25 via-[28%] to-white dark:via-[#23220f]/20 dark:to-[#23220f]" />
@@ -1941,7 +2182,14 @@ export function Itinerary() {
                   </p>
                 </div>
               ) : null}
-              {activities.length === 0 && (
+              {itineraryLoading && dayActivities.length === 0 && !itineraryError ? (
+                <div className="mb-4">
+                  <RoteiroStopsSkeleton />
+                </div>
+              ) : null}
+              {activities.length === 0 &&
+              !itineraryLoading &&
+              !itineraryError && (
                 <div className="text-center py-10 px-4 text-text-secondary rounded-2xl border border-dashed border-border-light dark:border-border-dark">
                   <Icon name="route" className="text-4xl mb-3 opacity-40 mx-auto text-primary" />
                   <p className="text-sm font-medium text-[#1c1c0d] dark:text-white">Nenhuma atividade ainda</p>
@@ -2003,7 +2251,7 @@ export function Itinerary() {
                 disabled={isSelectedDayPremiumLockedUi}
                 routeRestricted={isRouteRestricted}
                 highlightedIndex={trackedMapHighlight}
-                preferLocalRoute={roteiroEditOpen}
+                preferLocalRoute={roteiroEditOpen || likeReplace.open}
                 hideDuringRoteiroDrag={dragReorder.isOverlayActive}
                 showAccommodationRoutes={showAccommodationRoutes}
                 onShowAccommodationRoutesChange={handleShowAccommodationRoutesChange}
@@ -2076,7 +2324,7 @@ export function Itinerary() {
                 disabled={isSelectedDayPremiumLockedUi}
                 routeRestricted={isRouteRestricted}
                 highlightedIndex={trackedMapHighlight}
-                preferLocalRoute={roteiroEditOpen}
+                preferLocalRoute={roteiroEditOpen || likeReplace.open}
                 className="absolute inset-0 h-full w-full"
                 ariaLabel={`Mapa do roteiro — dia ${effectiveSelectedDay}`}
                 showAccommodationRoutes={showAccommodationRoutes}
@@ -2118,6 +2366,36 @@ export function Itinerary() {
         onClose={() => setExportSheetOpen(false)}
         onExportPdf={handlePrintItinerary}
       />
+      <AccommodationEditorSheet
+        open={Boolean(stayEditor)}
+        onClose={() => {
+          if (staySaving) return
+          setStayEditor(null)
+          setStayEditorError(null)
+        }}
+        trip={trip}
+        intent={stayEditor?.intent || 'manage'}
+        focusStayId={stayEditor?.focusStayId || null}
+        defaultDestinationId={selectedDayDest?.id}
+        defaultCheckIn={selectedDayIso}
+        saving={staySaving}
+        error={stayEditorError}
+        onSave={(nextAccs, changedStay) => {
+          const previous = trip?.accommodations || []
+          const shouldReorganize = accommodationNeedsReorganize(previous, changedStay)
+          persistAccommodations(nextAccs, {
+            promptReorganize: shouldReorganize,
+            stayName: changedStay?.name || changedStay?.address || '',
+            toast: 'Hospedagens atualizadas.',
+          })
+        }}
+      />
+      <ReorganizeStayDialog
+        open={Boolean(reorganizePrompt)}
+        stayName={reorganizePrompt?.name}
+        onKeep={() => setReorganizePrompt(null)}
+        onReorganize={handleReorganizeStay}
+      />
       <DeletePlanningOverlay
         open={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
@@ -2125,7 +2403,19 @@ export function Itinerary() {
         deleting={deleting}
         tripLabel={destLabel}
       />
-      <FinalizeItineraryOverlay open={finalizingTdv} />
+      <FinalizeItineraryOverlay
+        open={finalizingTdv || reorganizingStay}
+        title={
+          reorganizingStay && !finalizingTdv
+            ? 'Reorganizando o roteiro'
+            : undefined
+        }
+        description={
+          reorganizingStay && !finalizingTdv
+            ? 'O otimizador está ajustando as paradas em torno da hospedagem.'
+            : undefined
+        }
+      />
       <RoteiroDragOverlay active={dragReorder.isOverlayActive}>
         <ItineraryDragGhost
           activity={dragReorder.ghostActivity}
@@ -2151,6 +2441,9 @@ export function Itinerary() {
           }
         />
       </RoteiroDragOverlay>
+      {likeReplace.open && likeDrag.phase === 'dragging' ? (
+        <RoteiroModifyDragGhost like={likeDrag.draggingLike} style={likeDrag.ghostStyle} />
+      ) : null}
     </div>
     <ItineraryPrintView
       trip={trip}
