@@ -24,7 +24,9 @@ import {
   pickPrimaryAccommodationForLegs,
 } from '../../utils/accommodationDayResolver'
 import { resolveAccommodationLegDisplay } from '../../utils/itineraryAccommodationLegs'
+import { getRealPlaceImageUrls } from '../../utils/placeImages'
 import { MapAccommodationRoutesToggle } from './MapAccommodationRoutesToggle'
+import { ItineraryMapStopPopup } from './ItineraryMapStopPopup'
 
 /**
  * RF04.3 — Mapa do roteiro por dia: pins numerados + rota (Geoapify pelo nome).
@@ -306,6 +308,18 @@ export function ItineraryDayMap({
     [localMarkers, apiMarkers, routeRestricted, apiRouteSafeForPreview],
   )
 
+  /** Galeria por activityId — mesmas URLs reais usadas nos cards do roteiro. */
+  const imagesByActivityId = useMemo(() => {
+    const map = new Map()
+    for (const act of activities || []) {
+      const id = String(act?.id ?? act?.placeId ?? act?.place_id ?? '')
+      if (!id || map.has(id)) continue
+      const urls = getRealPlaceImageUrls(act)
+      if (urls.length > 0) map.set(id, urls)
+    }
+    return map
+  }, [activities])
+
   const mapAccommodations = useMemo(() => {
     const fromProps = plottableAccommodationsFromProps(accommodations)
     const fromApi = routePayloadValid ? routeData?.accommodations : null
@@ -494,23 +508,30 @@ export function ItineraryDayMap({
             </Popup>
           </Marker>
         ))}
-        {markers.map((m, idx) => (
-          <Marker
-            key={m.activityId || `${m.coords[0]}-${m.coords[1]}-${idx}`}
-            position={m.coords}
-            icon={getNumberedIcon(m.order ?? idx + 1, highlightedIndex === idx)}
-          >
-            <Popup>
-              <p className="m-0 text-sm font-bold text-foreground">
-                {m.order != null ? `${m.order}. ` : ''}
-                {m.name}
-              </p>
-              {m.startTime ? (
-                <p className="m-0 text-xs text-text-secondary mt-1">{m.startTime}</p>
-              ) : null}
-            </Popup>
-          </Marker>
-        ))}
+        {markers.map((m, idx) => {
+          const imageUrls = imagesByActivityId.get(String(m.activityId ?? '')) || []
+          return (
+            <Marker
+              key={m.activityId || `${m.coords[0]}-${m.coords[1]}-${idx}`}
+              position={m.coords}
+              icon={getNumberedIcon(m.order ?? idx + 1, highlightedIndex === idx)}
+            >
+              <Popup
+                className="goofly-map-stop-popup"
+                offset={[0, -4]}
+                autoPan
+                autoPanPadding={[24, 24]}
+              >
+                <ItineraryMapStopPopup
+                  order={m.order ?? idx + 1}
+                  name={m.name}
+                  startTime={m.startTime}
+                  imageUrls={imageUrls}
+                />
+              </Popup>
+            </Marker>
+          )
+        })}
         <FitBoundsToPoints coords={allCoords} />
         <MapInvalidateSize
           watch={`${mapInstanceKey}-${markers.length}-${activitySig}-${mapLayoutWatch ?? ''}`}

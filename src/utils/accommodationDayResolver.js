@@ -31,7 +31,7 @@ export function accommodationStableId(acc, fallback = '') {
  * @param {Record<string, unknown> | null | undefined} trip
  * @param {string} iso
  */
-function findDestinationCoveringIso(trip, iso) {
+export function findDestinationCoveringIso(trip, iso) {
   for (const dest of trip?.destinations || []) {
     const arr = toIsoCalendarPrefix(dest.arrivalDate ?? dest.arrival_date)
     const dep = toIsoCalendarPrefix(dest.departureDate ?? dest.departure_date)
@@ -41,11 +41,30 @@ function findDestinationCoveringIso(trip, iso) {
 }
 
 /**
+ * @param {Record<string, unknown>[]} matches
+ * @param {Record<string, unknown> | null | undefined} dest
+ */
+export function preferStayForDestination(matches, dest) {
+  if (!matches?.length) return null
+  if (matches.length === 1) return matches[0]
+  if (dest?.id) {
+    const match = matches.find(
+      (a) => (a.destinationId || a.destination_id) === dest.id,
+    )
+    if (match) return match
+  }
+  return matches[0]
+}
+
+/**
+ * Resolve por data primeiro; destino só desempata se houver mais de uma (legado).
  * @param {Record<string, unknown> | null | undefined} trip
  * @param {number} dayNum
  * @param {Map<string, number>} dateToDayMap
+ * @param {{ plottableOnly?: boolean }} [options]
  */
-export function resolveAccommodationsForDay(trip, dayNum, dateToDayMap) {
+export function resolveAccommodationsForDay(trip, dayNum, dateToDayMap, options = {}) {
+  const plottableOnly = options.plottableOnly !== false
   if (!trip || dayNum == null || !Number.isFinite(Number(dayNum)) || Number(dayNum) < 1) {
     return []
   }
@@ -55,24 +74,16 @@ export function resolveAccommodationsForDay(trip, dayNum, dateToDayMap) {
 
   const dest = findDestinationCoveringIso(trip, iso)
   const allAccs = trip.accommodations || []
-  let candidates = allAccs
-
-  if (dest?.id) {
-    const byDest = allAccs.filter(
-      (a) => (a.destinationId || a.destination_id) === dest.id,
-    )
-    if (byDest.length > 0) candidates = byDest
-  }
 
   /** @type {Record<string, unknown>[]} */
   const results = []
-  for (let i = 0; i < candidates.length; i += 1) {
-    const acc = candidates[i]
+  for (let i = 0; i < allAccs.length; i += 1) {
+    const acc = allAccs[i]
     const checkIn = toIsoCalendarPrefix(acc.checkIn ?? acc.check_in)
     const checkOut = toIsoCalendarPrefix(acc.checkOut ?? acc.check_out)
     if (!checkIn || !checkOut) continue
     if (iso < checkIn || iso > checkOut) continue
-    if (!isAccommodationPlottable(acc)) continue
+    if (plottableOnly && !isAccommodationPlottable(acc)) continue
     const coords = readLatLng(acc)
     results.push({
       ...acc,
@@ -82,7 +93,11 @@ export function resolveAccommodationsForDay(trip, dayNum, dateToDayMap) {
     })
   }
 
-  return results
+  if (results.length <= 1 || !dest?.id) return results
+
+  const preferred = preferStayForDestination(results, dest)
+  if (!preferred) return results
+  return [preferred, ...results.filter((a) => a !== preferred)]
 }
 
 /**
@@ -92,7 +107,9 @@ export function resolveAccommodationsForDay(trip, dayNum, dateToDayMap) {
  */
 export function resolveAccommodationForDay(trip, dayNum, dateToDayMap) {
   const list = resolveAccommodationsForDay(trip, dayNum, dateToDayMap)
-  return list[0] ?? null
+  const iso = getIsoDateForDay(dateToDayMap, dayNum)
+  const dest = findDestinationCoveringIso(trip, iso)
+  return preferStayForDestination(list, dest)
 }
 
 /**

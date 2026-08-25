@@ -9,6 +9,11 @@ import { placeService } from '../../services/placeService'
 import { getPlaceCoverImageUrl, getPlaceVideoUrls } from '../../utils/placeImages'
 import { buildTdvLikePlaceData } from '../../utils/tdvLikePlaceData'
 import {
+  getTdvPlaceId,
+  likeEntryFromTdvPlace,
+  mergeTdvLikeListsById,
+} from '../../utils/tdvLikeEntry'
+import {
   clearTdvDeckSession,
   readTdvDeckSession,
   saveTdvDeckSession,
@@ -18,21 +23,7 @@ import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
 
 function getPlaceId(p) {
-  return p?.id ?? p?.placeId ?? p?.place_id
-}
-
-/** Mescla listas de lugares por id; itens locais prevalecem (swipes recentes). */
-function mergePlaceListsById(incoming, local) {
-  const map = new Map()
-  for (const p of incoming || []) {
-    const id = String(getPlaceId(p) || '').trim()
-    if (id) map.set(id, p)
-  }
-  for (const p of local || []) {
-    const id = String(getPlaceId(p) || '').trim()
-    if (id) map.set(id, p)
-  }
-  return [...map.values()]
+  return getTdvPlaceId(p)
 }
 
 function videoLinkLabel(url) {
@@ -402,8 +393,8 @@ export function TinderView({
             : []
           const likesCount = summary.likesCount ?? likedFromRes.length
           if (consumedSinceSessionRef.current) {
-            setLikedPlaces((prev) => mergePlaceListsById(likedFromRes, prev))
-            setDislikedPlaces((prev) => mergePlaceListsById(dislikedFromRes, prev))
+            setLikedPlaces((prev) => mergeTdvLikeListsById(likedFromRes, prev))
+            setDislikedPlaces((prev) => mergeTdvLikeListsById(dislikedFromRes, prev))
             setTotalLikes((prev) => Math.max(Number(prev) || 0, likesCount))
             return
           }
@@ -781,7 +772,8 @@ export function TinderView({
       const placeData = buildTdvLikePlaceData(currentPlace)
       const res = await placeService.like(tripId, placeId, placeData)
       setTotalLikes(typeof res?.likesUsedTotal === 'number' ? res.likesUsedTotal : totalLikes + 1)
-      setLikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev])
+      const likeEntry = likeEntryFromTdvPlace(currentPlace)
+      setLikedPlaces((prev) => [likeEntry || { placeId, name: currentPlace.name }, ...prev])
       setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
       consumedSinceSessionRef.current = true
       setCurrentIndex(0)

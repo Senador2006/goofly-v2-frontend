@@ -146,21 +146,23 @@ export function ItineraryMobileMapDrawer({
           className="roteiro-mobile-map-curtain-edge pointer-events-none absolute inset-y-0 left-0 z-[1] w-3"
           aria-hidden
         />
-        <ItineraryDayMap
-          tripId={tripId}
-          day={day}
-          activities={activities}
-          accommodations={accommodations}
-          disabled={disabled}
-          routeRestricted={routeRestricted}
-          highlightedIndex={highlightedIndex}
-          preferLocalRoute={preferLocalRoute}
-          className="absolute inset-0 h-full w-full"
-          ariaLabel={`Mapa do roteiro — dia ${day}`}
-          mapLayoutWatch={open ? `open-${day}` : 'closed'}
-          showAccommodationRoutes={showAccommodationRoutes}
-          onShowAccommodationRoutesChange={onShowAccommodationRoutesChange}
-        />
+        {(open || isDragging) ? (
+          <ItineraryDayMap
+            tripId={tripId}
+            day={day}
+            activities={activities}
+            accommodations={accommodations}
+            disabled={disabled}
+            routeRestricted={routeRestricted}
+            highlightedIndex={highlightedIndex}
+            preferLocalRoute={preferLocalRoute}
+            className="absolute inset-0 h-full w-full"
+            ariaLabel={`Mapa do roteiro — dia ${day}`}
+            mapLayoutWatch={open ? `open-${day}` : 'closed'}
+            showAccommodationRoutes={showAccommodationRoutes}
+            onShowAccommodationRoutesChange={onShowAccommodationRoutesChange}
+          />
+        ) : null}
       </div>
 
       <button

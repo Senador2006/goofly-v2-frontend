@@ -19,10 +19,11 @@ function activityFromLike(like, day) {
   const nid =
     globalThis.crypto?.randomUUID?.() || `tdv-${Date.now()}-${Math.random().toString(16).slice(2)}`
   const title = like?.name || like?.title || 'Parada do TDV'
+  const placeId = like?.placeId ?? like?.place_id
   const act = {
     id: nid,
-    placeId: like.placeId,
-    place_id: like.placeId,
+    placeId,
+    place_id: placeId,
     title,
     name: title,
     description: like.description || '',
@@ -33,7 +34,8 @@ function activityFromLike(like, day) {
     ticketRequired: false,
     source: 'tdv_like',
   }
-  if (like.coordinates) act.coordinates = like.coordinates
+  const coords = like?.coordinates || like?.geo || null
+  if (coords && typeof coords === 'object') act.coordinates = coords
   if (like.image_url) act.image_url = like.image_url
   if (Array.isArray(like.image_urls) && like.image_urls.length) act.image_urls = like.image_urls
   return act
@@ -41,17 +43,27 @@ function activityFromLike(like, day) {
 
 function applyLikeOntoActivity(activity, like) {
   const title = like?.name || like?.title || activity.title
+  const placeId = like?.placeId ?? like?.place_id
   const next = {
     ...activity,
-    placeId: like.placeId,
-    place_id: like.placeId,
+    placeId,
+    place_id: placeId,
     title,
     name: title,
     description: like.description ?? activity.description ?? '',
     location: like.location ?? activity.location ?? null,
     source: activity.source === 'user_edit' ? 'user_edit' : 'tdv_like',
   }
-  if (like.coordinates) next.coordinates = like.coordinates
+  const coords = like?.coordinates || like?.geo || null
+  if (coords && typeof coords === 'object') {
+    next.coordinates = coords
+  } else {
+    // Evita pin da parada antiga no mapa após swap sem coords no like.
+    delete next.coordinates
+    delete next.geo
+    delete next.position
+    delete next.latLng
+  }
   if (like.image_url) next.image_url = like.image_url
   if (Array.isArray(like.image_urls) && like.image_urls.length) next.image_urls = like.image_urls
   return next
@@ -229,32 +241,38 @@ export function useRoteiroLikeReplace({ dateToDayMap, selectedDay }) {
     setSelectedLikeId((prev) => (String(prev) === String(placeId) ? null : String(placeId)))
   }, [])
 
-  const insertSelectedLike = useCallback(() => {
-    if (!selectedLike) return
-    const day = Math.max(1, Math.floor(Number(selectedDay) || 1))
-    const nextAct = activityFromLike(selectedLike, day)
-    const likeSnapshot = selectedLike
-    pulseLikeExit(likeSnapshot)
-    setSelectedLikeId(null)
-    setDraftActivities((prev) =>
-      scheduleActivityInsertedAtEnd(prev || [], dateToDayMap, day, nextAct),
-    )
-    if (!prefersReducedMotion()) {
-      setRowMotion((prev) => ({ ...prev, [String(nextAct.id)]: 'enter' }))
-      later(() => {
-        setRowMotion((prev) => {
-          const next = { ...prev }
-          delete next[String(nextAct.id)]
-          return next
-        })
-      }, MOTION_MS)
-    }
-  }, [selectedLike, selectedDay, dateToDayMap, pulseLikeExit, later])
+  const insertLike = useCallback(
+    (like) => {
+      if (!like) return
+      const day = Math.max(1, Math.floor(Number(selectedDay) || 1))
+      const nextAct = activityFromLike(like, day)
+      pulseLikeExit(like)
+      setSelectedLikeId(null)
+      setDraftActivities((prev) =>
+        scheduleActivityInsertedAtEnd(prev || [], dateToDayMap, day, nextAct),
+      )
+      if (!prefersReducedMotion()) {
+        setRowMotion((prev) => ({ ...prev, [String(nextAct.id)]: 'enter' }))
+        later(() => {
+          setRowMotion((prev) => {
+            const next = { ...prev }
+            delete next[String(nextAct.id)]
+            return next
+          })
+        }, MOTION_MS)
+      }
+    },
+    [selectedDay, dateToDayMap, pulseLikeExit, later],
+  )
 
-  const swapWithActivity = useCallback(
-    (activityId) => {
-      if (!selectedLike || activityId == null) return
-      const likeSnapshot = selectedLike
+  const insertSelectedLike = useCallback(() => {
+    insertLike(selectedLike)
+  }, [insertLike, selectedLike])
+
+  const swapLikeWithActivity = useCallback(
+    (like, activityId) => {
+      if (!like || activityId == null) return
+      const likeSnapshot = like
       const likePid = String(placeIdOf(likeSnapshot))
       const aid = String(activityId)
 
@@ -322,7 +340,14 @@ export function useRoteiroLikeReplace({ dateToDayMap, selectedDay }) {
         },
       })
     },
-    [selectedLike, draftActivities],
+    [draftActivities],
+  )
+
+  const swapWithActivity = useCallback(
+    (activityId) => {
+      swapLikeWithActivity(selectedLike, activityId)
+    },
+    [selectedLike, swapLikeWithActivity],
   )
 
   const removeActivity = useCallback(
@@ -380,10 +405,13 @@ export function useRoteiroLikeReplace({ dateToDayMap, selectedDay }) {
     likeMotion,
     registerLikeCardRef,
     registerRowCardRef,
+    rowCardRefs,
     start,
     cancel,
     selectLike,
+    insertLike,
     insertSelectedLike,
+    swapLikeWithActivity,
     swapWithActivity,
     removeActivity,
     patchActivity,

@@ -22,6 +22,10 @@ export function RoteiroModifyPanel({
   likeMotion = null,
   registerLikeCardRef = null,
   layout = 'sidebar',
+  draggingLikeId = null,
+  pendingLikeId = null,
+  onLikePointerDown = null,
+  shouldSuppressClick = null,
 }) {
   const t = useT()
   const isDock = layout === 'dock'
@@ -31,6 +35,10 @@ export function RoteiroModifyPanel({
     const selected = String(selectedLikeId) === pid
     const exiting = Boolean(like._exiting) || likeMotion?.[pid] === 'exit'
     const swapHide = likeMotion?.[pid] === 'swap-hide'
+    const dragging = String(draggingLikeId) === pid
+    const pending = String(pendingLikeId) === pid
+    const hideVisual = exiting || swapHide || dragging
+    const lockTouch = dragging || pending
     return (
       <li
         key={pid}
@@ -39,44 +47,73 @@ export function RoteiroModifyPanel({
             ? `min-w-[11rem] w-[11rem] ${
                 exiting
                   ? 'roteiro-modify-like--exit'
-                  : swapHide
+                  : swapHide || dragging
                     ? 'roteiro-modify-like--swap-hide'
                     : ''
               }`.trim()
             : exiting
               ? 'roteiro-modify-like--exit'
-              : swapHide
+              : swapHide || dragging
                 ? 'roteiro-modify-like--swap-hide'
                 : undefined
         }
       >
-        <RoteiroModifyStopCard
-          cardRef={(el) => registerLikeCardRef?.(pid, el)}
-          title={like.name || like.title || 'Curtida'}
-          chipLabel="Curtida"
-          chipIcon="favorite"
-          selected={selected && !exiting && !swapHide}
-          interactive={!exiting && !swapHide}
-          disabled={exiting || swapHide}
-          onClick={() => onSelectLike?.(pid)}
-          role="button"
-          tabIndex={exiting || swapHide ? -1 : 0}
-          aria-pressed={selected}
-          aria-label={like.name || like.title || 'Curtida'}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              onSelectLike?.(pid)
-            }
+        <div
+          data-roteiro-like-card={pid}
+          className="touch-manipulation select-none"
+          onPointerDown={(e) => {
+            if (exiting || swapHide || saving) return
+            onLikePointerDown?.(e, like)
           }}
-          trailing={
-            <Icon
-              name={selected ? 'check_circle' : 'radio_button_unchecked'}
-              className={`shrink-0 text-base ${selected ? 'text-primary' : 'text-text-secondary'}`}
-              aria-hidden
-            />
-          }
-        />
+          style={{
+            // Dock: pan-x mantém scroll da faixa; bloqueia pan vertical do browser
+            // para o long-press / puxar para a lista funcionarem.
+            touchAction: lockTouch ? 'none' : isDock ? 'pan-x' : 'manipulation',
+            WebkitTouchCallout: 'none',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+          }}
+        >
+          <RoteiroModifyStopCard
+            cardRef={(el) => registerLikeCardRef?.(pid, el)}
+            title={like.name || like.title || 'Curtida'}
+            chipLabel="Curtida"
+            chipIcon="favorite"
+            selected={selected && !hideVisual}
+            interactive={!hideVisual}
+            disabled={exiting || swapHide}
+            onClick={() => {
+              if (shouldSuppressClick?.()) return
+              onSelectLike?.(pid)
+            }}
+            role="button"
+            tabIndex={hideVisual ? -1 : 0}
+            aria-pressed={selected}
+            aria-label={like.name || like.title || 'Curtida'}
+            aria-grabbed={dragging}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelectLike?.(pid)
+              }
+            }}
+            className={dragging ? 'cursor-grabbing' : 'cursor-grab'}
+            trailing={
+              <span className="inline-flex shrink-0 items-center gap-0.5">
+                <Icon
+                  name="drag_indicator"
+                  className="text-base text-text-secondary/70"
+                  aria-hidden
+                />
+                <Icon
+                  name={selected ? 'check_circle' : 'radio_button_unchecked'}
+                  className={`shrink-0 text-base ${selected ? 'text-primary' : 'text-text-secondary'}`}
+                  aria-hidden
+                />
+              </span>
+            }
+          />
+        </div>
       </li>
     )
   }
@@ -98,14 +135,19 @@ export function RoteiroModifyPanel({
           {availableLikes.length === 0 ? (
             <p className="py-1 text-[11px] text-text-secondary">{t('tdv.modify_panel_empty')}</p>
           ) : (
-            <ul className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+            <ul
+              className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5"
+              style={{
+                touchAction: draggingLikeId || pendingLikeId ? 'none' : 'pan-x',
+              }}
+            >
               {availableLikes.map((like) => renderLikeCard(like, { compact: true }))}
             </ul>
           )}
         </div>
 
         <div className="shrink-0 space-y-1.5 border-t border-amber-100 px-3 py-2 dark:border-primary/15 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          {selectedLikeId ? (
+          {selectedLikeId && !draggingLikeId ? (
             <p className="text-[10px] leading-snug text-text-secondary">{t('tdv.modify_swap_hint')}</p>
           ) : null}
           <div className="flex gap-1.5">
@@ -176,7 +218,7 @@ export function RoteiroModifyPanel({
       </div>
 
       <div className="shrink-0 space-y-2 border-t border-amber-100 px-3 py-3 dark:border-primary/15 sm:px-3.5">
-        {selectedLikeId ? (
+        {selectedLikeId && !draggingLikeId ? (
           <p className="text-[10px] leading-snug text-text-secondary sm:text-[11px]">{t('tdv.modify_swap_hint')}</p>
         ) : null}
         <Button

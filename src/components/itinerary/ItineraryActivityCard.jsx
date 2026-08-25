@@ -15,7 +15,7 @@ import {
   resolveActivityTitle,
   resolveActivityTitleForEdit,
 } from '../../utils/itineraryPrintFormat'
-import { shouldShowTdvRoteiroGallery } from '../../utils/placeImages'
+import { shouldShowRoteiroGallery } from '../../utils/placeImages'
 import { formatActivityDuration } from '../../utils/formatActivityDuration'
 
 /** @param {Record<string, unknown> | null | undefined} act */
@@ -219,11 +219,13 @@ export function ItineraryActivityCard({
   const badge = sourceBadgeLabel(effective)
   const ticket = resolveTicketInfo(effective || act)
   const sourceKey = String((effective || act)?.source || '').trim()
-  const showTdvGallery = shouldShowTdvRoteiroGallery(effective || act, hasFullAccess)
-  // Imagens TDV só na versão completa (galeria). Na prévia gratuita não vazar via hero.
+  const showTdvGallery = shouldShowRoteiroGallery(effective || act, hasFullAccess)
+  // TDV / ai_suggested: só galeria compacta na versão completa (sem hero).
   const showTopHero =
     !compactMode &&
+    !showTdvGallery &&
     sourceKey !== 'tdv_like' &&
+    sourceKey !== 'ai_suggested' &&
     !!(effective?.image_url || act?.image_url)
 
   const toggle = useCallback(() => {
@@ -498,6 +500,7 @@ function CardEditFields({
               disabled={false}
               placeholder="Busque um lugar (ex.: Torre Eiffel)…"
               className="goofly-google-place-ac-frame goofly-google-place-ac-frame--compact relative z-[30] w-full overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+              inputClassName="w-full rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark px-3 py-2.5 text-sm font-bold text-[#1c1c0d] dark:text-white"
               onDraftChange={(text) =>
                 onDraftPatch({ title: text, name: text, placeName: text })
               }
