@@ -5,6 +5,7 @@ import {
   applyOptimisticLike,
   applyOptimisticUndo,
   getOptimisticPlaceId,
+  isBenignUndoPersistError,
   rollbackOptimisticDislike,
   rollbackOptimisticLike,
   rollbackOptimisticUndo,
@@ -81,6 +82,12 @@ test('shouldCancelInFlightSwipe só com cancelled do mesmo tipo', () => {
   assert.equal(shouldCancelInFlightSwipe({ type: 'like', cancelled: false }, 'like'), false)
   assert.equal(shouldCancelInFlightSwipe({ type: 'like', cancelled: true }, 'like'), true)
   assert.equal(shouldCancelInFlightSwipe({ type: 'dislike', cancelled: true }, 'like'), false)
+})
+
+test('isBenignUndoPersistError ignora NOT_LIKED / NOT_DISLIKED', () => {
+  assert.equal(isBenignUndoPersistError({ code: 'NOT_DISLIKED' }), true)
+  assert.equal(isBenignUndoPersistError({ response: { data: { error: { code: 'NOT_LIKED' } } } }), true)
+  assert.equal(isBenignUndoPersistError({ message: 'network' }), false)
 })
 
 test('optimistic undo like recoloca carta e remove das curtidas', () => {

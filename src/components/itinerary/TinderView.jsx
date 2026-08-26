@@ -22,12 +22,14 @@ import {
   applyOptimisticDislike,
   applyOptimisticLike,
   applyOptimisticUndo,
+  isBenignUndoPersistError,
   rollbackOptimisticDislike,
   rollbackOptimisticLike,
   rollbackOptimisticUndo,
   shouldBlockSwipeGesture,
   shouldCancelInFlightSwipe,
-  TDV_GESTURE_COOLDOWN_MS,
+  TDV_SWIPE_COOLDOWN_MS,
+  TDV_UNDO_COOLDOWN_MS,
 } from '../../utils/tdvOptimisticSwipe'
 import { placeContentKey } from '../../utils/tdvPlaceFingerprint'
 import { getRequestErrorMessage } from '../../utils/errors'
@@ -165,24 +167,41 @@ export function TinderView({
   const [balloonLockWarnOpen, setBalloonLockWarnOpen] = useState(false)
   const [panelLockWarnOpen, setPanelLockWarnOpen] = useState(false)
   const [freeCapLockWarnOpen, setFreeCapLockWarnOpen] = useState(false)
-  /** Lock só anti double-tap (~100ms) — nunca cobre o RTT da API. */
-  const gestureLockRef = useRef(false)
-  const gestureLockTimerRef = useRef(null)
+  /** Lock anti double-tap de like/dislike — undo NÃO usa este lock. */
+  const swipeLockRef = useRef(false)
+  const swipeLockTimerRef = useRef(null)
+  const undoLockRef = useRef(false)
+  const undoLockTimerRef = useRef(null)
   const undoStackRef = useRef(undoStack)
   /** placeId → { type: 'like'|'dislike', cancelled: boolean } enquanto a API do swipe não terminou. */
   const pendingSwipeRef = useRef(new Map())
   const finalizeConfirmRef = useRef(null)
-  undoStackRef.current = undoStack
 
-  const acquireGestureLock = useCallback(() => {
-    if (shouldBlockSwipeGesture(gestureLockRef.current)) return false
-    gestureLockRef.current = true
-    if (gestureLockTimerRef.current != null) window.clearTimeout(gestureLockTimerRef.current)
-    gestureLockTimerRef.current = window.setTimeout(() => {
-      gestureLockRef.current = false
-      gestureLockTimerRef.current = null
-    }, TDV_GESTURE_COOLDOWN_MS)
+  const acquireSwipeLock = useCallback(() => {
+    if (shouldBlockSwipeGesture(swipeLockRef.current)) return false
+    swipeLockRef.current = true
+    if (swipeLockTimerRef.current != null) window.clearTimeout(swipeLockTimerRef.current)
+    swipeLockTimerRef.current = window.setTimeout(() => {
+      swipeLockRef.current = false
+      swipeLockTimerRef.current = null
+    }, TDV_SWIPE_COOLDOWN_MS)
     return true
+  }, [])
+
+  const acquireUndoLock = useCallback(() => {
+    if (shouldBlockSwipeGesture(undoLockRef.current)) return false
+    undoLockRef.current = true
+    if (undoLockTimerRef.current != null) window.clearTimeout(undoLockTimerRef.current)
+    undoLockTimerRef.current = window.setTimeout(() => {
+      undoLockRef.current = false
+      undoLockTimerRef.current = null
+    }, TDV_UNDO_COOLDOWN_MS)
+    return true
+  }, [])
+
+  const replaceUndoStack = useCallback((next) => {
+    undoStackRef.current = next
+    setUndoStack(next)
   }, [])
 
   const SHEET_DISMISS_PX = 88
@@ -403,7 +422,7 @@ export function TinderView({
       consumedSinceSessionRef.current = false
       hadDeckRef.current = true
       setPlaces(localDeck)
-      setUndoStack([])
+      replaceUndoStack([])
       setPlacesSource(restoredFromSession ? 'cache' : null)
       setFreeCapReached(false)
       setDeckUnavailable(false)
@@ -473,7 +492,7 @@ export function TinderView({
       sessionDeckBaselineRef.current = list.length
       consumedSinceSessionRef.current = false
       setPlaces(list)
-      setUndoStack([])
+      replaceUndoStack([])
       setTotalLikes(res.totalLikes ?? 0)
       setLikedPlaces(likedFromRes)
       setDislikedPlaces(dislikedFromRes)
@@ -520,7 +539,7 @@ export function TinderView({
     } finally {
       if (gen === loadGenRef.current) setLoading(false)
     }
-  }, [tripId, applyFreeCapFromResponse])
+  }, [tripId, applyFreeCapFromResponse, replaceUndoStack])
 
   const lastTripIdRef = useRef(null)
   useEffect(() => {
@@ -540,7 +559,7 @@ export function TinderView({
       setFreeCapReached(false)
       freeCapSoftRetryRef.current = 0
       setError(null)
-      setUndoStack([])
+      replaceUndoStack([])
       setIntroAcknowledged(
         isPostUnlock ? readModifyIntroAcknowledged(tripId) : readIntroAcknowledged(tripId),
       )
@@ -549,7 +568,7 @@ export function TinderView({
       consumedSinceSessionRef.current = false
       hadDeckRef.current = false
     }
-  }, [tripId, releaseDeckToServer, isPostUnlock])
+  }, [tripId, releaseDeckToServer, isPostUnlock, replaceUndoStack])
 
   // Persistência ao sair da viagem / fechar aba: keepalive para o POST completar.
   useEffect(() => {
@@ -573,10 +592,16 @@ export function TinderView({
         clearTimeout(freeCapSoftRetryTimerRef.current)
         freeCapSoftRetryTimerRef.current = null
       }
-      if (gestureLockTimerRef.current != null) {
-        window.clearTimeout(gestureLockTimerRef.current)
-        gestureLockTimerRef.current = null
+      if (swipeLockTimerRef.current != null) {
+        window.clearTimeout(swipeLockTimerRef.current)
+        swipeLockTimerRef.current = null
       }
+      if (undoLockTimerRef.current != null) {
+        window.clearTimeout(undoLockTimerRef.current)
+        undoLockTimerRef.current = null
+      }
+      swipeLockRef.current = false
+      undoLockRef.current = false
     }
   }, [])
 
@@ -824,7 +849,7 @@ export function TinderView({
 
   const handleLike = useCallback(() => {
     if (finalizingTdv || !currentPlace || !tripId) return
-    if (!acquireGestureLock()) return
+    if (!acquireSwipeLock()) return
     const placeId = getPlaceId(currentPlace)
     if (!placeId) {
       setError('Lugar sem ID válido')
@@ -842,8 +867,9 @@ export function TinderView({
         placeSnapshot,
         placeId,
         likeEntry
-      )
-      return next.places
+      ).places
+      placesRef.current = next
+      return next
     })
     setLikedPlaces((prev) =>
       applyOptimisticLike(
@@ -891,13 +917,15 @@ export function TinderView({
         pendingSwipeRef.current.delete(placeId)
         if (shouldCancelInFlightSwipe(pending, 'like')) return
         setSwipeFeedback(null)
-        setPlaces((prev) =>
-          rollbackOptimisticLike(
+        setPlaces((prev) => {
+          const next = rollbackOptimisticLike(
             { places: prev, likedPlaces: [], undoStack: [], totalLikes: 0 },
             placeSnapshot,
             placeId
           ).places
-        )
+          placesRef.current = next
+          return next
+        })
         setLikedPlaces((prev) =>
           rollbackOptimisticLike(
             { places: [], likedPlaces: prev, undoStack: [], totalLikes: 0 },
@@ -918,11 +946,11 @@ export function TinderView({
         setError(getRequestErrorMessage(err, 'Erro ao dar like'))
       }
     })()
-  }, [finalizingTdv, currentPlace, tripId, totalLikes, onItineraryUpdate, acquireGestureLock])
+  }, [finalizingTdv, currentPlace, tripId, totalLikes, onItineraryUpdate, acquireSwipeLock])
 
   const handleDislike = useCallback(() => {
     if (finalizingTdv || !currentPlace || !tripId) return
-    if (!acquireGestureLock()) return
+    if (!acquireSwipeLock()) return
     const placeId = getPlaceId(currentPlace)
     if (!placeId) {
       setError('Lugar sem ID válido')
@@ -933,13 +961,15 @@ export function TinderView({
     setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
 
-    setPlaces((prev) =>
-      applyOptimisticDislike(
+    setPlaces((prev) => {
+      const next = applyOptimisticDislike(
         { places: prev, dislikedPlaces: [], undoStack: [] },
         placeSnapshot,
         placeId
       ).places
-    )
+      placesRef.current = next
+      return next
+    })
     setDislikedPlaces((prev) =>
       applyOptimisticDislike(
         { places: [], dislikedPlaces: prev, undoStack: [] },
@@ -979,13 +1009,15 @@ export function TinderView({
         pendingSwipeRef.current.delete(placeId)
         if (shouldCancelInFlightSwipe(pending, 'dislike')) return
         setSwipeFeedback(null)
-        setPlaces((prev) =>
-          rollbackOptimisticDislike(
+        setPlaces((prev) => {
+          const next = rollbackOptimisticDislike(
             { places: prev, dislikedPlaces: [], undoStack: [] },
             placeSnapshot,
             placeId
           ).places
-        )
+          placesRef.current = next
+          return next
+        })
         setDislikedPlaces((prev) =>
           rollbackOptimisticDislike(
             { places: [], dislikedPlaces: prev, undoStack: [] },
@@ -1005,11 +1037,12 @@ export function TinderView({
         setError(getRequestErrorMessage(err, 'Erro ao descartar'))
       }
     })()
-  }, [finalizingTdv, currentPlace, tripId, acquireGestureLock])
+  }, [finalizingTdv, currentPlace, tripId, acquireSwipeLock])
 
   const handleUndo = useCallback(() => {
     if (finalizingTdv || !tripId) return
-    if (!acquireGestureLock()) return
+    // Undo NÃO espera o lock de like/dislike — senão o botão “volta” parece morto em prod.
+    if (!acquireUndoLock()) return
 
     const stack = undoStackRef.current
     if (stack.length === 0) return
@@ -1017,12 +1050,9 @@ export function TinderView({
     const pid = getPlaceId(entry?.place)
     if (!pid) return
 
-    const nextStack = stack.slice(0, -1)
-    undoStackRef.current = nextStack
-    setUndoStack(nextStack)
+    replaceUndoStack(stack.slice(0, -1))
     setUndoNotice(null)
 
-    // UI na hora — não espera RTT; se o swipe ainda está in-flight, só cancela a persistência.
     const applied = applyOptimisticUndo(
       {
         places: placesRef.current,
@@ -1035,6 +1065,7 @@ export function TinderView({
     )
     setPlaces(() => {
       const next = applied.places
+      placesRef.current = next
       if (next.length === sessionDeckBaselineRef.current) consumedSinceSessionRef.current = false
       return next
     })
@@ -1072,15 +1103,18 @@ export function TinderView({
           await placeService.undoDislike(tripId, pid)
         }
       } catch (err) {
+        if (isBenignUndoPersistError(err)) return
         const likeEntry =
           entry.type === 'like' ? likeEntryFromTdvPlace(entry.place) : null
-        setPlaces((prev) =>
-          rollbackOptimisticUndo(
+        setPlaces((prev) => {
+          const next = rollbackOptimisticUndo(
             { places: prev, likedPlaces: [], dislikedPlaces: [], undoStack: [], totalLikes: null },
             entry,
             likeEntry
           ).places
-        )
+          placesRef.current = next
+          return next
+        })
         if (entry.type === 'like') {
           setLikedPlaces((prev) =>
             rollbackOptimisticUndo(
@@ -1099,15 +1133,11 @@ export function TinderView({
             ).dislikedPlaces
           )
         }
-        setUndoStack((prev) => {
-          const next = [...prev, entry]
-          undoStackRef.current = next
-          return next
-        })
+        replaceUndoStack([...undoStackRef.current, entry])
         setUndoNotice(err.response?.data?.error?.message || err.message || 'Não foi possível desfazer')
       }
     })()
-  }, [finalizingTdv, tripId, onItineraryUpdate, acquireGestureLock])
+  }, [finalizingTdv, tripId, onItineraryUpdate, acquireUndoLock, replaceUndoStack])
 
   useEffect(() => {
     if (finalizingTdv) return undefined

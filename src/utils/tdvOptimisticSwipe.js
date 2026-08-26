@@ -5,7 +5,8 @@
 
 export function getOptimisticPlaceId(place) {
   if (!place || typeof place !== 'object') return null
-  const id = place.id ?? place.placeId ?? place.place_id
+  // Mesma ordem que getTdvPlaceId — evita mismatch like/dislike vs undo.
+  const id = place.placeId ?? place.place_id ?? place.id
   if (id == null || String(id).trim() === '') return null
   return String(id).trim()
 }
@@ -156,8 +157,11 @@ export function shouldBlockSwipeGesture(busy) {
   return Boolean(busy)
 }
 
-/** Cooldown curto anti double-tap — não deve cobrir RTT de rede. */
-export const TDV_GESTURE_COOLDOWN_MS = 100
+/** Cooldown curto anti double-tap de like/dislike — não bloqueia undo. */
+export const TDV_SWIPE_COOLDOWN_MS = 100
+
+/** Cooldown só contra double-undo. */
+export const TDV_UNDO_COOLDOWN_MS = 80
 
 /**
  * Se o swipe ainda está in-flight e o user desfez, a persistência deve
@@ -167,4 +171,16 @@ export function shouldCancelInFlightSwipe(pending, expectedType) {
   if (!pending || pending.cancelled !== true) return false
   if (expectedType && pending.type !== expectedType) return false
   return true
+}
+
+/**
+ * Undo otimista já restaurou a UI; NOT_LIKED / NOT_DISLIKED = estado já ok no servidor.
+ */
+export function isBenignUndoPersistError(err) {
+  const code =
+    err?.response?.data?.error?.code ||
+    err?.code ||
+    err?.response?.data?.code ||
+    null
+  return code === 'NOT_LIKED' || code === 'NOT_DISLIKED'
 }
