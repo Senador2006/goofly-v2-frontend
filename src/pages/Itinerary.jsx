@@ -1826,7 +1826,7 @@ export function Itinerary() {
                     ) : (
                       <>
                         Há <span className="font-semibold">{selectedDayPremium?.totalOnDay} paradas</span> neste dia no plano completo —
-                        todas estão fora da prévia gratuita de 25&nbsp;%.
+                        a prévia gratuita inclui apenas o 1º dia do roteiro.
                       </>
                     )}
                   </p>
