@@ -21,8 +21,10 @@ import {
 import {
   applyOptimisticDislike,
   applyOptimisticLike,
+  applyOptimisticUndo,
   rollbackOptimisticDislike,
   rollbackOptimisticLike,
+  rollbackOptimisticUndo,
   shouldBlockSwipeGesture,
 } from '../../utils/tdvOptimisticSwipe'
 import { placeContentKey } from '../../utils/tdvPlaceFingerprint'
@@ -156,8 +158,8 @@ export function TinderView({
   const [swipeFeedback, setSwipeFeedback] = useState(null)
   /** Pilha LIFO: desfazer só a última curtida/descarte (espelha o servidor). */
   const [undoStack, setUndoStack] = useState([])
-  const [undoLoading, setUndoLoading] = useState(false)
   const [undoNotice, setUndoNotice] = useState(null)
+  const [undoInFlight, setUndoInFlight] = useState(false)
   const [finalizeConfirmOpen, setFinalizeConfirmOpen] = useState(false)
   const [balloonLockWarnOpen, setBalloonLockWarnOpen] = useState(false)
   const [panelLockWarnOpen, setPanelLockWarnOpen] = useState(false)
@@ -972,41 +974,84 @@ export function TinderView({
     }
 
     undoBusyRef.current = true
-    setUndoLoading(true)
+    setUndoInFlight(true)
     setUndoNotice(null)
+
+    // UI na hora — não espera o RTT de produção.
+    const applied = applyOptimisticUndo(
+      {
+        places: placesRef.current,
+        likedPlaces: [],
+        dislikedPlaces: [],
+        undoStack: [],
+        totalLikes: null,
+      },
+      entry
+    )
+    setPlaces(() => {
+      const next = applied.places
+      if (next.length === sessionDeckBaselineRef.current) consumedSinceSessionRef.current = false
+      return next
+    })
+    setCurrentIndex(0)
+    if (entry.type === 'like') {
+      setLikedPlaces((prev) =>
+        applyOptimisticUndo(
+          { places: [], likedPlaces: prev, dislikedPlaces: [], undoStack: [], totalLikes: null },
+          entry
+        ).likedPlaces
+      )
+      setTotalLikes((prev) => (typeof prev === 'number' ? Math.max(0, prev - 1) : prev))
+    } else {
+      setDislikedPlaces((prev) =>
+        applyOptimisticUndo(
+          { places: [], likedPlaces: [], dislikedPlaces: prev, undoStack: [], totalLikes: null },
+          entry
+        ).dislikedPlaces
+      )
+    }
 
     try {
       if (entry.type === 'like') {
         const res = await placeService.undoLike(tripId, pid)
         if (typeof res?.likesUsedTotal === 'number') setTotalLikes(res.likesUsedTotal)
-        setLikedPlaces((prev) => {
-          const i = prev.findIndex((p) => String(p.placeId) === String(pid))
-          if (i === -1) return prev
-          return prev.filter((_, idx) => idx !== i)
-        })
         onItineraryUpdate?.()
       } else {
         await placeService.undoDislike(tripId, pid)
-        setDislikedPlaces((prev) => {
-          const i = prev.findIndex((p) => String(p.placeId) === String(pid))
-          if (i === -1) return prev
-          return prev.filter((_, idx) => idx !== i)
-        })
       }
-
-      setPlaces((prev) => {
-        const filtered = prev.filter((x) => getPlaceId(x) !== pid)
-        const next = [entry.place, ...filtered]
-        if (next.length === sessionDeckBaselineRef.current) consumedSinceSessionRef.current = false
-        return next
-      })
-      setCurrentIndex(0)
     } catch (err) {
+      const likeEntry =
+        entry.type === 'like' ? likeEntryFromTdvPlace(entry.place) : null
+      setPlaces((prev) =>
+        rollbackOptimisticUndo(
+          { places: prev, likedPlaces: [], dislikedPlaces: [], undoStack: [], totalLikes: null },
+          entry,
+          likeEntry
+        ).places
+      )
+      if (entry.type === 'like') {
+        setLikedPlaces((prev) =>
+          rollbackOptimisticUndo(
+            { places: [], likedPlaces: prev, dislikedPlaces: [], undoStack: [], totalLikes: null },
+            entry,
+            likeEntry
+          ).likedPlaces
+        )
+        setTotalLikes((prev) => (typeof prev === 'number' ? prev + 1 : prev))
+      } else {
+        setDislikedPlaces((prev) =>
+          rollbackOptimisticUndo(
+            { places: [], likedPlaces: [], dislikedPlaces: prev, undoStack: [], totalLikes: null },
+            entry,
+            likeEntry
+          ).dislikedPlaces
+        )
+      }
       setUndoStack((prev) => [...prev, entry])
       setUndoNotice(err.response?.data?.error?.message || err.message || 'Não foi possível desfazer')
     } finally {
       undoBusyRef.current = false
-      setUndoLoading(false)
+      setUndoInFlight(false)
     }
   }, [finalizingTdv, tripId, onItineraryUpdate])
 
@@ -1337,12 +1382,12 @@ export function TinderView({
       <button
         type="button"
         onClick={handleUndo}
-        disabled={finalizingTdv || undoStack.length === 0 || undoLoading}
+        disabled={finalizingTdv || undoStack.length === 0 || undoInFlight}
         className={undoBtnClass}
-        aria-label={undoLoading ? t('tdv.undo_loading') : t('tdv.undo_action')}
+        aria-label={t('tdv.undo_action')}
         title={t('tdv.undo_action')}
       >
-        <Icon name={undoLoading ? 'progress_activity' : 'undo'} className={`text-lg lg:text-2xl ${undoLoading ? 'animate-spin' : ''}`} />
+        <Icon name="undo" className="text-lg lg:text-2xl" />
       </button>
       <button
         type="button"

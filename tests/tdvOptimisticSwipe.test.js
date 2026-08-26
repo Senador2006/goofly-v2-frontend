@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import {
   applyOptimisticDislike,
   applyOptimisticLike,
+  applyOptimisticUndo,
   getOptimisticPlaceId,
   rollbackOptimisticDislike,
   rollbackOptimisticLike,
+  rollbackOptimisticUndo,
   shouldBlockSwipeGesture,
 } from '../src/utils/tdvOptimisticSwipe.js'
 import { likeEntryFromTdvPlace } from '../src/utils/tdvLikeEntry.js'
@@ -71,4 +73,43 @@ test('optimistic dislike + rollback', () => {
 test('shouldBlockSwipeGesture impede double-tap', () => {
   assert.equal(shouldBlockSwipeGesture(false), false)
   assert.equal(shouldBlockSwipeGesture(true), true)
+})
+
+test('optimistic undo like recoloca carta e remove das curtidas', () => {
+  const place = { id: 'p-a', name: 'Castelo' }
+  const applied = applyOptimisticUndo(
+    {
+      places: [{ id: 'p-b', name: 'Miradouro' }],
+      likedPlaces: [{ placeId: 'p-a', name: 'Castelo' }],
+      dislikedPlaces: [],
+      totalLikes: 2,
+    },
+    { type: 'like', place }
+  )
+  assert.equal(applied.places[0].id, 'p-a')
+  assert.equal(applied.likedPlaces.length, 0)
+  assert.equal(applied.totalLikes, 1)
+})
+
+test('optimistic undo rollback restaura like', () => {
+  const place = { id: 'p-a', name: 'Castelo' }
+  const entry = { type: 'like', place }
+  const afterUndo = applyOptimisticUndo(
+    {
+      places: [{ id: 'p-b' }],
+      likedPlaces: [{ placeId: 'p-a', name: 'Castelo' }],
+      dislikedPlaces: [],
+      undoStack: [],
+      totalLikes: 1,
+    },
+    entry
+  )
+  const rolled = rollbackOptimisticUndo(afterUndo, entry, {
+    placeId: 'p-a',
+    name: 'Castelo',
+  })
+  assert.ok(!rolled.places.some((p) => p.id === 'p-a'))
+  assert.equal(rolled.likedPlaces[0].placeId, 'p-a')
+  assert.equal(rolled.undoStack.length, 1)
+  assert.equal(rolled.totalLikes, 1)
 })

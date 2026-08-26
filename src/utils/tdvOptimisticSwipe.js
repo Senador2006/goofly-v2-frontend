@@ -84,6 +84,72 @@ export function rollbackOptimisticDislike(state, place, placeId) {
 }
 
 /**
+ * Aplica undo otimista: recoloca a carta no baralho e reverte like/dislike local.
+ */
+export function applyOptimisticUndo(state, entry) {
+  const place = entry?.place
+  const pid = getOptimisticPlaceId(place)
+  if (!pid || !entry?.type) return state
+
+  const places = [place, ...(state.places || []).filter((x) => getOptimisticPlaceId(x) !== pid)]
+  if (entry.type === 'like') {
+    return {
+      places,
+      likedPlaces: (state.likedPlaces || []).filter((p) => String(p.placeId) !== pid),
+      dislikedPlaces: state.dislikedPlaces || [],
+      undoStack: state.undoStack || [],
+      totalLikes:
+        typeof state.totalLikes === 'number'
+          ? Math.max(0, state.totalLikes - 1)
+          : state.totalLikes,
+    }
+  }
+  return {
+    places,
+    likedPlaces: state.likedPlaces || [],
+    dislikedPlaces: (state.dislikedPlaces || []).filter((p) => String(p.placeId) !== pid),
+    undoStack: state.undoStack || [],
+    totalLikes: state.totalLikes,
+  }
+}
+
+/**
+ * Rollback de undo otimista: remove a carta do baralho e restaura like/dislike + stack.
+ */
+export function rollbackOptimisticUndo(state, entry, likeEntry) {
+  const place = entry?.place
+  const pid = getOptimisticPlaceId(place)
+  if (!pid || !entry?.type) return state
+
+  const places = (state.places || []).filter((x) => getOptimisticPlaceId(x) !== pid)
+  const undoStack = [...(state.undoStack || []), entry]
+
+  if (entry.type === 'like') {
+    return {
+      places,
+      likedPlaces: [
+        likeEntry || { placeId: pid, name: place?.name },
+        ...(state.likedPlaces || []).filter((p) => String(p.placeId) !== pid),
+      ],
+      dislikedPlaces: state.dislikedPlaces || [],
+      undoStack,
+      totalLikes:
+        typeof state.totalLikes === 'number' ? state.totalLikes + 1 : state.totalLikes,
+    }
+  }
+  return {
+    places,
+    likedPlaces: state.likedPlaces || [],
+    dislikedPlaces: [
+      { placeId: pid, name: place?.name },
+      ...(state.dislikedPlaces || []).filter((p) => String(p.placeId) !== pid),
+    ],
+    undoStack,
+    totalLikes: state.totalLikes,
+  }
+}
+
+/**
  * True se o busy lock deve bloquear um segundo gesto.
  */
 export function shouldBlockSwipeGesture(busy) {
