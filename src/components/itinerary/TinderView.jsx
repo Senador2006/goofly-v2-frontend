@@ -901,8 +901,8 @@ export function TinderView({
         const placeData = buildTdvLikePlaceData(placeSnapshot)
         const res = await placeService.like(tripId, placeId, placeData)
         const pending = pendingSwipeRef.current.get(placeId)
+        pendingSwipeRef.current.delete(placeId)
         if (shouldCancelInFlightSwipe(pending, 'like')) {
-          pendingSwipeRef.current.delete(placeId)
           try {
             const undoRes = await placeService.undoLike(tripId, placeId)
             if (typeof undoRes?.likesUsedTotal === 'number') setTotalLikes(undoRes.likesUsedTotal)
@@ -911,13 +911,14 @@ export function TinderView({
           }
           return
         }
-        pendingSwipeRef.current.delete(placeId)
         if (typeof res?.likesUsedTotal === 'number') setTotalLikes(res.likesUsedTotal)
         onItineraryUpdate?.()
       } catch (err) {
         const pending = pendingSwipeRef.current.get(placeId)
         pendingSwipeRef.current.delete(placeId)
+        // Undo já restituiu a carta (ou cancelou): não mexer no baralho.
         if (shouldCancelInFlightSwipe(pending, 'like')) return
+        if (placesRef.current.some((p) => getPlaceId(p) === placeId)) return
         setSwipeFeedback(null)
         setPlaces((prev) => {
           const next = rollbackOptimisticLike(
@@ -1000,8 +1001,8 @@ export function TinderView({
       try {
         await placeService.dislike(tripId, placeId, placeSnapshot)
         const pending = pendingSwipeRef.current.get(placeId)
+        pendingSwipeRef.current.delete(placeId)
         if (shouldCancelInFlightSwipe(pending, 'dislike')) {
-          pendingSwipeRef.current.delete(placeId)
           try {
             await placeService.undoDislike(tripId, placeId)
           } catch {
@@ -1009,11 +1010,12 @@ export function TinderView({
           }
           return
         }
-        pendingSwipeRef.current.delete(placeId)
       } catch (err) {
         const pending = pendingSwipeRef.current.get(placeId)
         pendingSwipeRef.current.delete(placeId)
+        // Undo já restituiu a carta: NÃO fazer rollback (era o bug do desfazer após dislike).
         if (shouldCancelInFlightSwipe(pending, 'dislike')) return
+        if (placesRef.current.some((p) => getPlaceId(p) === placeId)) return
         setSwipeFeedback(null)
         setPlaces((prev) => {
           const next = rollbackOptimisticDislike(
@@ -1057,7 +1059,6 @@ export function TinderView({
     const pid = getPlaceId(entry.place)
     if (!pid) return
 
-    // Snapshot estável com id garantido — a carta tem de voltar no baralho de verdade.
     const placeToRestore = {
       ...entry.place,
       id: entry.place.id ?? entry.place.placeId ?? entry.place.place_id ?? pid,
@@ -1068,11 +1069,9 @@ export function TinderView({
     setUndoNotice(null)
     setSwipeFeedback(null)
 
+    // Sempre restaura a partir do estado React atual — like e dislike iguais.
     setPlaces((prev) => {
-      const next = [
-        placeToRestore,
-        ...prev.filter((x) => getPlaceId(x) !== pid),
-      ]
+      const next = [placeToRestore, ...prev.filter((x) => getPlaceId(x) !== pid)]
       placesRef.current = next
       if (next.length === sessionDeckBaselineRef.current) {
         consumedSinceSessionRef.current = false
@@ -1083,15 +1082,18 @@ export function TinderView({
     setDeckUnavailable(false)
 
     if (entry.type === 'like') {
-      setLikedPlaces((prev) => prev.filter((p) => String(p.placeId) !== pid))
+      setLikedPlaces((prev) => prev.filter((p) => String(p?.placeId ?? p?.place_id ?? p?.id) !== pid))
       setTotalLikes((prev) => (typeof prev === 'number' ? Math.max(0, prev - 1) : prev))
     } else {
-      setDislikedPlaces((prev) => prev.filter((p) => String(p.placeId) !== pid))
+      setDislikedPlaces((prev) =>
+        prev.filter((p) => String(p?.placeId ?? p?.place_id ?? p?.id) !== pid)
+      )
     }
 
     const pending = pendingSwipeRef.current.get(pid)
     if (pending && pending.type === entry.type) {
       pending.cancelled = true
+      // Mesmo com swipe in-flight, a UI já voltou. A reconciliação do swipe chama undo*.
       return
     }
 
@@ -1105,30 +1107,18 @@ export function TinderView({
           await placeService.undoDislike(tripId, pid)
         }
       } catch (err) {
+        // A carta já está de volta na UI — nunca remover por falha de persistência.
         if (isBenignUndoPersistError(err)) return
-        // Falha real de rede: recoloca like/dislike e tira a carta de novo.
-        setPlaces((prev) => {
-          const next = prev.filter((x) => getPlaceId(x) !== pid)
-          placesRef.current = next
-          return next
-        })
-        if (entry.type === 'like') {
-          const likeEntry = likeEntryFromTdvPlace(placeToRestore)
-          setLikedPlaces((prev) => [
-            likeEntry,
-            ...prev.filter((p) => String(p.placeId) !== pid),
-          ])
-          setTotalLikes((prev) => (typeof prev === 'number' ? prev + 1 : prev))
-        } else {
-          setDislikedPlaces((prev) => [
-            { placeId: pid, name: placeToRestore.name },
-            ...prev.filter((p) => String(p.placeId) !== pid),
-          ])
-        }
-        replaceUndoStack([...undoStackRef.current, { type: entry.type, place: placeToRestore }])
         setUndoNotice(
-          err.response?.data?.error?.message || err.message || 'Não foi possível desfazer'
+          err.response?.data?.error?.message || err.message || 'Não foi possível sincronizar o desfazer'
         )
+        // Retry best-effort: se o dislike/like ainda ficou no servidor, tenta de novo.
+        try {
+          if (entry.type === 'like') await placeService.undoLike(tripId, pid)
+          else await placeService.undoDislike(tripId, pid)
+        } catch {
+          /* keep optimistic UI */
+        }
       }
     })()
   }, [finalizingTdv, tripId, onItineraryUpdate, acquireUndoLock, replaceUndoStack])

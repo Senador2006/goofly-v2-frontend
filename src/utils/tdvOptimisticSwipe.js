@@ -175,6 +175,7 @@ export function shouldCancelInFlightSwipe(pending, expectedType) {
 
 /**
  * Undo otimista já restaurou a UI; NOT_LIKED / NOT_DISLIKED = estado já ok no servidor.
+ * Também aceita 404 genérico nesses fluxos (gateway/proxy às vezes omite o code).
  */
 export function isBenignUndoPersistError(err) {
   const code =
@@ -182,5 +183,14 @@ export function isBenignUndoPersistError(err) {
     err?.code ||
     err?.response?.data?.code ||
     null
-  return code === 'NOT_LIKED' || code === 'NOT_DISLIKED'
+  if (code === 'NOT_LIKED' || code === 'NOT_DISLIKED') return true
+  const status = err?.response?.status
+  if (status === 404) return true
+  const msg = String(err?.response?.data?.error?.message || err?.message || '').toLowerCase()
+  return (
+    msg.includes('não está nas suas curtidas') ||
+    msg.includes('não há descarte') ||
+    msg.includes('not liked') ||
+    msg.includes('not disliked')
+  )
 }

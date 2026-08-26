@@ -87,6 +87,7 @@ test('shouldCancelInFlightSwipe só com cancelled do mesmo tipo', () => {
 test('isBenignUndoPersistError ignora NOT_LIKED / NOT_DISLIKED', () => {
   assert.equal(isBenignUndoPersistError({ code: 'NOT_DISLIKED' }), true)
   assert.equal(isBenignUndoPersistError({ response: { data: { error: { code: 'NOT_LIKED' } } } }), true)
+  assert.equal(isBenignUndoPersistError({ response: { status: 404 } }), true)
   assert.equal(isBenignUndoPersistError({ message: 'network' }), false)
 })
 
