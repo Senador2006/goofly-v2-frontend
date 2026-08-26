@@ -21,11 +21,9 @@ import {
 import {
   applyOptimisticDislike,
   applyOptimisticLike,
-  applyOptimisticUndo,
   isBenignUndoPersistError,
   rollbackOptimisticDislike,
   rollbackOptimisticLike,
-  rollbackOptimisticUndo,
   shouldBlockSwipeGesture,
   shouldCancelInFlightSwipe,
   TDV_SWIPE_COOLDOWN_MS,
@@ -855,8 +853,12 @@ export function TinderView({
       setError('Lugar sem ID válido')
       return
     }
-    const placeSnapshot = { ...currentPlace }
-    const likeEntry = likeEntryFromTdvPlace(currentPlace)
+    const placeSnapshot = {
+      ...currentPlace,
+      id: currentPlace.id ?? placeId,
+      placeId: currentPlace.placeId ?? currentPlace.place_id ?? placeId,
+    }
+    const likeEntry = likeEntryFromTdvPlace(placeSnapshot)
     setSwipeFeedback('like')
     setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
@@ -956,7 +958,11 @@ export function TinderView({
       setError('Lugar sem ID válido')
       return
     }
-    const placeSnapshot = { ...currentPlace }
+    const placeSnapshot = {
+      ...currentPlace,
+      id: currentPlace.id ?? placeId,
+      placeId: currentPlace.placeId ?? currentPlace.place_id ?? placeId,
+    }
     setSwipeFeedback('dislike')
     setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
@@ -1041,50 +1047,46 @@ export function TinderView({
 
   const handleUndo = useCallback(() => {
     if (finalizingTdv || !tripId) return
-    // Undo NÃO espera o lock de like/dislike — senão o botão “volta” parece morto em prod.
     if (!acquireUndoLock()) return
 
     const stack = undoStackRef.current
     if (stack.length === 0) return
     const entry = stack[stack.length - 1]
-    const pid = getPlaceId(entry?.place)
+    if (!entry?.place || (entry.type !== 'like' && entry.type !== 'dislike')) return
+
+    const pid = getPlaceId(entry.place)
     if (!pid) return
+
+    // Snapshot estável com id garantido — a carta tem de voltar no baralho de verdade.
+    const placeToRestore = {
+      ...entry.place,
+      id: entry.place.id ?? entry.place.placeId ?? entry.place.place_id ?? pid,
+      placeId: entry.place.placeId ?? entry.place.place_id ?? entry.place.id ?? pid,
+    }
 
     replaceUndoStack(stack.slice(0, -1))
     setUndoNotice(null)
+    setSwipeFeedback(null)
 
-    const applied = applyOptimisticUndo(
-      {
-        places: placesRef.current,
-        likedPlaces: [],
-        dislikedPlaces: [],
-        undoStack: [],
-        totalLikes: null,
-      },
-      entry
-    )
-    setPlaces(() => {
-      const next = applied.places
+    setPlaces((prev) => {
+      const next = [
+        placeToRestore,
+        ...prev.filter((x) => getPlaceId(x) !== pid),
+      ]
       placesRef.current = next
-      if (next.length === sessionDeckBaselineRef.current) consumedSinceSessionRef.current = false
+      if (next.length === sessionDeckBaselineRef.current) {
+        consumedSinceSessionRef.current = false
+      }
       return next
     })
     setCurrentIndex(0)
+    setDeckUnavailable(false)
+
     if (entry.type === 'like') {
-      setLikedPlaces((prev) =>
-        applyOptimisticUndo(
-          { places: [], likedPlaces: prev, dislikedPlaces: [], undoStack: [], totalLikes: null },
-          entry
-        ).likedPlaces
-      )
+      setLikedPlaces((prev) => prev.filter((p) => String(p.placeId) !== pid))
       setTotalLikes((prev) => (typeof prev === 'number' ? Math.max(0, prev - 1) : prev))
     } else {
-      setDislikedPlaces((prev) =>
-        applyOptimisticUndo(
-          { places: [], likedPlaces: [], dislikedPlaces: prev, undoStack: [], totalLikes: null },
-          entry
-        ).dislikedPlaces
-      )
+      setDislikedPlaces((prev) => prev.filter((p) => String(p.placeId) !== pid))
     }
 
     const pending = pendingSwipeRef.current.get(pid)
@@ -1104,37 +1106,29 @@ export function TinderView({
         }
       } catch (err) {
         if (isBenignUndoPersistError(err)) return
-        const likeEntry =
-          entry.type === 'like' ? likeEntryFromTdvPlace(entry.place) : null
+        // Falha real de rede: recoloca like/dislike e tira a carta de novo.
         setPlaces((prev) => {
-          const next = rollbackOptimisticUndo(
-            { places: prev, likedPlaces: [], dislikedPlaces: [], undoStack: [], totalLikes: null },
-            entry,
-            likeEntry
-          ).places
+          const next = prev.filter((x) => getPlaceId(x) !== pid)
           placesRef.current = next
           return next
         })
         if (entry.type === 'like') {
-          setLikedPlaces((prev) =>
-            rollbackOptimisticUndo(
-              { places: [], likedPlaces: prev, dislikedPlaces: [], undoStack: [], totalLikes: null },
-              entry,
-              likeEntry
-            ).likedPlaces
-          )
+          const likeEntry = likeEntryFromTdvPlace(placeToRestore)
+          setLikedPlaces((prev) => [
+            likeEntry,
+            ...prev.filter((p) => String(p.placeId) !== pid),
+          ])
           setTotalLikes((prev) => (typeof prev === 'number' ? prev + 1 : prev))
         } else {
-          setDislikedPlaces((prev) =>
-            rollbackOptimisticUndo(
-              { places: [], likedPlaces: [], dislikedPlaces: prev, undoStack: [], totalLikes: null },
-              entry,
-              likeEntry
-            ).dislikedPlaces
-          )
+          setDislikedPlaces((prev) => [
+            { placeId: pid, name: placeToRestore.name },
+            ...prev.filter((p) => String(p.placeId) !== pid),
+          ])
         }
-        replaceUndoStack([...undoStackRef.current, entry])
-        setUndoNotice(err.response?.data?.error?.message || err.message || 'Não foi possível desfazer')
+        replaceUndoStack([...undoStackRef.current, { type: entry.type, place: placeToRestore }])
+        setUndoNotice(
+          err.response?.data?.error?.message || err.message || 'Não foi possível desfazer'
+        )
       }
     })()
   }, [finalizingTdv, tripId, onItineraryUpdate, acquireUndoLock, replaceUndoStack])
@@ -1551,7 +1545,7 @@ export function TinderView({
   )
 
   const placeCard = currentPlace ? (
-    <div className="relative isolate h-full w-full min-h-0">
+    <div className="relative isolate h-full w-full min-h-0" key={getPlaceId(currentPlace) || currentPlace.name}>
       {places[currentIndex + 1] && (
         <div
           className={`pointer-events-none absolute inset-0 z-0 ${cardSurface} origin-center overflow-hidden border-0 bg-zinc-800 opacity-40 shadow-lg scale-[0.985]`}
