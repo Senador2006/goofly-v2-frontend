@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../common/Icon'
 import { ItineraryDayMap } from './ItineraryDayMap'
 import {
+  MOBILE_MAP_CLICK_GUARD_MS,
   MOBILE_MAP_HANDLE_COMPACT_HEIGHT_PX,
   MOBILE_MAP_SNAP_RATIO,
   computeHandleInset,
@@ -15,6 +16,11 @@ import {
   readMobileMapHandleHintDismissed,
   writeMobileMapHandleHintDismissed,
 } from '../../utils/mobileMapHandleHintPreference.js'
+
+function swallowPointer(e) {
+  e.preventDefault()
+  e.stopPropagation()
+}
 
 /**
  * Mapa full-screen (mobile): desliza da direita como cortina/carrossel e cobre o roteiro.
@@ -36,21 +42,46 @@ export function ItineraryMobileMapDrawer({
 }) {
   const dragRef = useRef({ active: false, startX: 0, startOpen: false })
   const prevOpenRef = useRef(open)
+  const clickGuardTimerRef = useRef(null)
   const [dragOffset, setDragOffset] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
+  const [clickGuard, setClickGuard] = useState(false)
   const [handleHintDismissed, setHandleHintDismissed] = useState(() =>
     readMobileMapHandleHintDismissed()
   )
   const panelRef = useRef(null)
 
+  const armClickGuard = useCallback(() => {
+    if (clickGuardTimerRef.current != null) {
+      clearTimeout(clickGuardTimerRef.current)
+      clickGuardTimerRef.current = null
+    }
+    setClickGuard(true)
+    clickGuardTimerRef.current = setTimeout(() => {
+      clickGuardTimerRef.current = null
+      setClickGuard(false)
+    }, MOBILE_MAP_CLICK_GUARD_MS)
+  }, [])
+
   const settleOpen = useCallback(
-    (shouldOpen) => {
+    (shouldOpen, { wasOpen } = {}) => {
+      const closing = Boolean(wasOpen) && !shouldOpen
       setDragOffset(0)
       setIsDragging(false)
+      if (closing) armClickGuard()
       onOpenChange(shouldOpen)
     },
-    [onOpenChange]
+    [armClickGuard, onOpenChange]
   )
+
+  useEffect(() => {
+    return () => {
+      if (clickGuardTimerRef.current != null) {
+        clearTimeout(clickGuardTimerRef.current)
+        clickGuardTimerRef.current = null
+      }
+    }
+  }, [])
 
   const onPointerDown = useCallback(
     (e) => {
@@ -76,18 +107,26 @@ export function ItineraryMobileMapDrawer({
       dragRef.current.active = false
       e.currentTarget.releasePointerCapture(e.pointerId)
 
+      const wasOpen = dragRef.current.startOpen
       const dx = e.clientX - dragRef.current.startX
       const w = panelRef.current?.offsetWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 360)
       const thresholdPx = w * MOBILE_MAP_SNAP_RATIO
       const nextOpen = resolveMobileMapSnap({
-        wasOpen: dragRef.current.startOpen,
+        wasOpen,
         dragDx: dx,
         thresholdPx,
       })
-      settleOpen(nextOpen)
+      // Evita o click sintético pós-toque atingir CTAs sob o mapa ao fechar.
+      if (wasOpen && !nextOpen) swallowPointer(e)
+      settleOpen(nextOpen, { wasOpen })
     },
     [settleOpen]
   )
+
+  const onHandleClick = useCallback((e) => {
+    // Clique residual do toque no handle — não deve “atravessar” para o roteiro.
+    swallowPointer(e)
+  }, [])
 
   useEffect(() => {
     if (!open) setDragOffset(0)
@@ -110,6 +149,7 @@ export function ItineraryMobileMapDrawer({
   const showHandleHint = !handleHintDismissed && !open && !isDragging
   const transitionStyle = isDragging ? 'none' : mobileMapDrawerTransitionStyle()
   const dragSuppressed = hideDuringRoteiroDrag
+  const panelInteractive = open || clickGuard || dragOffset < -20
 
   const handleStyle = {
     width: handleWidthPx,
@@ -138,7 +178,7 @@ export function ItineraryMobileMapDrawer({
           clipPath: mapCurtainClip,
           transition: transitionStyle,
           opacity: dragSuppressed ? 0 : open || dragOffset < -8 ? 1 : 0,
-          pointerEvents: dragSuppressed ? 'none' : open || dragOffset < -20 ? 'auto' : 'none',
+          pointerEvents: dragSuppressed ? 'none' : panelInteractive ? 'auto' : 'none',
         }}
         aria-hidden={!open}
       >
@@ -165,12 +205,22 @@ export function ItineraryMobileMapDrawer({
         ) : null}
       </div>
 
+      {clickGuard ? (
+        <div
+          className="roteiro-mobile-map-click-guard absolute inset-0 z-40 touch-none lg:hidden"
+          aria-hidden
+          onPointerDown={swallowPointer}
+          onPointerUp={swallowPointer}
+          onClick={swallowPointer}
+        />
+      ) : null}
+
       <button
         type="button"
         aria-expanded={open}
         aria-label={open ? 'Fechar mapa' : 'Abrir mapa do dia'}
         className={
-          'roteiro-mobile-map-handle absolute z-30 flex flex-col items-center justify-center touch-none select-none lg:hidden ' +
+          'roteiro-mobile-map-handle absolute z-50 flex flex-col items-center justify-center touch-none select-none lg:hidden ' +
           (dragSuppressed ? 'roteiro-mobile-map-drag-suppressed ' : '') +
           (handleCompact
             ? 'roteiro-mobile-map-handle--compact rounded-r-xl border border-l-0 border-[#d4a82a] bg-primary text-[#1c1c0d] ' +
@@ -187,6 +237,7 @@ export function ItineraryMobileMapDrawer({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onClick={onHandleClick}
       >
         {!handleCompact ? (
           <>

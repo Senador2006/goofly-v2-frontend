@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 
 const TRANSITION_MS = 280
+/** Acima do MobileNav (z-[1100]) e dos panes/controles do Leaflet no mapa do roteiro. */
+const OVERLAY_Z = 'z-[1200]'
 
 /**
  * Confirmação destrutiva em overlay — não altera o layout do header.
+ * Portal no body para não ficar atrás do mapa (Leaflet usa z-index alto nos panes).
  */
 export function DeletePlanningOverlay({ open, onClose, onConfirm, deleting = false, tripLabel }) {
   const [mounted, setMounted] = useState(false)
@@ -42,11 +46,11 @@ export function DeletePlanningOverlay({ open, onClose, onConfirm, deleting = fal
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [mounted, deleting, onClose])
 
-  if (!mounted) return null
+  if (!mounted || typeof document === 'undefined') return null
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
+      className={`fixed inset-0 ${OVERLAY_Z} flex items-center justify-center p-4 sm:p-6`}
       role="presentation"
       onClick={() => {
         if (!deleting) onClose()
@@ -122,6 +126,7 @@ export function DeletePlanningOverlay({ open, onClose, onConfirm, deleting = fal
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

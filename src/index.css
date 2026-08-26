@@ -1122,6 +1122,11 @@ body.roteiro-drag-active .roteiro-mobile-map-drag-suppressed {
     pointer-events: none;
   }
 
+  /* Filhos com pointer-events-auto (ex.: CTA de compra) não devem furar o bloqueio. */
+  .roteiro-mobile-map-stage.roteiro-mobile-map-open .roteiro-list-scroll * {
+    pointer-events: none !important;
+  }
+
   .roteiro-mobile-map-panel {
     transform-origin: center right;
     will-change: transform, clip-path, opacity;

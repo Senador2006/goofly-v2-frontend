@@ -29,6 +29,7 @@ describe('Itinerary PDF print export', () => {
     assert.match(sheetSource, /onExportPdf/)
     assert.match(sheetSource, /createPortal/)
     assert.match(sheetSource, /z-\[1200\]/)
+    assert.match(sheetSource, /print:hidden/)
     assert.match(sheetSource, /goofly-mobile-nav-height/)
     assert.match(sheetSource, /Arraste para fechar/)
     assert.doesNotMatch(sheetSource, /Exportar para PNG|CSV|Excel/)

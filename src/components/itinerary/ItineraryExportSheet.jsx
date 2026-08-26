@@ -77,7 +77,7 @@ export function ItineraryExportSheet({ open, onClose, onExportPdf }) {
 
   return createPortal(
     <div
-      className={`fixed inset-0 ${OVERLAY_Z} flex items-end justify-center p-0 sm:items-center sm:p-6`}
+      className={`fixed inset-0 ${OVERLAY_Z} flex items-end justify-center p-0 print:hidden sm:items-center sm:p-6`}
       role="presentation"
       onClick={onClose}
     >
