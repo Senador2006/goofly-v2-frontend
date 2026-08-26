@@ -9,6 +9,7 @@ import {
   rollbackOptimisticLike,
   rollbackOptimisticUndo,
   shouldBlockSwipeGesture,
+  shouldCancelInFlightSwipe,
 } from '../src/utils/tdvOptimisticSwipe.js'
 import { likeEntryFromTdvPlace } from '../src/utils/tdvLikeEntry.js'
 
@@ -73,6 +74,13 @@ test('optimistic dislike + rollback', () => {
 test('shouldBlockSwipeGesture impede double-tap', () => {
   assert.equal(shouldBlockSwipeGesture(false), false)
   assert.equal(shouldBlockSwipeGesture(true), true)
+})
+
+test('shouldCancelInFlightSwipe só com cancelled do mesmo tipo', () => {
+  assert.equal(shouldCancelInFlightSwipe(null, 'like'), false)
+  assert.equal(shouldCancelInFlightSwipe({ type: 'like', cancelled: false }, 'like'), false)
+  assert.equal(shouldCancelInFlightSwipe({ type: 'like', cancelled: true }, 'like'), true)
+  assert.equal(shouldCancelInFlightSwipe({ type: 'dislike', cancelled: true }, 'like'), false)
 })
 
 test('optimistic undo like recoloca carta e remove das curtidas', () => {

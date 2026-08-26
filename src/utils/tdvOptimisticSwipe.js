@@ -155,3 +155,16 @@ export function rollbackOptimisticUndo(state, entry, likeEntry) {
 export function shouldBlockSwipeGesture(busy) {
   return Boolean(busy)
 }
+
+/** Cooldown curto anti double-tap — não deve cobrir RTT de rede. */
+export const TDV_GESTURE_COOLDOWN_MS = 100
+
+/**
+ * Se o swipe ainda está in-flight e o user desfez, a persistência deve
+ * cancelar/reconciliar em vez de aplicar rollback de UI.
+ */
+export function shouldCancelInFlightSwipe(pending, expectedType) {
+  if (!pending || pending.cancelled !== true) return false
+  if (expectedType && pending.type !== expectedType) return false
+  return true
+}
