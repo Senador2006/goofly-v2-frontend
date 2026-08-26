@@ -95,6 +95,13 @@ describe('ItineraryMobileMapDrawer contracts', () => {
     assert.match(drawerSource, /handleCompact/)
     assert.doesNotMatch(drawerSource, /COMPACT_INSET|Math\.max\(MOBILE_MAP_HANDLE_COMPACT_INSET/)
   })
+
+  it('bloqueia click fantasma ao fechar o mapa (guard + swallow)', () => {
+    assert.match(drawerSource, /MOBILE_MAP_CLICK_GUARD_MS/)
+    assert.match(drawerSource, /roteiro-mobile-map-click-guard/)
+    assert.match(drawerSource, /armClickGuard/)
+    assert.match(drawerSource, /onClick=\{onHandleClick\}/)
+  })
 })
 
 describe('ItineraryDayMap pin source contract', () => {
