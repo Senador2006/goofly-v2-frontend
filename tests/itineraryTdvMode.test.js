@@ -52,7 +52,7 @@ const tinderSource = readFileSync(
 test('MobileNav: publica altura real em --goofly-mobile-nav-height', () => {
   assert.match(mobileNavSource, /--goofly-mobile-nav-height/)
   assert.match(mobileNavSource, /ResizeObserver/)
-  assert.match(mobileNavSource, /visualViewport/)
+  assert.match(mobileNavSource, /orientationchange/)
 })
 
 test('TDV mobile: padrão de proporção até lg (não muda em sm)', () => {

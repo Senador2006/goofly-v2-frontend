@@ -18,6 +18,13 @@ import {
   readTdvDeckSession,
   saveTdvDeckSession,
 } from '../../utils/tdvDeckSession'
+import {
+  applyOptimisticDislike,
+  applyOptimisticLike,
+  rollbackOptimisticDislike,
+  rollbackOptimisticLike,
+  shouldBlockSwipeGesture,
+} from '../../utils/tdvOptimisticSwipe'
 import { getRequestErrorMessage } from '../../utils/errors'
 import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
@@ -155,6 +162,8 @@ export function TinderView({
   const [panelLockWarnOpen, setPanelLockWarnOpen] = useState(false)
   const [freeCapLockWarnOpen, setFreeCapLockWarnOpen] = useState(false)
   const undoBusyRef = useRef(false)
+  const likeBusyRef = useRef(false)
+  const dislikeBusyRef = useRef(false)
   const finalizeConfirmRef = useRef(null)
 
   const SHEET_DISMISS_PX = 88
@@ -568,6 +577,14 @@ export function TinderView({
   // Carrega ao ativar a aba / mudar viagem. Com deck local, reexibe na hora (sem discover).
   useEffect(() => {
     if (!isActive || !tripId) return
+    // Fire-and-forget: acorda gateway/services no Render antes do discover (não bloqueia UI).
+    try {
+      const base = String(import.meta.env.VITE_API_GATEWAY_URL || '').replace(/\/api\/v1\/?$/, '').replace(/\/api\/?$/, '')
+      const healthUrl = base && base.startsWith('http') ? `${base}/health` : '/health'
+      void fetch(healthUrl, { method: 'GET', credentials: 'omit', cache: 'no-store' }).catch(() => {})
+    } catch {
+      /* ignore */
+    }
     if (placesRef.current.length > 0) return
     loadPlaces()
   }, [isActive, tripId, loadPlaces])
@@ -760,56 +777,159 @@ export function TinderView({
 
   const handleLike = useCallback(async () => {
     if (finalizingTdv || !currentPlace || !tripId) return
+    if (shouldBlockSwipeGesture(likeBusyRef.current || dislikeBusyRef.current || undoBusyRef.current)) {
+      return
+    }
     const placeId = getPlaceId(currentPlace)
     if (!placeId) {
       setError('Lugar sem ID válido')
       return
     }
-      setSwipeFeedback('like')
-      setUndoNotice(null)
+    const placeSnapshot = { ...currentPlace }
+    const likeEntry = likeEntryFromTdvPlace(currentPlace)
+    likeBusyRef.current = true
+    setSwipeFeedback('like')
+    setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
+
+    setPlaces((prev) => {
+      const next = applyOptimisticLike(
+        { places: prev, likedPlaces: [], undoStack: [], totalLikes },
+        placeSnapshot,
+        placeId,
+        likeEntry
+      )
+      return next.places
+    })
+    setLikedPlaces((prev) =>
+      applyOptimisticLike(
+        { places: [], likedPlaces: prev, undoStack: [], totalLikes },
+        placeSnapshot,
+        placeId,
+        likeEntry
+      ).likedPlaces
+    )
+    setUndoStack((prev) =>
+      applyOptimisticLike(
+        { places: [], likedPlaces: [], undoStack: prev, totalLikes },
+        placeSnapshot,
+        placeId,
+        likeEntry
+      ).undoStack
+    )
+    setTotalLikes((prev) => (typeof prev === 'number' ? prev + 1 : prev))
+    consumedSinceSessionRef.current = true
+    setCurrentIndex(0)
+
     try {
-      const placeData = buildTdvLikePlaceData(currentPlace)
+      const placeData = buildTdvLikePlaceData(placeSnapshot)
       const res = await placeService.like(tripId, placeId, placeData)
-      setTotalLikes(typeof res?.likesUsedTotal === 'number' ? res.likesUsedTotal : totalLikes + 1)
-      const likeEntry = likeEntryFromTdvPlace(currentPlace)
-      setLikedPlaces((prev) => [likeEntry || { placeId, name: currentPlace.name }, ...prev])
-      setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
-      consumedSinceSessionRef.current = true
-      setCurrentIndex(0)
-      setUndoStack((prev) => [...prev, { type: 'like', place: { ...currentPlace } }])
+      if (typeof res?.likesUsedTotal === 'number') setTotalLikes(res.likesUsedTotal)
       onItineraryUpdate?.()
     } catch (err) {
       setSwipeFeedback(null)
+      setPlaces((prev) =>
+        rollbackOptimisticLike(
+          { places: prev, likedPlaces: [], undoStack: [], totalLikes: 0 },
+          placeSnapshot,
+          placeId
+        ).places
+      )
+      setLikedPlaces((prev) =>
+        rollbackOptimisticLike(
+          { places: [], likedPlaces: prev, undoStack: [], totalLikes: 0 },
+          placeSnapshot,
+          placeId
+        ).likedPlaces
+      )
+      setUndoStack((prev) =>
+        rollbackOptimisticLike(
+          { places: [], likedPlaces: [], undoStack: prev, totalLikes: 0 },
+          placeSnapshot,
+          placeId
+        ).undoStack
+      )
+      setTotalLikes((prev) => (typeof prev === 'number' ? Math.max(0, prev - 1) : prev))
       setError(getRequestErrorMessage(err, 'Erro ao dar like'))
+    } finally {
+      likeBusyRef.current = false
     }
   }, [finalizingTdv, currentPlace, tripId, totalLikes, onItineraryUpdate])
 
   const handleDislike = useCallback(async () => {
     if (finalizingTdv || !currentPlace || !tripId) return
+    if (shouldBlockSwipeGesture(likeBusyRef.current || dislikeBusyRef.current || undoBusyRef.current)) {
+      return
+    }
     const placeId = getPlaceId(currentPlace)
     if (!placeId) {
       setError('Lugar sem ID válido')
       return
     }
+    const placeSnapshot = { ...currentPlace }
+    dislikeBusyRef.current = true
     setSwipeFeedback('dislike')
-      setUndoNotice(null)
+    setUndoNotice(null)
     setTimeout(() => setSwipeFeedback(null), 400)
+
+    setPlaces((prev) =>
+      applyOptimisticDislike(
+        { places: prev, dislikedPlaces: [], undoStack: [] },
+        placeSnapshot,
+        placeId
+      ).places
+    )
+    setDislikedPlaces((prev) =>
+      applyOptimisticDislike(
+        { places: [], dislikedPlaces: prev, undoStack: [] },
+        placeSnapshot,
+        placeId
+      ).dislikedPlaces
+    )
+    setUndoStack((prev) =>
+      applyOptimisticDislike(
+        { places: [], dislikedPlaces: [], undoStack: prev },
+        placeSnapshot,
+        placeId
+      ).undoStack
+    )
+    consumedSinceSessionRef.current = true
+    setCurrentIndex(0)
+
     try {
-      await placeService.dislike(tripId, placeId, currentPlace)
-      setDislikedPlaces((prev) => [{ placeId, name: currentPlace.name }, ...prev])
-      setPlaces((prev) => prev.filter((x) => getPlaceId(x) !== placeId))
-      consumedSinceSessionRef.current = true
-      setCurrentIndex(0)
-      setUndoStack((prev) => [...prev, { type: 'dislike', place: { ...currentPlace } }])
+      await placeService.dislike(tripId, placeId, placeSnapshot)
     } catch (err) {
       setSwipeFeedback(null)
+      setPlaces((prev) =>
+        rollbackOptimisticDislike(
+          { places: prev, dislikedPlaces: [], undoStack: [] },
+          placeSnapshot,
+          placeId
+        ).places
+      )
+      setDislikedPlaces((prev) =>
+        rollbackOptimisticDislike(
+          { places: [], dislikedPlaces: prev, undoStack: [] },
+          placeSnapshot,
+          placeId
+        ).dislikedPlaces
+      )
+      setUndoStack((prev) =>
+        rollbackOptimisticDislike(
+          { places: [], dislikedPlaces: [], undoStack: prev },
+          placeSnapshot,
+          placeId
+        ).undoStack
+      )
       setError(getRequestErrorMessage(err, 'Erro ao descartar'))
+    } finally {
+      dislikeBusyRef.current = false
     }
   }, [finalizingTdv, currentPlace, tripId])
 
   const handleUndo = useCallback(async () => {
     if (finalizingTdv || !tripId || undoBusyRef.current) return
+    if (shouldBlockSwipeGesture(likeBusyRef.current || dislikeBusyRef.current)) return
 
     let entry
     setUndoStack((prev) => {
