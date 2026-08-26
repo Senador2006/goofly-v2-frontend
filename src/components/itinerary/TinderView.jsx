@@ -25,6 +25,7 @@ import {
   rollbackOptimisticLike,
   shouldBlockSwipeGesture,
 } from '../../utils/tdvOptimisticSwipe'
+import { placeContentKey } from '../../utils/tdvPlaceFingerprint'
 import { getRequestErrorMessage } from '../../utils/errors'
 import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
@@ -618,8 +619,21 @@ export function TinderView({
     if (n > 0 && baseline > 0 && n === baseline && !consumedSinceSessionRef.current) return
     if (prefetchInFlightRef.current) return
 
-    const excludePlaceIds = places.map(getPlaceId).filter(Boolean)
+    const excludePlaceIds = [
+      ...places.map(getPlaceId),
+      ...likedPlaces.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
+      ...dislikedPlaces.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
+    ]
+      .map((id) => (id != null ? String(id).trim() : ''))
+      .filter(Boolean)
     const existingIds = new Set(excludePlaceIds.map((id) => String(id)))
+    const existingContentKeys = new Set(
+      [
+        ...places.map(placeContentKey),
+        ...likedPlaces.map(placeContentKey),
+        ...dislikedPlaces.map(placeContentKey),
+      ].filter(Boolean)
+    )
 
     prefetchAbortRef.current?.abort()
     const ac = new AbortController()
@@ -682,7 +696,10 @@ export function TinderView({
         for (const p of incoming) {
           const id = getPlaceId(p)
           const sid = id != null ? String(id) : ''
-          if (sid && !existingIds.has(sid)) wouldAdd += 1
+          const ckey = placeContentKey(p)
+          if (sid && existingIds.has(sid)) continue
+          if (ckey && existingContentKeys.has(ckey)) continue
+          if (sid || ckey) wouldAdd += 1
         }
         if (wouldAdd === 0) {
           scheduleEmptyRetry()
@@ -695,15 +712,20 @@ export function TinderView({
           const seen = new Set(
             prev.map(getPlaceId).filter(Boolean).map((id) => String(id))
           )
+          const seenContent = new Set(prev.map(placeContentKey).filter(Boolean))
+          for (const id of existingIds) seen.add(id)
+          for (const k of existingContentKeys) seenContent.add(k)
           const out = [...prev]
           for (const p of incoming) {
             if (out.length >= DECK_MAX_PLACES) break
             const id = getPlaceId(p)
             const sid = id != null ? String(id) : ''
-            if (sid && !seen.has(sid)) {
-              seen.add(sid)
-              out.push(p)
-            }
+            const ckey = placeContentKey(p)
+            if (sid && seen.has(sid)) continue
+            if (ckey && seenContent.has(ckey)) continue
+            if (sid) seen.add(sid)
+            if (ckey) seenContent.add(ckey)
+            out.push(p)
           }
           return out
         })
