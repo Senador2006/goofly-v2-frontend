@@ -619,14 +619,17 @@ export function TinderView({
     if (n > 0 && baseline > 0 && n === baseline && !consumedSinceSessionRef.current) return
     if (prefetchInFlightRef.current) return
 
-    const excludePlaceIds = [
-      ...places.map(getPlaceId),
+    const excludePlaceIds = places
+      .map(getPlaceId)
+      .map((id) => (id != null ? String(id).trim() : ''))
+      .filter(Boolean)
+    const existingIds = new Set([
+      ...excludePlaceIds,
       ...likedPlaces.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
       ...dislikedPlaces.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
     ]
       .map((id) => (id != null ? String(id).trim() : ''))
-      .filter(Boolean)
-    const existingIds = new Set(excludePlaceIds.map((id) => String(id)))
+      .filter(Boolean))
     const existingContentKeys = new Set(
       [
         ...places.map(placeContentKey),
