@@ -74,6 +74,13 @@ test('TinderView: prefetch não aborta por swipe (só trip/unmount/finalize)', (
   assert.match(tinderViewSource, /swiped >= FREE_CAP_MAX_PLACES/)
 })
 
+test('TinderView: prefetch retry condicionado a tdvLimit', () => {
+  assert.match(tinderViewSource, /shouldRetryPrefetchOnEmpty/)
+  assert.match(tinderViewSource, /refillEligible/)
+  assert.match(tinderViewSource, /placesIssued > swiped/)
+  assert.match(tinderViewSource, /if \(n > 0\) return/)
+})
+
 test('TinderView: paywall free_cap com Gerar roteiro e Desbloquear', () => {
   assert.match(tinderViewSource, /freeCapReached/)
   assert.match(tinderViewSource, /isHardFreeCap/)

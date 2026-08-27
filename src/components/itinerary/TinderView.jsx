@@ -72,6 +72,23 @@ function isHardFreeCap(res, swipeCount = 0) {
   return swipeCount >= FREE_CAP_MAX_PLACES
 }
 
+/** Prefetch vazio/`none`: retry só se ainda há orçamento n8n ou issued recuperável. */
+function shouldRetryPrefetchOnEmpty(res, swipeCount = 0) {
+  const limit = res?.tdvLimit
+  if (!limit || limit.unlocked) return true
+  const swiped = typeof limit.placesSwiped === 'number' ? limit.placesSwiped : swipeCount
+  if (swiped >= FREE_CAP_MAX_PLACES) return false
+  const batchesUsed = Number(limit.batchesUsed) || 0
+  const freeMaxBatches = Number(limit.freeMaxBatches) || 2
+  if (refillEligible(limit) || batchesUsed < freeMaxBatches) return true
+  const placesIssued = Number(limit.placesIssued) || 0
+  return placesIssued > swiped
+}
+
+function refillEligible(limit) {
+  return Boolean(limit?.refillEligible)
+}
+
 function tdvIntroStorageKey(tripId) {
   return `goofly:tdv-intro:${tripId}`
 }
@@ -714,9 +731,14 @@ export function TinderView({
       tripIdRef.current === startedTripId &&
       !ac.signal.aborted
 
-    const scheduleEmptyRetry = () => {
-      if (n !== 0 || prefetchEmptyAttemptsRef.current >= EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
-        if (n === 0 && stillCurrent()) setDeckUnavailable(true)
+    const scheduleEmptyRetry = (res = null) => {
+      const swipeCount = likedNow.length + dislikedNow.length
+      if (n !== 0) return
+      if (res && !shouldRetryPrefetchOnEmpty(res, swipeCount)) {
+        return
+      }
+      if (prefetchEmptyAttemptsRef.current >= EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
+        if (stillCurrent()) setDeckUnavailable(true)
         return
       }
       prefetchEmptyAttemptsRef.current += 1
@@ -751,23 +773,24 @@ export function TinderView({
         }
 
         if (res.placesSource === 'none') {
-          if (n === 0) {
-            const swiped =
-              typeof res?.tdvLimit?.placesSwiped === 'number'
-                ? res.tdvLimit.placesSwiped
-                : likedNow.length + dislikedNow.length
-            if (swiped >= FREE_CAP_MAX_PLACES) {
-              setDeckUnavailable(true)
-              return
-            }
-            // Orçamento de swipe restante: retry curto (rehidratação issued no servidor).
-            scheduleEmptyRetry()
+          // Baralho ainda tem cartas: prefetch falhou mas usuário segue swipando.
+          if (n > 0) return
+          const swiped =
+            typeof res?.tdvLimit?.placesSwiped === 'number'
+              ? res.tdvLimit.placesSwiped
+              : likedNow.length + dislikedNow.length
+          if (swiped >= FREE_CAP_MAX_PLACES) {
+            setDeckUnavailable(true)
+            return
+          }
+          if (shouldRetryPrefetchOnEmpty(res, swiped)) {
+            scheduleEmptyRetry(res)
           }
           return
         }
 
         if (incoming.length === 0) {
-          scheduleEmptyRetry()
+          scheduleEmptyRetry(res)
           return
         }
 
@@ -783,7 +806,7 @@ export function TinderView({
           if (sid || ckey) wouldAdd += 1
         }
         if (wouldAdd === 0) {
-          scheduleEmptyRetry()
+          scheduleEmptyRetry(res)
           return
         }
         setDeckUnavailable(false)
