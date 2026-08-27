@@ -58,9 +58,20 @@ test('TinderView: sem badge de dia nem botão próximo dia', () => {
   assert.match(tinderViewSource, /DECK_MAX_PLACES = 15/)
 })
 
-test('TinderView: prefetch libera inFlight ao cancelar (evita spinner preso)', () => {
+test('TinderView: prefetch não aborta por swipe (só trip/unmount/finalize)', () => {
   assert.match(tinderViewSource, /prefetchInFlightRef\.current = false/)
-  assert.match(tinderViewSource, /if \(cancelled \|\| ac\.signal\.aborted\) return/)
+  assert.match(tinderViewSource, /stillCurrent/)
+  assert.match(
+    tinderViewSource,
+    /Sem cleanup abort\/cancelled: swipe re-render não descarta discover em voo/
+  )
+  assert.match(tinderViewSource, /Abort prefetch só ao trocar viagem ou desmontar/)
+  assert.doesNotMatch(
+    tinderViewSource,
+    /if \(cancelled \|\| ac\.signal\.aborted\) return/
+  )
+  assert.match(tinderViewSource, /placesCount/)
+  assert.match(tinderViewSource, /swiped >= FREE_CAP_MAX_PLACES/)
 })
 
 test('TinderView: paywall free_cap com Gerar roteiro e Desbloquear', () => {

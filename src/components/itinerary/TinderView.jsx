@@ -330,8 +330,12 @@ export function TinderView({
 
   const placesRef = useRef(places)
   const tripIdRef = useRef(tripId)
+  const likedPlacesRef = useRef(likedPlaces)
+  const dislikedPlacesRef = useRef(dislikedPlaces)
   placesRef.current = places
   tripIdRef.current = tripId
+  likedPlacesRef.current = likedPlaces
+  dislikedPlacesRef.current = dislikedPlaces
 
   const releaseDeckToServer = useCallback(async (targetTripId = tripIdRef.current, opts = {}) => {
     const deck = placesRef.current
@@ -502,8 +506,13 @@ export function TinderView({
         swipeCount
       )
       if (hard && list.length === 0) clearTdvDeckSession(tripId)
+      const sessionSwiped = res?.tdvLimit?.placesSwiped ?? swipeCount
+      // `none` com orçamento de swipe restante: não latcheia — prefetch/retry rehidrata.
       setDeckUnavailable(
-        list.length === 0 && !restoredFromSession && res.placesSource === 'none'
+        list.length === 0 &&
+          !restoredFromSession &&
+          res.placesSource === 'none' &&
+          sessionSwiped >= FREE_CAP_MAX_PLACES
       )
       setCurrentIndex(0)
       setIntroReady(true)
@@ -655,51 +664,64 @@ export function TinderView({
   }, [freeCapReached])
 
   // Antecipa o próximo lote quando o baralho encolheu (inclui baralho vazio — continuidade TDV).
+  // Não aborta discover em voo por swipe: cleanup só marca cancelled; abort só em trip/unmount/finalize.
+  const placesCount = places.length
+  const likedCount = likedPlaces.length
+  const dislikedCount = dislikedPlaces.length
   useEffect(() => {
     if (!isActive || !tripId || loading || deckUnavailable || freeCapReached || finalizingTdv) return
-    const n = places.length
+    const n = placesCount
     if (n >= DECK_MAX_PLACES) return
     if (n > PREFETCH_WHEN_REMAINING_AT_MOST) return
     const baseline = sessionDeckBaselineRef.current
     if (n > 0 && baseline > 0 && n === baseline && !consumedSinceSessionRef.current) return
     if (prefetchInFlightRef.current) return
 
-    const excludePlaceIds = places
+    const deckNow = placesRef.current
+    const likedNow = likedPlacesRef.current
+    const dislikedNow = dislikedPlacesRef.current
+    const excludePlaceIds = deckNow
       .map(getPlaceId)
       .map((id) => (id != null ? String(id).trim() : ''))
       .filter(Boolean)
-    const existingIds = new Set([
-      ...excludePlaceIds,
-      ...likedPlaces.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
-      ...dislikedPlaces.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
-    ]
-      .map((id) => (id != null ? String(id).trim() : ''))
-      .filter(Boolean))
+    const existingIds = new Set(
+      [
+        ...excludePlaceIds,
+        ...likedNow.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
+        ...dislikedNow.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
+      ]
+        .map((id) => (id != null ? String(id).trim() : ''))
+        .filter(Boolean)
+    )
     const existingContentKeys = new Set(
       [
-        ...places.map(placeContentKey),
-        ...likedPlaces.map(placeContentKey),
-        ...dislikedPlaces.map(placeContentKey),
+        ...deckNow.map(placeContentKey),
+        ...likedNow.map(placeContentKey),
+        ...dislikedNow.map(placeContentKey),
       ].filter(Boolean)
     )
 
-    prefetchAbortRef.current?.abort()
     const ac = new AbortController()
     prefetchAbortRef.current = ac
     const prefetchGen = ++prefetchGenRef.current
+    const startedTripId = tripId
 
-    let cancelled = false
     prefetchInFlightRef.current = true
     setPrefetchLoading(true)
 
+    const stillCurrent = () =>
+      prefetchGen === prefetchGenRef.current &&
+      tripIdRef.current === startedTripId &&
+      !ac.signal.aborted
+
     const scheduleEmptyRetry = () => {
       if (n !== 0 || prefetchEmptyAttemptsRef.current >= EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
-        if (n === 0) setDeckUnavailable(true)
+        if (n === 0 && stillCurrent()) setDeckUnavailable(true)
         return
       }
       prefetchEmptyAttemptsRef.current += 1
       window.setTimeout(() => {
-        if (!cancelled && prefetchGen === prefetchGenRef.current) {
+        if (stillCurrent()) {
           setEmptyDeckRetryTick((t) => t + 1)
         }
       }, EMPTY_DECK_PREFETCH_RETRY_MS)
@@ -708,19 +730,19 @@ export function TinderView({
     ;(async () => {
       try {
         const res = await placeService.discover(tripId, excludePlaceIds, { signal: ac.signal })
-        if (cancelled || prefetchGen !== prefetchGenRef.current) return
+        if (!stillCurrent()) return
         const incoming = Array.isArray(res.places) ? res.places : []
         if (res.placesSource) setPlacesSource(res.placesSource)
 
         if (res.placesSource === 'free_cap') {
           // Ainda há cartas locais: só para o prefetch — não mostra paywall.
           if (n > 0) return
-          const swipeCount = likedPlaces.length + dislikedPlaces.length
+          const swipeCount = likedNow.length + dislikedNow.length
           const { hard, softRetry } = applyFreeCapFromResponse(res, incoming.length, swipeCount)
           if (hard) return
           if (softRetry) {
             window.setTimeout(() => {
-              if (!cancelled && prefetchGen === prefetchGenRef.current) {
+              if (stillCurrent()) {
                 setEmptyDeckRetryTick((t) => t + 1)
               }
             }, FREE_CAP_SOFT_RETRY_MS)
@@ -729,7 +751,18 @@ export function TinderView({
         }
 
         if (res.placesSource === 'none') {
-          if (n === 0) setDeckUnavailable(true)
+          if (n === 0) {
+            const swiped =
+              typeof res?.tdvLimit?.placesSwiped === 'number'
+                ? res.tdvLimit.placesSwiped
+                : likedNow.length + dislikedNow.length
+            if (swiped >= FREE_CAP_MAX_PLACES) {
+              setDeckUnavailable(true)
+              return
+            }
+            // Orçamento de swipe restante: retry curto (rehidratação issued no servidor).
+            scheduleEmptyRetry()
+          }
           return
         }
 
@@ -779,34 +812,40 @@ export function TinderView({
         })
         if (typeof res.totalLikes === 'number') setTotalLikes(res.totalLikes)
       } catch (err) {
-        if (cancelled || ac.signal.aborted) return
+        if (ac.signal.aborted || !stillCurrent()) return
         if (n === 0) scheduleEmptyRetry()
       } finally {
-        prefetchInFlightRef.current = false
+        if (prefetchAbortRef.current === ac) {
+          prefetchInFlightRef.current = false
+        }
         if (prefetchGen === prefetchGenRef.current) {
           setPrefetchLoading(false)
         }
       }
     })()
 
-    return () => {
-      cancelled = true
-      ac.abort()
-      prefetchInFlightRef.current = false
-    }
+    // Sem cleanup abort/cancelled: swipe re-render não descarta discover em voo.
   }, [
     isActive,
     tripId,
     loading,
-    places,
+    placesCount,
     deckUnavailable,
     freeCapReached,
     emptyDeckRetryTick,
     finalizingTdv,
     applyFreeCapFromResponse,
-    likedPlaces,
-    dislikedPlaces,
+    likedCount,
+    dislikedCount,
   ])
+
+  // Abort prefetch só ao trocar viagem ou desmontar (não a cada swipe).
+  useEffect(() => {
+    return () => {
+      prefetchAbortRef.current?.abort()
+      prefetchInFlightRef.current = false
+    }
+  }, [tripId])
 
   // Congela o TDV durante finalize: aborta discover/prefetch em voo (não compete com n8n).
   useEffect(() => {
