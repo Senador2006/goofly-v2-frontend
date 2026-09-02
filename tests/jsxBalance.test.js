@@ -18,4 +18,16 @@ describe('jsxBalance', () => {
       assert.doesNotMatch(source, /<\/?motion\.div\b/, `${rel} contém motion.div`)
     })
   }
+
+  it('Itinerary.jsx não chama hooks após early return (Rules of Hooks)', () => {
+    const source = readFileSync(join(base, 'src/pages/Itinerary.jsx'), 'utf8')
+    const loadingReturn = source.indexOf('if (loading && !trip)')
+    assert.ok(loadingReturn >= 0, 'marcador de loading return ausente')
+    const afterLoadingGate = source.slice(loadingReturn)
+    assert.doesNotMatch(
+      afterLoadingGate,
+      /\buse(Memo|Effect|State|Callback|LayoutEffect|Ref)\s*\(/,
+      'hooks após early return quebram a montagem pós-criação de viagem',
+    )
+  })
 })

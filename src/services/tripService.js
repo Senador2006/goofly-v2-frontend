@@ -48,8 +48,8 @@ export const tripService = {
         headers: { 'Cache-Control': 'no-cache' },
       })
       .then((res) => res.body.data),
-  previewItineraryRoute: (tripId, { day = 1, profile = 'foot-walking', activities = [] } = {}) =>
+  previewItineraryRoute: (tripId, { day = 1, profile = 'foot-walking', activities = [], mealActivities = [] } = {}) =>
     api
-      .post(`/trips/${tripId}/itinerary/route/preview`, { day, profile, activities })
+      .post(`/trips/${tripId}/itinerary/route/preview`, { day, profile, activities, mealActivities })
       .then((res) => res.body.data),
 }

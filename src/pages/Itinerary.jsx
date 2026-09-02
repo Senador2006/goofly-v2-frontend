@@ -6,6 +6,8 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { TinderView } from '../components/itinerary/TinderView'
 import { DocumentosView } from '../components/itinerary/DocumentosView'
 import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivityCard'
+import { ItineraryMealSlotCard } from '../components/itinerary/ItineraryMealSlotCard'
+import { ItineraryOptimizerInsightsPopover } from '../components/itinerary/ItineraryOptimizerInsights'
 import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
 import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
 import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
@@ -28,6 +30,15 @@ import {
   readShowAccommodationRoutesPreference,
   writeShowAccommodationRoutesPreference,
 } from '../utils/mapAccommodationRoutesPreference'
+import {
+  readShowMealsOnMapPreference,
+  writeShowMealsOnMapPreference,
+} from '../utils/mapMealsPreference'
+import {
+  readMealSelectionsPreference,
+  writeMealSelectionsPreference,
+} from '../utils/mealSelectionsPreference'
+import { scrollElementToContainerTopAfterLayout } from '../utils/itineraryScrollHelpers'
 import { ItineraryDayChips } from '../components/itinerary/ItineraryDayChips'
 import { ItineraryPrintView } from '../components/itinerary/ItineraryPrintView'
 import { ItineraryDragInsertLine } from '../components/itinerary/ItineraryDragInsertLine'
@@ -55,6 +66,14 @@ import {
   swapActivitiesBetweenDays,
 } from '../utils/itineraryDayHelpers'
 import {
+  buildDayTimelineItems,
+  filterRouteActivities,
+  getMealPositionLabel,
+  mergeMealSelections,
+  resolveSelectedMealForSlot,
+} from '../utils/itineraryMealHelpers'
+import { resolveActivityTitle } from '../utils/itineraryPrintFormat'
+import {
   applyRoteiroScheduleEdit,
   applyRoteiroScheduleReorder,
   isScheduleTimePatch,
@@ -77,6 +96,10 @@ import {
   markFinalizeTdvSession,
   readFinalizeTdvSession,
 } from '../utils/finalizeTdvSession'
+import {
+  isOptimizerPending,
+  pollItineraryUntilOptimizerReady,
+} from '../utils/optimizerPollHelpers'
 
 const MODE_ROTEIRO = 'roteiro'
 const MODE_TDV = 'tdv'
@@ -319,6 +342,11 @@ export function Itinerary() {
   const [showAccommodationRoutes, setShowAccommodationRoutes] = useState(
     () => readShowAccommodationRoutesPreference(),
   )
+  const [showMealsOnMap, setShowMealsOnMap] = useState(() => readShowMealsOnMapPreference())
+  /** @type {[Record<string, string>, Function]} slotKey → activityId selecionado */
+  const [mealSelections, setMealSelections] = useState({})
+  const [highlightedMealSlotKey, setHighlightedMealSlotKey] = useState(null)
+  const [expandedMealSlotKey, setExpandedMealSlotKey] = useState(null)
   const [stayEditor, setStayEditor] = useState(null)
   const [staySaving, setStaySaving] = useState(false)
   const [stayEditorError, setStayEditorError] = useState(null)
@@ -352,11 +380,96 @@ export function Itinerary() {
   const reorderFrozenLayoutRef = useRef(null)
   const [, setReorderLayoutEpoch] = useState(0)
   const trackedFollowRef = useRef({ id: null, reason: null })
+  const mealSlotHeaderRefs = useRef(new Map())
+
+  const scrollMealSlotHeaderIntoView = useCallback((slotKey) => {
+    const key = String(slotKey)
+    const headerEl = mealSlotHeaderRefs.current.get(key)
+    const container = roteiroListScrollRef.current
+    scrollElementToContainerTopAfterLayout(headerEl, container, 10)
+  }, [])
 
   const handleShowAccommodationRoutesChange = useCallback((next) => {
     setShowAccommodationRoutes(next)
     writeShowAccommodationRoutesPreference(next)
   }, [])
+
+  const handleShowMealsOnMapChange = useCallback((next) => {
+    setShowMealsOnMap(next)
+    writeShowMealsOnMapPreference(next)
+  }, [])
+
+  useEffect(() => {
+    if (tripId) writeMealSelectionsPreference(tripId, mealSelections)
+  }, [tripId, mealSelections])
+
+  useEffect(() => {
+    setHighlightedMealSlotKey(null)
+    setExpandedMealSlotKey(null)
+  }, [selectedDay])
+
+  const handleMealHighlight = useCallback((slotKey) => {
+    setHighlightedMealSlotKey(String(slotKey))
+  }, [])
+
+  const handleMealGoToTimeline = useCallback(
+    (slotKey) => {
+      const key = String(slotKey)
+      setHighlightedMealSlotKey(key)
+      setExpandedMealSlotKey(key)
+
+      const scrollToSlot = () => {
+        scrollMealSlotHeaderIntoView(key)
+      }
+
+      if (!isLgUp) {
+        setMobileMapOpen(false)
+        window.setTimeout(scrollToSlot, 520)
+      } else {
+        scrollToSlot()
+      }
+    },
+    [isLgUp, scrollMealSlotHeaderIntoView],
+  )
+
+  const handleMealMapPinClick = useCallback(
+    (slotKey) => {
+      handleMealHighlight(slotKey)
+      if (isLgUp) {
+        scrollMealSlotHeaderIntoView(slotKey)
+      }
+    },
+    [handleMealHighlight, isLgUp, scrollMealSlotHeaderIntoView],
+  )
+
+  const handleMealViewOnMap = useCallback((slotKey) => {
+    handleMealHighlight(slotKey)
+    setMobileMapOpen(true)
+  }, [handleMealHighlight])
+
+  const handleMealDismiss = useCallback(() => {
+    setHighlightedMealSlotKey(null)
+  }, [])
+
+  const handleMealSelect = useCallback((slotKey, activityId) => {
+    setMealSelections((prev) => {
+      const next = { ...prev }
+      if (!activityId || next[slotKey] === activityId) {
+        delete next[slotKey]
+      } else {
+        next[slotKey] = activityId
+      }
+      return next
+    })
+    setHighlightedMealSlotKey(String(slotKey))
+  }, [])
+
+  const handleMealViewOptions = useCallback(
+    (slotKey) => {
+      handleMealGoToTimeline(slotKey)
+    },
+    [handleMealGoToTimeline],
+  )
 
   useEffect(() => {
     if (!stayToast) return undefined
@@ -401,7 +514,14 @@ export function Itinerary() {
     setReorganizePrompt(null)
     setReorganizingStay(true)
     try {
-      const data = await tripService.optimizeItinerary(tripId)
+      let data = await tripService.optimizeItinerary(tripId)
+      if (isOptimizerPending(data)) {
+        data = await pollItineraryUntilOptimizerReady(
+          tripId,
+          (id, opts) => tripService.getItinerary(id, opts),
+          { retryOptimize: (id) => tripService.optimizeItinerary(id) },
+        )
+      }
       if (data) setItinerary(data)
       clearItineraryRouteCache(tripId)
       const tripData = await tripService.getTrip(tripId)
@@ -412,6 +532,8 @@ export function Itinerary() {
       setReorganizingStay(false)
     }
   }, [tripId])
+
+  const handleReoptimizeItinerary = handleReorganizeStay
 
   const handleDeletePlanning = async () => {
     if (deleteInFlightRef.current) return
@@ -715,7 +837,18 @@ export function Itinerary() {
     setFinalizeError(null)
     try {
       const result = await tripService.finalizeTdvPlanning(tripId)
-      const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
+      let itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
+      if (isOptimizerPending(itineraryData) || result?.optimizerPending) {
+        itineraryData = await pollItineraryUntilOptimizerReady(
+          tripId,
+          (id, opts) => tripService.getItinerary(id, opts),
+          {
+            retryOptimize: (id) => tripService.optimizeItinerary(id),
+            intervalMs: 4000,
+            expectOptimization: true,
+          },
+        )
+      }
       applyFinalizeSuccess(result?.trip, itineraryData)
     } catch (err) {
       // Abort/rede sem response (ex.: refresh): mantém session para retomar overlay + poll.
@@ -797,8 +930,19 @@ export function Itinerary() {
       let cancelled = false
       ;(async () => {
         try {
-          const itineraryData =
+          let itineraryData =
             itinerary || (await tripService.getItinerary(tripId, { refresh: true }))
+          if (isOptimizerPending(itineraryData)) {
+            itineraryData = await pollItineraryUntilOptimizerReady(
+              tripId,
+              (id, opts) => tripService.getItinerary(id, opts),
+              {
+                retryOptimize: (id) => tripService.optimizeItinerary(id),
+                intervalMs: 4000,
+                expectOptimization: true,
+              },
+            )
+          }
           if (cancelled) return
           applyFinalizeSuccess(trip, itineraryData)
         } catch {
@@ -837,7 +981,18 @@ export function Itinerary() {
           const tripData = await tripService.getTrip(tripId)
           if (cancelled) return
           if (tripData?.status === 'ativa') {
-            const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
+            let itineraryData = await tripService.getItinerary(tripId, { refresh: true })
+            if (isOptimizerPending(itineraryData)) {
+              itineraryData = await pollItineraryUntilOptimizerReady(
+                tripId,
+                (id, opts) => tripService.getItinerary(id, opts),
+                {
+                  retryOptimize: (id) => tripService.optimizeItinerary(id),
+                  intervalMs: 4000,
+                  expectOptimization: true,
+                },
+              )
+            }
             if (cancelled) return
             applyFinalizeSuccess(tripData, itineraryData)
             return
@@ -857,6 +1012,20 @@ export function Itinerary() {
   }, [tripId, trip, loading, applyFinalizeSuccess, finalizeResumeKey])
 
   const dateToDayMap = useMemo(() => buildDateToDayMap(trip), [trip])
+
+  useEffect(() => {
+    if (!tripId) {
+      setMealSelections({})
+      return
+    }
+    const acts = itinerary?.activities
+    if (!Array.isArray(acts) || acts.length === 0) {
+      setMealSelections(readMealSelectionsPreference(tripId))
+      return
+    }
+    const stored = readMealSelectionsPreference(tripId)
+    setMealSelections(mergeMealSelections(stored, acts, dateToDayMap))
+  }, [tripId, itinerary?.activities, dateToDayMap])
 
   const likeReplace = useRoteiroLikeReplace({
     dateToDayMap,
@@ -898,7 +1067,7 @@ export function Itinerary() {
   ])
 
   const likeDragDayActivityIds = useMemo(
-    () => dragListContext.dayActivities.map((a) => String(a.id)),
+    () => filterRouteActivities(dragListContext.dayActivities).map((a) => String(a.id)),
     [dragListContext.dayActivities],
   )
 
@@ -930,7 +1099,7 @@ export function Itinerary() {
 
   const dragReorder = useRoteiroDragReorder({
     enabled: roteiroEditOpen && !loading && Boolean(trip),
-    dayActivities: dragListContext.dayActivities,
+    dayActivities: filterRouteActivities(dragListContext.dayActivities),
     dateToDayMap,
     dayNum: dragListContext.dayNum,
     setDraftActivities,
@@ -1180,6 +1349,9 @@ export function Itinerary() {
   const dayActivities = sortDayActivities(
     activities.filter((a) => getActivityDayNumber(a, dateToDayMap) === effectiveSelectedDay)
   )
+  const dayTimelineItems = buildDayTimelineItems(dayActivities)
+  const dayRouteActivities = filterRouteActivities(dayActivities)
+  const dayMealSlots = dayTimelineItems.filter((item) => item.type === 'mealSlot')
   const dayAccommodations = resolveAccommodationsForDay(trip, effectiveSelectedDay, dateToDayMap)
   const dayStays = resolveAccommodationsForDay(trip, effectiveSelectedDay, dateToDayMap, {
     plottableOnly: false,
@@ -1188,7 +1360,7 @@ export function Itinerary() {
   const selectedDayIso = getIsoDateForDay(dateToDayMap, effectiveSelectedDay)
   const selectedDayDest = findDestinationCoveringIso(trip, selectedDayIso)
   const trackedMapIndex = trackedStopId
-    ? dayActivities.findIndex((a) => String(a.id) === String(trackedStopId))
+    ? dayRouteActivities.findIndex((a) => String(a.id) === String(trackedStopId))
     : -1
   const trackedMapHighlight = trackedMapIndex >= 0 ? trackedMapIndex : null
 
@@ -1487,6 +1659,9 @@ export function Itinerary() {
     </span>
   ) : null
 
+  const showOptimizerInsightsPopover =
+    !isPlanning && !roteiroEditOpen && !likeReplace.open && Boolean(itinerary?.optimizer_meta)
+
   const modifyPanelSharedProps = {
     availableLikes: likeReplace.availableLikes,
     selectedLikeId: likeReplace.selectedLikeId,
@@ -1516,7 +1691,7 @@ export function Itinerary() {
     >
       {/* Cabeçalho único — evita três colunas competindo por atenção */}
       <header
-        className={`flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 ${
+        className={`relative flex-shrink-0 min-w-0 z-40 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 ${
           tdvUiActive ? 'py-2 pb-1.5 lg:py-4 lg:pb-4' : 'py-3 sm:py-4'
         }`}
       >
@@ -1557,8 +1732,20 @@ export function Itinerary() {
           </div>
           <div className="flex w-full min-w-0 flex-col gap-2 lg:justify-end">
             <div className="itinerary-header-mode-cluster">
-              <div className="itinerary-header-tabs">
-                {modeTabs}
+              <div className="itinerary-header-tabs-row flex w-full min-w-0 items-center gap-2 lg:contents">
+                <div className="itinerary-header-tabs min-w-0 flex-1 lg:flex-none">
+                  {modeTabs}
+                </div>
+                {showOptimizerInsightsPopover ? (
+                  <ItineraryOptimizerInsightsPopover
+                    optimizerMeta={itinerary.optimizer_meta}
+                    optimizationScore={itinerary.optimization_score}
+                    onReoptimize={handleReoptimizeItinerary}
+                    reoptimizing={reorganizingStay}
+                    className="shrink-0 lg:hidden"
+                    tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
+                  />
+                ) : null}
               </div>
               <div
                 className={`itinerary-header-actions ${
@@ -1638,6 +1825,16 @@ export function Itinerary() {
                     <Icon name="ios_share" className="text-lg" />
                   </Button>
                 ) : null}
+                {showOptimizerInsightsPopover ? (
+                  <ItineraryOptimizerInsightsPopover
+                    optimizerMeta={itinerary.optimizer_meta}
+                    optimizationScore={itinerary.optimization_score}
+                    onReoptimize={handleReoptimizeItinerary}
+                    reoptimizing={reorganizingStay}
+                    className="hidden shrink-0 lg:inline-flex"
+                    tabIndex={tdvOverlayOpen && !tdvOverlayExitTo ? -1 : undefined}
+                  />
+                ) : null}
               </div>
             </div>
           </div>
@@ -1652,7 +1849,7 @@ export function Itinerary() {
             aria-hidden={tdvOverlayOpen && tdvOverlayExitTo !== 'roteiro' ? true : undefined}
           >
             <div className="itinerary-day-chips-slot__inner">
-              <div className="mt-2 pt-1 pb-1 sm:mt-3 sm:pt-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
+              <div className="mt-2 min-w-0 overflow-hidden pt-1 pb-1 sm:mt-3 sm:pt-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
                 <ItineraryDayChips
                   days={days}
                   selectedDay={effectiveSelectedDay}
@@ -1907,212 +2104,256 @@ export function Itinerary() {
                       top={dragReorder.ghostStyle?.lineTop}
                       visible={dragReorder.phase === 'dragging' && dragReorder.showInsertLine}
                     />
-                    {dayActivities.map((act, idx) => {
-                      const frozen = reorderFrozenLayoutRef.current
-                      const actId = String(act.id)
-                      const displayIndex =
-                        frozen?.indices && actId in frozen.indices ? frozen.indices[actId] : idx
-                      const displayIsLast =
-                        frozen?.isLast && actId in frozen.isLast
-                          ? frozen.isLast[actId]
-                          : idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0
+                    {(() => {
+                      let activityCardIndex = 0
+                      const regularActivityCount = dayRouteActivities.length
 
-                      if (likeReplace.open) {
-                        const dropHighlight =
-                          likeDrag.phase === 'dragging' &&
-                          likeDrag.overTarget?.type === 'swap' &&
-                          String(likeDrag.overTarget.activityId) === String(act.id)
+                      return dayTimelineItems.map((item, timelineIdx) => {
+                        const timelineIsLast =
+                          timelineIdx === dayTimelineItems.length - 1 &&
+                          hiddenPremiumStopsSameDay === 0
+
+                        if (item.type === 'mealSlot') {
+                          return (
+                            <ItineraryMealSlotCard
+                              key={`meal-${item.slotKey}`}
+                              mealType={item.mealType}
+                              startTime={item.startTime}
+                              options={item.options}
+                              isLast={timelineIsLast}
+                              readOnly={roteiroEditOpen || likeReplace.open}
+                              selectedId={mealSelections[item.slotKey] ?? null}
+                              onSelect={(activityId) => handleMealSelect(item.slotKey, activityId)}
+                              highlighted={highlightedMealSlotKey === item.slotKey}
+                              showMealsOnMap={showMealsOnMap}
+                              open={expandedMealSlotKey === item.slotKey}
+                              onOpenChange={(next) => {
+                                setExpandedMealSlotKey(next ? item.slotKey : null)
+                              }}
+                              onViewOnMap={() => handleMealViewOnMap(item.slotKey)}
+                              headerRef={(el) => {
+                                const key = String(item.slotKey)
+                                if (el) mealSlotHeaderRefs.current.set(key, el)
+                                else mealSlotHeaderRefs.current.delete(key)
+                              }}
+                            />
+                          )
+                        }
+
+                        const act = item.act
+                        const idx = activityCardIndex
+                        activityCardIndex += 1
+                        const activityIsLast =
+                          timelineIdx === dayTimelineItems.length - 1 &&
+                          hiddenPremiumStopsSameDay === 0
+                        const frozen = reorderFrozenLayoutRef.current
+                        const actId = String(act.id)
+                        const displayIndex =
+                          frozen?.indices && actId in frozen.indices
+                            ? frozen.indices[actId]
+                            : idx
+                        const displayIsLast =
+                          frozen?.isLast && actId in frozen.isLast
+                            ? frozen.isLast[actId]
+                            : activityIsLast
+
+                        if (likeReplace.open) {
+                          const dropHighlight =
+                            likeDrag.phase === 'dragging' &&
+                            likeDrag.overTarget?.type === 'swap' &&
+                            String(likeDrag.overTarget.activityId) === String(act.id)
+                          return (
+                            <RoteiroModifyActivityRow
+                              key={String(act.id || `${effectiveSelectedDay}-${idx}`)}
+                              act={act}
+                              index={idx}
+                              isLast={activityIsLast}
+                              swapArmed={Boolean(likeReplace.selectedLike) && likeDrag.phase !== 'dragging'}
+                              dropHighlight={dropHighlight}
+                              dragActive={likeDrag.phase === 'dragging'}
+                              motion={likeReplace.rowMotion?.[String(act.id)] || null}
+                              cardRef={(el) => likeReplace.registerRowCardRef(String(act.id), el)}
+                              onSwap={() => likeReplace.swapWithActivity(act.id)}
+                              onRemove={() => {
+                                if (String(act.id) === String(trackedStopId)) {
+                                  setTrackedStopId(null)
+                                  trackedFollowRef.current = { id: null, reason: null }
+                                }
+                                likeReplace.removeActivity(act.id)
+                              }}
+                            />
+                          )
+                        }
+
                         return (
-                          <RoteiroModifyActivityRow
+                          <ItineraryActivityCard
                             key={String(act.id || `${effectiveSelectedDay}-${idx}`)}
                             act={act}
                             index={idx}
-                            isLast={idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0}
-                            swapArmed={Boolean(likeReplace.selectedLike) && likeDrag.phase !== 'dragging'}
-                            dropHighlight={dropHighlight}
-                            dragActive={likeDrag.phase === 'dragging'}
-                            motion={likeReplace.rowMotion?.[String(act.id)] || null}
-                            cardRef={(el) => likeReplace.registerRowCardRef(String(act.id), el)}
-                            onSwap={() => likeReplace.swapWithActivity(act.id)}
+                            isLast={activityIsLast}
+                            displayIndex={displayIndex}
+                            displayIsLast={displayIsLast}
+                            editing={roteiroEditOpen}
+                            draft={act}
+                            hasFullAccess={hasFullAccess}
+                            isTracked={String(act.id) === String(trackedStopId)}
+                            cardRef={(el) => {
+                              const key = String(act.id)
+                              if (el) stopCardRefs.current.set(key, el)
+                              else stopCardRefs.current.delete(key)
+                            }}
+                            onDraftPatch={(patch) => {
+                              setDraftActivities((prev) => {
+                                const list = prev ?? []
+                                if (isScheduleTimePatch(patch)) {
+                                  const current =
+                                    list.find((item) => String(item.id) === String(act.id)) ?? act
+                                  const dayNum =
+                                    getActivityDayNumber(current, dateToDayMap) ??
+                                    effectiveSelectedDay
+                                  return applyRoteiroScheduleEdit(
+                                    list,
+                                    dateToDayMap,
+                                    dayNum,
+                                    act.id,
+                                    patch,
+                                  )
+                                }
+                                return list.map((item) =>
+                                  String(item.id) === String(act.id)
+                                    ? { ...item, ...patch }
+                                    : item,
+                                )
+                              })
+                            }}
                             onRemove={() => {
                               if (String(act.id) === String(trackedStopId)) {
                                 setTrackedStopId(null)
                                 trackedFollowRef.current = { id: null, reason: null }
                               }
-                              likeReplace.removeActivity(act.id)
+                              setDraftActivities((prev) =>
+                                (prev ?? []).filter((item) => String(item.id) !== String(act.id)),
+                              )
+                            }}
+                            onMoveUp={() => {
+                              if (dragReorder.isInteractionBlocked) return
+                              if (!prefersReducedFlipMotion()) {
+                                reorderFrozenLayoutRef.current = captureDayFrozenLayout(
+                                  dayRouteActivities,
+                                  hiddenPremiumStopsSameDay,
+                                )
+                                flipBeforeReorderRef.current = {
+                                  snapshot: captureReorderSnapshot(
+                                    stopCardRefs.current,
+                                    roteiroListScrollRef.current,
+                                  ),
+                                  movedId: String(act.id),
+                                  neighborId:
+                                    idx > 0 ? String(dayRouteActivities[idx - 1].id) : null,
+                                  direction: -1,
+                                }
+                              }
+                              setDraftActivities((prev) =>
+                                prev
+                                  ? applyRoteiroScheduleReorder(
+                                      prev,
+                                      dateToDayMap,
+                                      effectiveSelectedDay,
+                                      (list) =>
+                                        reorderActivityInSameDay(
+                                          list,
+                                          dateToDayMap,
+                                          effectiveSelectedDay,
+                                          act.id,
+                                          -1,
+                                        ),
+                                    )
+                                  : prev,
+                              )
+                            }}
+                            onMoveDown={() => {
+                              if (dragReorder.isInteractionBlocked) return
+                              if (!prefersReducedFlipMotion()) {
+                                reorderFrozenLayoutRef.current = captureDayFrozenLayout(
+                                  dayRouteActivities,
+                                  hiddenPremiumStopsSameDay,
+                                )
+                                flipBeforeReorderRef.current = {
+                                  snapshot: captureReorderSnapshot(
+                                    stopCardRefs.current,
+                                    roteiroListScrollRef.current,
+                                  ),
+                                  movedId: String(act.id),
+                                  neighborId:
+                                    idx < regularActivityCount - 1
+                                      ? String(dayRouteActivities[idx + 1].id)
+                                      : null,
+                                  direction: 1,
+                                }
+                              }
+                              setDraftActivities((prev) =>
+                                prev
+                                  ? applyRoteiroScheduleReorder(
+                                      prev,
+                                      dateToDayMap,
+                                      effectiveSelectedDay,
+                                      (list) =>
+                                        reorderActivityInSameDay(
+                                          list,
+                                          dateToDayMap,
+                                          effectiveSelectedDay,
+                                          act.id,
+                                          1,
+                                        ),
+                                    )
+                                  : prev,
+                              )
+                            }}
+                            disableMoveUp={idx === 0 || dragReorder.isInteractionBlocked}
+                            disableMoveDown={
+                              idx === regularActivityCount - 1 || dragReorder.isInteractionBlocked
+                            }
+                            compactMode={dragReorder.isCardCompact(act.id)}
+                            isDragSource={
+                              dragReorder.phase === 'dragging' &&
+                              String(act.id) === String(dragReorder.draggingId)
+                            }
+                            isDragHidden={
+                              (dragReorder.phase === 'landing' ||
+                                dragReorder.phase === 'reverting') &&
+                              String(act.id) === String(dragReorder.draggingId)
+                            }
+                            isExpandingCard={
+                              dragReorder.phase === 'expanding' &&
+                              dragReorder.expandRevealed &&
+                              String(act.id) === String(dragReorder.droppedId)
+                            }
+                            isDragPending={String(act.id) === String(dragReorder.pendingDragId)}
+                            canDragReorder={
+                              dragReorder.canDrag && !dragReorder.isInteractionBlocked
+                            }
+                            onDragHandlePointerDown={(event) =>
+                              onActivityDragHandlePointerDown(act.id, event)
+                            }
+                            dayPickerValue={getActivityDayNumber(act, dateToDayMap) ?? effectiveSelectedDay}
+                            dayPickerOptions={days}
+                            onDayChange={(dn) => {
+                              setDraftActivities((prev) =>
+                                (prev ?? []).map((item) =>
+                                  String(item.id) === String(act.id)
+                                    ? assignActivityToDay(item, dn, dateToDayMap)
+                                    : item,
+                                ),
+                              )
+                              if (String(act.id) === String(trackedStopId)) {
+                                trackedFollowRef.current = { id: act.id, reason: 'day-change' }
+                                setSelectedDay(dn)
+                              }
                             }}
                           />
                         )
-                      }
-
-                      return (
-                      <ItineraryActivityCard
-                        key={String(act.id || `${effectiveSelectedDay}-${idx}`)}
-                        act={act}
-                        index={idx}
-                        isLast={idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0}
-                        displayIndex={displayIndex}
-                        displayIsLast={displayIsLast}
-                        editing={roteiroEditOpen}
-                        draft={act}
-                        hasFullAccess={hasFullAccess}
-                        isTracked={String(act.id) === String(trackedStopId)}
-                        cardRef={(el) => {
-                          const key = String(act.id)
-                          if (el) stopCardRefs.current.set(key, el)
-                          else stopCardRefs.current.delete(key)
-                        }}
-                        onDraftPatch={(patch) => {
-                          setDraftActivities((prev) => {
-                            const list = prev ?? []
-                            if (isScheduleTimePatch(patch)) {
-                              const current =
-                                list.find((item) => String(item.id) === String(act.id)) ?? act
-                              const dayNum =
-                                getActivityDayNumber(current, dateToDayMap) ??
-                                effectiveSelectedDay
-                              return applyRoteiroScheduleEdit(
-                                list,
-                                dateToDayMap,
-                                dayNum,
-                                act.id,
-                                patch,
-                              )
-                            }
-                            return list.map((item) =>
-                              String(item.id) === String(act.id)
-                                ? { ...item, ...patch }
-                                : item,
-                            )
-                          })
-                        }}
-                        onRemove={() => {
-                          if (String(act.id) === String(trackedStopId)) {
-                            setTrackedStopId(null)
-                            trackedFollowRef.current = { id: null, reason: null }
-                          }
-                          setDraftActivities((prev) =>
-                            (prev ?? []).filter((item) => String(item.id) !== String(act.id)),
-                          )
-                        }}
-                        onMoveUp={() => {
-                          if (dragReorder.isInteractionBlocked) return
-                          if (!prefersReducedFlipMotion()) {
-                            reorderFrozenLayoutRef.current = captureDayFrozenLayout(
-                              dayActivities,
-                              hiddenPremiumStopsSameDay,
-                            )
-                            flipBeforeReorderRef.current = {
-                              snapshot: captureReorderSnapshot(
-                                stopCardRefs.current,
-                                roteiroListScrollRef.current,
-                              ),
-                              movedId: String(act.id),
-                              neighborId:
-                                idx > 0 ? String(dayActivities[idx - 1].id) : null,
-                              direction: -1,
-                            }
-                          }
-                          setDraftActivities((prev) =>
-                            prev
-                              ? applyRoteiroScheduleReorder(
-                                  prev,
-                                  dateToDayMap,
-                                  effectiveSelectedDay,
-                                  (list) =>
-                                    reorderActivityInSameDay(
-                                      list,
-                                      dateToDayMap,
-                                      effectiveSelectedDay,
-                                      act.id,
-                                      -1,
-                                    ),
-                                )
-                              : prev,
-                          )
-                        }}
-                        onMoveDown={() => {
-                          if (dragReorder.isInteractionBlocked) return
-                          if (!prefersReducedFlipMotion()) {
-                            reorderFrozenLayoutRef.current = captureDayFrozenLayout(
-                              dayActivities,
-                              hiddenPremiumStopsSameDay,
-                            )
-                            flipBeforeReorderRef.current = {
-                              snapshot: captureReorderSnapshot(
-                                stopCardRefs.current,
-                                roteiroListScrollRef.current,
-                              ),
-                              movedId: String(act.id),
-                              neighborId:
-                                idx < dayActivities.length - 1
-                                  ? String(dayActivities[idx + 1].id)
-                                  : null,
-                              direction: 1,
-                            }
-                          }
-                          setDraftActivities((prev) =>
-                            prev
-                              ? applyRoteiroScheduleReorder(
-                                  prev,
-                                  dateToDayMap,
-                                  effectiveSelectedDay,
-                                  (list) =>
-                                    reorderActivityInSameDay(
-                                      list,
-                                      dateToDayMap,
-                                      effectiveSelectedDay,
-                                      act.id,
-                                      1,
-                                    ),
-                                )
-                              : prev,
-                          )
-                        }}
-                        disableMoveUp={idx === 0 || dragReorder.isInteractionBlocked}
-                        disableMoveDown={
-                          idx === dayActivities.length - 1 || dragReorder.isInteractionBlocked
-                        }
-                        compactMode={dragReorder.isCardCompact(act.id)}
-                        isDragSource={
-                          dragReorder.phase === 'dragging' &&
-                          String(act.id) === String(dragReorder.draggingId)
-                        }
-                        isDragHidden={
-                          (dragReorder.phase === 'landing' ||
-                            dragReorder.phase === 'reverting') &&
-                          String(act.id) === String(dragReorder.draggingId)
-                        }
-                        isExpandingCard={
-                          dragReorder.phase === 'expanding' &&
-                          dragReorder.expandRevealed &&
-                          String(act.id) === String(dragReorder.droppedId)
-                        }
-                        isDragPending={String(act.id) === String(dragReorder.pendingDragId)}
-                        canDragReorder={
-                          dragReorder.canDrag && !dragReorder.isInteractionBlocked
-                        }
-                        onDragHandlePointerDown={(event) =>
-                          onActivityDragHandlePointerDown(act.id, event)
-                        }
-                        dayPickerValue={getActivityDayNumber(act, dateToDayMap) ?? effectiveSelectedDay}
-                        dayPickerOptions={days}
-                        onDayChange={(dn) => {
-                          setDraftActivities((prev) =>
-                            (prev ?? []).map((item) =>
-                              String(item.id) === String(act.id)
-                                ? assignActivityToDay(item, dn, dateToDayMap)
-                                : item,
-                            ),
-                          )
-                          if (String(act.id) === String(trackedStopId)) {
-                            trackedFollowRef.current = { id: act.id, reason: 'day-change' }
-                            setSelectedDay(dn)
-                          }
-                        }}
-                      />
-                      )
-                    })}
+                      })
+                    })()}
                     {likeReplace.open ? (
                       <RoteiroModifyInsertZone
                         zoneRef={likeInsertZoneRef}
@@ -2246,15 +2487,25 @@ export function Itinerary() {
                 onOpenChange={setMobileMapOpen}
                 tripId={tripId}
                 day={effectiveSelectedDay}
-                activities={dayActivities}
+                activities={dayRouteActivities}
+                timelineActivities={dayActivities}
                 accommodations={dayAccommodations}
+                mealSlots={dayMealSlots}
+                selectedMealIds={mealSelections}
                 disabled={isSelectedDayPremiumLockedUi}
                 routeRestricted={isRouteRestricted}
                 highlightedIndex={trackedMapHighlight}
+                highlightedMealSlotKey={highlightedMealSlotKey}
                 preferLocalRoute={roteiroEditOpen || likeReplace.open}
                 hideDuringRoteiroDrag={dragReorder.isOverlayActive}
                 showAccommodationRoutes={showAccommodationRoutes}
                 onShowAccommodationRoutesChange={handleShowAccommodationRoutesChange}
+                showMealsOnMap={showMealsOnMap}
+                onShowMealsOnMapChange={handleShowMealsOnMapChange}
+                onMealViewOptions={handleMealViewOptions}
+                onMealSlotFocus={handleMealMapPinClick}
+                onMealGoToTimeline={handleMealGoToTimeline}
+                onMealDismiss={handleMealDismiss}
               />
             ) : null}
           </section>
@@ -2319,16 +2570,25 @@ export function Itinerary() {
               <ItineraryDayMap
                 tripId={tripId}
                 day={effectiveSelectedDay}
-                activities={dayActivities}
+                activities={dayRouteActivities}
+                timelineActivities={dayActivities}
                 accommodations={dayAccommodations}
+                mealSlots={dayMealSlots}
+                selectedMealIds={mealSelections}
                 disabled={isSelectedDayPremiumLockedUi}
                 routeRestricted={isRouteRestricted}
                 highlightedIndex={trackedMapHighlight}
+                highlightedMealSlotKey={highlightedMealSlotKey}
                 preferLocalRoute={roteiroEditOpen || likeReplace.open}
                 className="absolute inset-0 h-full w-full"
                 ariaLabel={`Mapa do roteiro — dia ${effectiveSelectedDay}`}
                 showAccommodationRoutes={showAccommodationRoutes}
                 onShowAccommodationRoutesChange={handleShowAccommodationRoutesChange}
+                showMealsOnMap={showMealsOnMap}
+                onShowMealsOnMapChange={handleShowMealsOnMapChange}
+                onMealViewOptions={handleMealViewOptions}
+                onMealSlotFocus={handleMealGoToTimeline}
+                onMealGoToTimeline={handleMealGoToTimeline}
               />
             </div>
           ) : null}
@@ -2421,7 +2681,9 @@ export function Itinerary() {
           activity={dragReorder.ghostActivity}
           index={
             dragReorder.ghostActivity
-              ? dayActivities.findIndex((a) => String(a.id) === String(dragReorder.ghostActivity.id))
+              ? dayRouteActivities.findIndex(
+                  (a) => String(a.id) === String(dragReorder.ghostActivity.id),
+                )
               : 0
           }
           style={

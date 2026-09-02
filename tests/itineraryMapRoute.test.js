@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import {
   apiRouteMatchesVisibleActivities,
   buildVisibleActivityIdSet,
+  filterMarkersByVisibleIds,
   mergeAccommodationsForMap,
   resolveLegPolylinePositions,
   resolveMapMarkers,
@@ -46,12 +47,36 @@ describe('itineraryMapRoute helpers', () => {
     )
   })
 
-  it('resolveMapMarkers usa só apiMarkers (Geoapify) e ignora coords locais do agente', () => {
+  it('filterMarkersByVisibleIds remove markers fora do conjunto visível', () => {
+    const visible = buildVisibleActivityIdSet([{ id: 'a1' }])
+    const filtered = filterMarkersByVisibleIds(
+      [{ activityId: 'a1' }, { activityId: 'meal-1' }],
+      visible,
+    )
+    assert.deepEqual(filtered.map((m) => m.activityId), ['a1'])
+  })
+
+  it('resolveMapMarkers usa só apiMarkers (Geoapify) e filtra por visíveis', () => {
     const local = [{ activityId: 'a1', coords: [1, 2] }]
     const api = [{ activityId: 'a1', coords: [48.85, 2.35] }]
+    const visible = buildVisibleActivityIdSet([{ id: 'a1' }])
     assert.deepEqual(
-      resolveMapMarkers({ localMarkers: local, apiMarkers: api, routeRestricted: false }),
+      resolveMapMarkers({
+        localMarkers: local,
+        apiMarkers: api,
+        routeRestricted: false,
+        visibleActivityIds: visible,
+      }),
       api,
+    )
+    assert.deepEqual(
+      resolveMapMarkers({
+        localMarkers: local,
+        apiMarkers: [{ activityId: 'a1' }, { activityId: 'meal-1' }],
+        routeRestricted: false,
+        visibleActivityIds: visible,
+      }),
+      [{ activityId: 'a1' }],
     )
     assert.deepEqual(
       resolveMapMarkers({ localMarkers: local, apiMarkers: [], routeRestricted: false }),
@@ -72,6 +97,7 @@ describe('itineraryMapRoute helpers', () => {
         apiMarkers: api,
         routeRestricted: true,
         apiRouteSafeForPreview: true,
+        visibleActivityIds: visible,
       }),
       api,
     )

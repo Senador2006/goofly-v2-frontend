@@ -122,7 +122,7 @@ export function collectStep1Errors(destinations, { requirePlaceSelection = false
     if (spanDays > MAX_TRIP_DURATION_DAYS) {
       errors.push({
         code: 'trip_span_exceeded',
-        message: `A viagem pode ter no máximo 1 mês e meio (${MAX_TRIP_DURATION_DAYS} dias). A sua está com ${spanDays} dias — ajuste as datas para continuar.`,
+        message: `A viagem pode ter no máximo ${MAX_TRIP_DURATION_DAYS} dias. A sua está com ${spanDays} dias — ajuste as datas para continuar.`,
         field: 'span',
       })
     }

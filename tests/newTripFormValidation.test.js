@@ -63,7 +63,7 @@ describe('newTripStep1Validation', () => {
     assert.ok(errors.some((e) => e.code === 'dest_sequence'))
   })
 
-  it('rejeita span acima 45 dias', () => {
+  it('rejeita span acima 15 dias', () => {
     const start = '2030-01-01'
     const end = '2030-02-20' // 51 dias
     const errors = collectStep1Errors([

@@ -28,7 +28,8 @@ import axios from 'axios'
  */
 
 const DEFAULT_TIMEOUT_MS = 30_000
-export const AI_TIMEOUT_MS = 180_000
+/** Chamadas ao otimizador/TDV/documentos — alinhado a AGENT_TIMEOUT_MS / PROXY_TIMEOUT_MS (200s). */
+export const AI_TIMEOUT_MS = 200_000
 /** GET /itinerary pode ser payload grande em 4G — acima do default, abaixo da IA. */
 export const ITINERARY_TIMEOUT_MS = 60_000
 

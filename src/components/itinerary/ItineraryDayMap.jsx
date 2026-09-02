@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import L from 'leaflet'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import { tripService } from '../../services/tripService'
@@ -26,7 +26,14 @@ import {
 import { resolveAccommodationLegDisplay } from '../../utils/itineraryAccommodationLegs'
 import { getRealPlaceImageUrls } from '../../utils/placeImages'
 import { MapAccommodationRoutesToggle } from './MapAccommodationRoutesToggle'
+import { MapMealsToggle } from './MapMealsToggle'
 import { ItineraryMapStopPopup } from './ItineraryMapStopPopup'
+import { ItineraryMealMapPopup } from './ItineraryMealMapPopup'
+import {
+  buildMealMapMarkerHtml,
+  resolveMealRouteAnchor,
+  resolveVisibleMealMarkers,
+} from '../../utils/itineraryMealHelpers'
 
 /**
  * RF04.3 — Mapa do roteiro por dia: pins numerados + rota (Geoapify pelo nome).
@@ -99,6 +106,181 @@ function MapInvalidateSize({ watch }) {
   return null
 }
 
+/** Fecha destaque de refeição ao tocar no mapa (área vazia), sem bloquear pan/zoom. */
+function DismissMealPopupOnMapClick({ active, onDismiss }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!active || typeof onDismiss !== 'function') return undefined
+    const handler = () => onDismiss()
+    map.on('click', handler)
+    return () => {
+      map.off('click', handler)
+    }
+  }, [map, active, onDismiss])
+  return null
+}
+
+const MOBILE_MEAL_POPUP_TRACK_PADDING = {
+  top: 76,
+  right: 52,
+  bottom: 32,
+  left: 20,
+}
+
+/**
+ * Pan suave no mobile: centraliza pin + balão na área útil do mapa.
+ * Mede a distância real pin→balão e ancora o topo do card abaixo dos toggles.
+ */
+function trackMapToMealPopup(map, marker) {
+  if (!map || !marker) return
+
+  const popup = marker.getPopup?.()
+  const popupEl = popup?.getElement?.()
+  const latlng = marker.getLatLng?.()
+  if (!popupEl || !latlng) return
+
+  const mapSize = map.getSize()
+  if (!mapSize?.x || !mapSize?.y) return
+
+  const padding = MOBILE_MEAL_POPUP_TRACK_PADDING
+  const mapEl = map.getContainer()
+  const mapRect = mapEl.getBoundingClientRect()
+  const popupRect = popupEl.getBoundingClientRect()
+  const markerPoint = map.latLngToContainerPoint(latlng)
+
+  const popupTop = popupRect.top - mapRect.top
+  const markerToPopupTop = popupTop - markerPoint.y
+
+  const safeCenterX = padding.left + (mapSize.x - padding.left - padding.right) / 2
+  const desiredPopupTop = padding.top + 6
+  const targetMarkerY = desiredPopupTop - markerToPopupTop
+
+  const dx = markerPoint.x - safeCenterX
+  const dy = markerPoint.y - targetMarkerY
+
+  if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+  map.panBy([dx, dy], { animate: true, duration: 0.35 })
+}
+
+/** @param {boolean} isMobileMap */
+function getMealPopupProps(isMobileMap) {
+  if (isMobileMap) {
+    return {
+      className: 'goofly-map-stop-popup goofly-map-stop-popup--mobile goofly-map-stop-popup--meal',
+      autoPan: false,
+      offset: [0, -14],
+    }
+  }
+  return {
+    className: 'goofly-map-stop-popup goofly-map-stop-popup--meal',
+    autoPan: true,
+    autoPanPadding: [24, 24],
+    offset: [0, -4],
+  }
+}
+
+/**
+ * Pin de refeição com balão Leaflet ancorado ao marcador.
+ * Abre o popup ao receber destaque (ex.: "Ver no mapa" na timeline).
+ */
+function MealMapMarker({
+  marker,
+  idx,
+  isHighlighted,
+  isMobileMap = false,
+  popupProps,
+  onMealSlotFocus,
+  onMealGoToTimeline,
+  onMealViewOptions,
+  onMealDismiss,
+}) {
+  const map = useMap()
+  const markerRef = useRef(null)
+  const skipCloseDismissRef = useRef(false)
+
+  const trackPopup = useCallback(() => {
+    if (!isMobileMap) return
+    const run = () => trackMapToMealPopup(map, markerRef.current)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(run)
+    })
+    // Pin cresce ao destacar — reajusta após o layout estabilizar.
+    window.setTimeout(run, 130)
+  }, [isMobileMap, map])
+
+  useEffect(() => {
+    if (!isHighlighted) return undefined
+    const leafletMarker = markerRef.current
+    if (!leafletMarker) return undefined
+    skipCloseDismissRef.current = true
+    const openTimer = setTimeout(() => {
+      leafletMarker.openPopup()
+      setTimeout(() => {
+        skipCloseDismissRef.current = false
+      }, 150)
+    }, 60)
+    return () => clearTimeout(openTimer)
+  }, [isHighlighted])
+
+  const armSkipCloseDismiss = () => {
+    skipCloseDismissRef.current = true
+    setTimeout(() => {
+      skipCloseDismissRef.current = false
+    }, 150)
+  }
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={marker.coords}
+      icon={getMealIcon(marker.mealType, isHighlighted)}
+      zIndexOffset={400}
+      eventHandlers={{
+        click: () => {
+          armSkipCloseDismiss()
+          if (typeof onMealSlotFocus === 'function') {
+            onMealSlotFocus(marker.slotKey)
+          }
+        },
+        popupopen: () => {
+          trackPopup()
+        },
+        popupclose: () => {
+          if (skipCloseDismissRef.current || typeof onMealDismiss !== 'function') return
+          onMealDismiss()
+        },
+      }}
+    >
+      <Popup
+        className={popupProps.className}
+        offset={popupProps.offset}
+        autoPan={popupProps.autoPan}
+        autoPanPadding={popupProps.autoPanPadding}
+      >
+        <ItineraryMealMapPopup
+          mealType={marker.mealType}
+          name={marker.name}
+          startTime={marker.startTime}
+          mealPosition={marker.mealPosition}
+          optionCount={marker.optionCount}
+          onViewInTimeline={
+            typeof onMealGoToTimeline === 'function'
+              ? () => onMealGoToTimeline(marker.slotKey)
+              : typeof onMealSlotFocus === 'function'
+                ? () => onMealSlotFocus(marker.slotKey)
+                : null
+          }
+          onViewOptions={
+            typeof onMealViewOptions === 'function'
+              ? () => onMealViewOptions(marker.slotKey)
+              : null
+          }
+        />
+      </Popup>
+    </Marker>
+  )
+}
+
 function getNumberedIcon(order, isHighlighted) {
   const size = isHighlighted ? 30 : 26
   const fontSize = isHighlighted ? 12 : 11
@@ -113,8 +295,25 @@ function getNumberedIcon(order, isHighlighted) {
       '</div>',
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
-    popupAnchor: [0, -10],
+    popupAnchor: [0, -(size / 2 + 4)],
   })
+}
+
+/** @param {boolean} isMobileMap */
+function getActivityPopupProps(isMobileMap) {
+  if (isMobileMap) {
+    return {
+      className: 'goofly-map-stop-popup goofly-map-stop-popup--mobile',
+      autoPan: false,
+      offset: [0, 0],
+    }
+  }
+  return {
+    className: 'goofly-map-stop-popup',
+    autoPan: true,
+    autoPanPadding: [24, 24],
+    offset: [0, -4],
+  }
 }
 
 function getHomeIcon(homeOrder = null) {
@@ -134,6 +333,19 @@ function getHomeIcon(homeOrder = null) {
   })
 }
 
+function getMealIcon(mealType, isHighlighted) {
+  const size = isHighlighted ? 30 : 26
+  return L.divIcon({
+    className: isHighlighted
+      ? 'goofly-itinerary-marker goofly-itinerary-marker--meal goofly-itinerary-marker--tracked'
+      : 'goofly-itinerary-marker goofly-itinerary-marker--meal',
+    html: buildMealMapMarkerHtml(mealType, isHighlighted),
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 2)],
+  })
+}
+
 function shouldFetchDayRoute(activities, accommodations) {
   const named = countNamedActivities(activities)
   if (named >= 2) return true
@@ -143,6 +355,16 @@ function shouldFetchDayRoute(activities, accommodations) {
 
 function parseApiMarkers(routeData) {
   return (routeData?.markers || [])
+    .map((m) => {
+      const coords = readLatLng(m)
+      if (!coords) return null
+      return { ...m, coords }
+    })
+    .filter(Boolean)
+}
+
+function parseApiMealMarkers(routeData) {
+  return (routeData?.mealMarkers || [])
     .map((m) => {
       const coords = readLatLng(m)
       if (!coords) return null
@@ -166,16 +388,27 @@ export function ItineraryDayMap({
   tripId,
   day,
   activities = [],
+  timelineActivities = [],
   accommodations = [],
+  mealSlots = [],
+  selectedMealIds = {},
   disabled = false,
   routeRestricted = false,
   highlightedIndex = null,
+  highlightedMealSlotKey = null,
   preferLocalRoute = false,
   className = '',
   ariaLabel = 'Mapa do roteiro do dia',
   mapLayoutWatch,
   showAccommodationRoutes = true,
   onShowAccommodationRoutesChange,
+  showMealsOnMap = true,
+  onShowMealsOnMapChange,
+  onMealViewOptions,
+  onMealSlotFocus,
+  onMealGoToTimeline,
+  onMealDismiss,
+  isMobileMap = false,
 }) {
   const [routeData, setRouteData] = useState(null)
   const [routeDay, setRouteDay] = useState(null)
@@ -184,8 +417,27 @@ export function ItineraryDayMap({
   const fetchGenRef = useRef(0)
 
   const activitySig = useMemo(() => activitiesCacheSignature(activities), [activities])
+  const mealSig = useMemo(
+    () =>
+      activitiesCacheSignature(
+        (mealSlots || []).flatMap((slot) => slot.options || []),
+      ),
+    [mealSlots],
+  )
+  const mealSelectionSig = useMemo(
+    () =>
+      Object.entries(selectedMealIds || {})
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}:${v}`)
+        .join('|'),
+    [selectedMealIds],
+  )
   const accSig = useMemo(() => accommodationsCacheSignature(accommodations), [accommodations])
   const dayNum = day != null ? Number(day) : null
+  const allMealActivities = useMemo(
+    () => (mealSlots || []).flatMap((slot) => slot.options || []),
+    [mealSlots],
+  )
 
   useEffect(() => {
     if (!tripId) {
@@ -212,11 +464,12 @@ export function ItineraryDayMap({
 
     const key = preferLocalRoute
       ? draftCacheKey(tripId, dayNum, accSig)
-      : cacheKey(tripId, dayNum, routeRestricted ? activitySig : '', accSig)
+      : cacheKey(tripId, dayNum, routeRestricted ? `${activitySig}|${mealSig}|${mealSelectionSig}` : `${mealSig}|${mealSelectionSig}`, accSig)
     const cached = routeCacheByKey.get(key)
+    const combinedSig = `${activitySig}|${mealSig}|${mealSelectionSig}`
     if (
       cached &&
-      cached.activitySig === activitySig &&
+      cached.activitySig === combinedSig &&
       routeDataMatchesDay(cached.data, dayNum)
     ) {
       setRouteData(cached.data)
@@ -245,6 +498,7 @@ export function ItineraryDayMap({
             day: dayNum,
             profile: ROUTE_PROFILE,
             activities,
+            mealActivities: allMealActivities,
           })
         : tripService.getItineraryRoute(tripId, { day: dayNum, profile: ROUTE_PROFILE })
 
@@ -257,7 +511,7 @@ export function ItineraryDayMap({
             setRouteDay(null)
             return
           }
-          routeCacheByKey.set(key, { data, activitySig })
+          routeCacheByKey.set(key, { data, activitySig: combinedSig })
           setRouteData(data)
           setRouteDay(dayNum)
         })
@@ -279,7 +533,7 @@ export function ItineraryDayMap({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [tripId, dayNum, activitySig, accSig, disabled, preferLocalRoute, routeRestricted, activities, accommodations])
+  }, [tripId, dayNum, activitySig, mealSig, mealSelectionSig, accSig, disabled, preferLocalRoute, routeRestricted, activities, accommodations, allMealActivities])
 
   const routePayloadValid =
     routeData != null && routeDay === dayNum && routeDataMatchesDay(routeData, dayNum)
@@ -304,9 +558,48 @@ export function ItineraryDayMap({
         apiMarkers,
         routeRestricted,
         apiRouteSafeForPreview,
+        visibleActivityIds,
       }),
-    [localMarkers, apiMarkers, routeRestricted, apiRouteSafeForPreview],
+    [localMarkers, apiMarkers, routeRestricted, apiRouteSafeForPreview, visibleActivityIds],
   )
+
+  const apiMealMarkers = useMemo(
+    () => (routePayloadValid ? parseApiMealMarkers(routeData) : []),
+    [routePayloadValid, routeData],
+  )
+
+  const visibleMealMarkers = useMemo(
+    () => resolveVisibleMealMarkers(apiMealMarkers, mealSlots, selectedMealIds),
+    [apiMealMarkers, mealSlots, selectedMealIds],
+  )
+
+  const mealLegPolylines = useMemo(() => {
+    if (!showMealsOnMap || visibleMealMarkers.length === 0 || markers.length === 0) return []
+    const orderedDay =
+      timelineActivities.length > 0 ? timelineActivities : activities
+    const markerByActivityId = new Map(
+      markers.map((m) => [String(m.activityId ?? ''), m]),
+    )
+    return visibleMealMarkers
+      .map((mealMarker) => {
+        const slot = (mealSlots || []).find((s) => s.slotKey === mealMarker.slotKey)
+        const mealAct =
+          slot?.options?.find(
+            (o) => String(o.id ?? o.placeId ?? o.place_id ?? '') === String(mealMarker.activityId),
+          ) ?? null
+        const anchorAct = mealAct
+          ? resolveMealRouteAnchor(orderedDay, mealAct)
+          : null
+        const anchorId = String(anchorAct?.id ?? anchorAct?.placeId ?? anchorAct?.place_id ?? '')
+        const anchorMarker = markerByActivityId.get(anchorId)
+        if (!anchorMarker?.coords || !mealMarker.coords) return null
+        return {
+          slotKey: mealMarker.slotKey,
+          positions: [anchorMarker.coords, mealMarker.coords],
+        }
+      })
+      .filter(Boolean)
+  }, [showMealsOnMap, visibleMealMarkers, markers, mealSlots, timelineActivities, activities])
 
   /** Galeria por activityId — mesmas URLs reais usadas nos cards do roteiro. */
   const imagesByActivityId = useMemo(() => {
@@ -388,15 +681,26 @@ export function ItineraryDayMap({
     markers.length >= 1 &&
     typeof onShowAccommodationRoutesChange === 'function'
 
+  const showMealsToggle =
+    !disabled &&
+    (mealSlots?.length ?? 0) > 0 &&
+    typeof onShowMealsOnMapChange === 'function'
+
   const allCoords = useMemo(() => {
     const coords = markers.map((m) => m.coords)
+    if (showMealsOnMap) {
+      for (const meal of visibleMealMarkers) {
+        if (meal?.coords) coords.push(meal.coords)
+      }
+    }
     for (const acc of mapAccommodations) {
       if (acc?.coords) coords.push(acc.coords)
     }
     return coords
-  }, [markers, mapAccommodations])
+  }, [markers, mapAccommodations, showMealsOnMap, visibleMealMarkers])
 
-  const hasMapContent = markers.length > 0 || mapAccommodations.length > 0
+  const hasMapContent =
+    markers.length > 0 || mapAccommodations.length > 0 || visibleMealMarkers.length > 0
   const showHomeNumbers = mapAccommodations.length > 1
 
   const distanceLabel = formatRouteDistance(
@@ -486,6 +790,21 @@ export function ItineraryDayMap({
             }}
           />
         ) : null}
+        {showMealsOnMap
+          ? mealLegPolylines.map((leg) => (
+              <Polyline
+                key={`meal-leg-${leg.slotKey}`}
+                positions={leg.positions}
+                pathOptions={{
+                  color: '#f59e0b',
+                  weight: 3,
+                  opacity: 0.75,
+                  dashArray: '6 8',
+                  className: 'goofly-meal-leg-polyline',
+                }}
+              />
+            ))
+          : null}
         {mapAccommodations.map((acc, accIdx) => (
           <Marker
             key={acc.id || `home-${acc.coords[0]}-${acc.coords[1]}-${accIdx}`}
@@ -510,17 +829,19 @@ export function ItineraryDayMap({
         ))}
         {markers.map((m, idx) => {
           const imageUrls = imagesByActivityId.get(String(m.activityId ?? '')) || []
+          const isHighlighted = highlightedIndex === idx
+          const popupProps = getActivityPopupProps(isMobileMap)
           return (
             <Marker
               key={m.activityId || `${m.coords[0]}-${m.coords[1]}-${idx}`}
               position={m.coords}
-              icon={getNumberedIcon(m.order ?? idx + 1, highlightedIndex === idx)}
+              icon={getNumberedIcon(m.order ?? idx + 1, isHighlighted)}
             >
               <Popup
-                className="goofly-map-stop-popup"
-                offset={[0, -4]}
-                autoPan
-                autoPanPadding={[24, 24]}
+                className={popupProps.className}
+                offset={popupProps.offset}
+                autoPan={popupProps.autoPan}
+                autoPanPadding={popupProps.autoPanPadding}
               >
                 <ItineraryMapStopPopup
                   order={m.order ?? idx + 1}
@@ -532,6 +853,30 @@ export function ItineraryDayMap({
             </Marker>
           )
         })}
+        {showMealsOnMap
+          ? visibleMealMarkers.map((m, idx) => {
+              const mealPopupProps = getMealPopupProps(isMobileMap)
+              return (
+                <MealMapMarker
+                  key={m.activityId || `meal-${m.coords[0]}-${m.coords[1]}-${idx}`}
+                  marker={m}
+                  idx={idx}
+                  isMobileMap={isMobileMap}
+                  isHighlighted={
+                    highlightedMealSlotKey != null && highlightedMealSlotKey === m.slotKey
+                  }
+                  popupProps={mealPopupProps}
+                  onMealSlotFocus={onMealSlotFocus}
+                  onMealGoToTimeline={onMealGoToTimeline}
+                  onMealViewOptions={onMealViewOptions}
+                  onMealDismiss={onMealDismiss}
+                />
+              )
+            })
+          : null}
+        {isMobileMap && highlightedMealSlotKey != null && typeof onMealDismiss === 'function' ? (
+          <DismissMealPopupOnMapClick active onDismiss={onMealDismiss} />
+        ) : null}
         <FitBoundsToPoints coords={allCoords} />
         <MapInvalidateSize
           watch={`${mapInstanceKey}-${markers.length}-${activitySig}-${mapLayoutWatch ?? ''}`}
@@ -546,12 +891,17 @@ export function ItineraryDayMap({
         </div>
       ) : null}
 
-      {showAccommodationRoutesToggle ? (
-        <div className="absolute top-3 right-3 z-[500]">
-          <MapAccommodationRoutesToggle
-            checked={showAccommodationRoutes}
-            onChange={onShowAccommodationRoutesChange}
-          />
+      {showAccommodationRoutesToggle || showMealsToggle ? (
+        <div className="absolute top-3 right-3 z-[500] flex flex-col items-end gap-2">
+          {showMealsToggle ? (
+            <MapMealsToggle checked={showMealsOnMap} onChange={onShowMealsOnMapChange} />
+          ) : null}
+          {showAccommodationRoutesToggle ? (
+            <MapAccommodationRoutesToggle
+              checked={showAccommodationRoutes}
+              onChange={onShowAccommodationRoutesChange}
+            />
+          ) : null}
         </div>
       ) : null}
 

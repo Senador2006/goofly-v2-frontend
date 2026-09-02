@@ -229,7 +229,7 @@ export function describeDateRangeViolation(iso, minIso, maxIso, options = {}) {
 }
 
 /** Limite de duração total da viagem (chegada do 1º destino → saída do último). */
-export const MAX_TRIP_DURATION_DAYS = 45
+export const MAX_TRIP_DURATION_DAYS = 15
 
 /**
  * Soma/subtrai dias em um calendário ISO (YYYY-MM-DD), sem fuso local.

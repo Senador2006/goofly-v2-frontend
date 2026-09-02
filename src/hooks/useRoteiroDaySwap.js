@@ -55,6 +55,9 @@ export function useRoteiroDaySwap({
   /** Tamanho do chip capturado no pointerdown, antes de qualquer re-render. */
   const pendingOriginRef = useRef(null)
   const dropLockRef = useRef(false)
+  const pointerIdRef = useRef(null)
+  const pointerCaptureElRef = useRef(null)
+  const captureTargetRef = useRef(null)
   const selectedDayRef = useRef(selectedDay)
   const onSwapRef = useRef(onSwap)
   const onSelectDayRef = useRef(onSelectDay)
@@ -89,6 +92,16 @@ export function useRoteiroDaySwap({
   }, [])
 
   const finishIdle = useCallback(() => {
+    if (pointerCaptureElRef.current != null && pointerIdRef.current != null) {
+      try {
+        pointerCaptureElRef.current.releasePointerCapture?.(pointerIdRef.current)
+      } catch {
+        /* ignore */
+      }
+    }
+    pointerIdRef.current = null
+    pointerCaptureElRef.current = null
+    captureTargetRef.current = null
     syncPhase('idle')
     draggingDayRef.current = null
     targetDayRef.current = null
@@ -191,7 +204,7 @@ export function useRoteiroDaySwap({
   )
 
   const startDragging = useCallback(
-    (day, clientX, clientY) => {
+    (day, clientX, clientY, captureTarget = null) => {
       const captured = pendingOriginRef.current
       const el = chipRefs.current.get(day)
       const fallback = el?.getBoundingClientRect()
@@ -214,6 +227,17 @@ export function useRoteiroDaySwap({
       syncPhase('dragging')
       document.body.classList.add('roteiro-day-swap-active')
       onSwapGestureStartRef.current?.()
+
+      const target = captureTarget ?? captureTargetRef.current
+      if (target?.el && target.pointerId != null) {
+        try {
+          target.el.setPointerCapture?.(target.pointerId)
+          pointerIdRef.current = target.pointerId
+          pointerCaptureElRef.current = target.el
+        } catch {
+          /* ignore */
+        }
+      }
 
       // Ghost centrado na mão primeiro; foco do roteiro vem logo em seguida.
       updateSwapMetrics(clientX, clientY)
@@ -272,26 +296,20 @@ export function useRoteiroDaySwap({
         pendingOriginRef.current = null
       }
 
-      event.preventDefault()
       dropLockRef.current = false
       setFocusReady(false)
       pendingDayRef.current = day
       setPendingDay(day)
       pointerStartRef.current = { x: event.clientX, y: event.clientY }
       lastPointerRef.current = { x: event.clientX, y: event.clientY }
+      captureTargetRef.current = { el: event.currentTarget, pointerId: event.pointerId }
       syncPhase('pending')
-
-      try {
-        event.currentTarget.setPointerCapture?.(event.pointerId)
-      } catch {
-        /* ignore */
-      }
 
       clearHoldTimer()
       holdTimerRef.current = setTimeout(() => {
         if (phaseRef.current !== 'pending' || pendingDayRef.current !== day) return
         const { x, y } = lastPointerRef.current
-        startDragging(day, x, y)
+        startDragging(day, x, y, captureTargetRef.current)
       }, ROTEIRO_DAY_SWAP_HOLD_MS)
     },
     [canSwap, syncPhase, clearHoldTimer, clearFocusDelayTimer, startDragging, finishIdle, chipRefs],
@@ -309,10 +327,21 @@ export function useRoteiroDaySwap({
       if (phaseRef.current === 'pending') {
         const dx = event.clientX - pointerStartRef.current.x
         const dy = event.clientY - pointerStartRef.current.y
+
+        // Deslize horizontal antes do hold = scroll da fileira, não troca de dia.
+        if (Math.abs(dx) > 4 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+          clearHoldTimer()
+          pendingDayRef.current = null
+          setPendingDay(null)
+          captureTargetRef.current = null
+          syncPhase('idle')
+          return
+        }
+
         if (Math.hypot(dx, dy) > ROTEIRO_DAY_SWAP_MOVE_START_PX) {
           const day = pendingDayRef.current
           clearHoldTimer()
-          if (day != null) startDragging(day, event.clientX, event.clientY)
+          if (day != null) startDragging(day, event.clientX, event.clientY, captureTargetRef.current)
         }
         return
       }
