@@ -27,7 +27,9 @@ test('sem barra mobile duplicada Roteiro/TDV/Docs', () => {
 })
 
 test('overlay de apagar: fixed, alerta vermelho e transição', () => {
-  assert.match(overlaySource, /fixed inset-0 z-\[100\]/)
+  assert.match(overlaySource, /fixed inset-0/)
+  assert.match(overlaySource, /z-\[1200\]/)
+  assert.match(overlaySource, /createPortal/)
   assert.match(overlaySource, /role="alertdialog"/)
   assert.match(overlaySource, /border-red-500/)
   assert.match(overlaySource, /transition-all duration-300/)

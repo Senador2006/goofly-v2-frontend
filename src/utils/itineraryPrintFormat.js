@@ -69,6 +69,8 @@ export function resolveActivityLinks(act) {
     act.bookingLink,
     act.reservationUrl,
     act.reservation_url,
+    act.googleMapsUrl,
+    act.google_maps_url,
   ]
   const seen = new Set()
   const links = []

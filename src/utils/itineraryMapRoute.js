@@ -21,14 +21,27 @@ export function apiRouteMatchesVisibleActivities(routeData, visibleIds) {
   })
 }
 
+/** Garante que markers da API respeitam paradas visíveis (exclui refeições da rota principal). */
+export function filterMarkersByVisibleIds(markers, visibleIds) {
+  if (!Array.isArray(markers) || markers.length === 0) return []
+  if (!(visibleIds instanceof Set) || visibleIds.size === 0) return markers
+  return markers.filter((m) => {
+    const id = String(m?.activityId ?? '')
+    return id && visibleIds.has(id)
+  })
+}
+
 export function resolveMapMarkers({
   localMarkers,
   apiMarkers,
   routeRestricted,
   apiRouteSafeForPreview = true,
+  visibleActivityIds,
 }) {
   if (routeRestricted && !apiRouteSafeForPreview) return []
-  if (Array.isArray(apiMarkers) && apiMarkers.length > 0) return apiMarkers
+  let markers = Array.isArray(apiMarkers) && apiMarkers.length > 0 ? apiMarkers : []
+  markers = filterMarkersByVisibleIds(markers, visibleActivityIds)
+  if (markers.length > 0) return markers
   return []
 }
 

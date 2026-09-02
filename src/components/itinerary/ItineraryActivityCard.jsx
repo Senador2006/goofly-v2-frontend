@@ -4,8 +4,8 @@ import { ItineraryStopMarker } from './ItineraryStopMarker'
 import { ItineraryActivityCardCompact } from './ItineraryActivityCardCompact'
 import { PlaceCardGallery } from './PlaceCardGallery'
 import {
-  googleMapsPlaceUrl,
   resolveActivityCoordinates,
+  resolveActivityGoogleMapsUrl,
 } from '../../utils/activityCoordinates'
 import { GooglePlaceAutocompleteField } from '../planning/GooglePlaceAutocompleteField'
 import { hasGoogleMapsApiKey } from '../../services/googleMapsPlacesLoader'
@@ -32,6 +32,7 @@ function activityNeedsTicket(act) {
 function sourceBadgeLabel(act) {
   const s = String(act.source || '').trim()
   if (s === 'tdv_like') return 'TDV'
+  if (s === 'ai_suggested') return 'IA'
   return null
 }
 
@@ -636,6 +637,7 @@ function CardBody({
 }) {
   const hasTicketBox = ticket.required || !!ticket.hint || ticket.links.length > 0
   const mapCoords = resolveActivityCoordinates(act)
+  const mapsHref = resolveActivityGoogleMapsUrl(act)
   return (
     <>
       <button
@@ -709,10 +711,10 @@ function CardBody({
                 <PlaceCardGallery place={act} variant="compact" />
               </div>
             ) : null}
-            {mapCoords ? (
+            {mapsHref ? (
               <div className="mt-4">
                 <a
-                  href={googleMapsPlaceUrl(mapCoords)}
+                  href={mapsHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline group"
@@ -725,9 +727,11 @@ function CardBody({
                   />
                   Ver no Google Maps
                 </a>
-                <p className="mt-1 font-mono text-[10px] text-text-secondary/85">
-                  {mapCoords.latitude.toFixed(6)}, {mapCoords.longitude.toFixed(6)}
-                </p>
+                {mapCoords ? (
+                  <p className="mt-1 font-mono text-[10px] text-text-secondary/85">
+                    {mapCoords.latitude.toFixed(6)}, {mapCoords.longitude.toFixed(6)}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {hasTicketBox ? (

@@ -102,27 +102,27 @@ describe('dateInput DD/MM/AAAA', () => {
     assert.equal(resolveEffectiveDateMin('2026-08-10', { disallowPast: false, now }), '2026-08-10')
   })
 
-  it('soma dias de calendário sem fuso e calcula teto de 45 dias', () => {
+  it('soma dias de calendário sem fuso e calcula teto de 15 dias', () => {
     assert.equal(addCalendarDaysIso('2026-08-20', 1), '2026-08-21')
     assert.equal(addCalendarDaysIso('2026-08-31', 1), '2026-09-01')
     assert.equal(addCalendarDaysIso('2026-12-31', 1), '2027-01-01')
-    assert.equal(tripSpanMaxDepartureIso('2026-08-01'), '2026-09-14')
+    assert.equal(tripSpanMaxDepartureIso('2026-08-01'), '2026-08-15')
     assert.equal(clampOrClearIso('2026-08-10', '2026-08-15', '2026-08-20'), '')
     assert.equal(clampOrClearIso('2026-08-18', '2026-08-15', '2026-08-20'), '2026-08-18')
   })
 
-  it('limita duração da viagem a 45 dias inclusivos', () => {
+  it('limita duração da viagem a 15 dias inclusivos', () => {
     assert.equal(countInclusiveCalendarDays('2026-08-01', '2026-08-01'), 1)
-    assert.equal(countInclusiveCalendarDays('2026-08-01', '2026-09-14'), 45)
-    assert.equal(countInclusiveCalendarDays('2026-08-01', '2026-09-15'), 46)
+    assert.equal(countInclusiveCalendarDays('2026-08-01', '2026-08-15'), 15)
+    assert.equal(countInclusiveCalendarDays('2026-08-01', '2026-08-16'), 16)
     assert.equal(
       tripSpanDayCount([
-        { arrivalDate: '2026-08-01', departureDate: '2026-08-20' },
-        { arrivalDate: '2026-08-20', departureDate: '2026-09-15' },
+        { arrivalDate: '2026-08-01', departureDate: '2026-08-10' },
+        { arrivalDate: '2026-08-10', departureDate: '2026-08-16' },
       ]),
-      46,
+      16,
     )
-    assert.ok(MAX_TRIP_DURATION_DAYS === 45)
+    assert.ok(MAX_TRIP_DURATION_DAYS === 15)
   })
 
   it('describeDateRangeViolation explica min/max', () => {
@@ -157,7 +157,7 @@ describe('formulários usam DateInput segmentado', () => {
     assert.doesNotMatch(newTrip, /type="date"/)
     assert.doesNotMatch(stay, /type="date"/)
     assert.match(step1, /não podem ser anteriores a hoje/)
-    assert.match(step1, /MAX_TRIP_DURATION_DAYS|1 mês e meio/)
+    assert.match(step1, /MAX_TRIP_DURATION_DAYS|no máximo/)
     assert.match(newTrip, /tryGoToStep/)
     assert.match(newTrip, /tripSpanMaxDepartureIso/)
   })

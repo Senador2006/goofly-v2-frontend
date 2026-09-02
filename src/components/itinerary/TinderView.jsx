@@ -85,6 +85,15 @@ function shouldRetryPrefetchOnEmpty(res, swipeCount = 0) {
   return placesIssued > swiped
 }
 
+/** Baralho vazio sem novas cartas free → paywall (10 swipes ou estoque/batches esgotados). */
+function shouldLatchFreeCapPaywall(res, swipeCount = 0) {
+  if (res?.tdvLimit?.unlocked) return false
+  if (isHardFreeCap(res, swipeCount)) return true
+  if (swipeCount >= FREE_CAP_MAX_PLACES) return true
+  if (res && !shouldRetryPrefetchOnEmpty(res, swipeCount)) return true
+  return false
+}
+
 function refillEligible(limit) {
   return Boolean(limit?.refillEligible)
 }
@@ -525,12 +534,21 @@ export function TinderView({
       if (hard && list.length === 0) clearTdvDeckSession(tripId)
       const sessionSwiped = res?.tdvLimit?.placesSwiped ?? swipeCount
       // `none` com orçamento de swipe restante: não latcheia — prefetch/retry rehidrata.
-      setDeckUnavailable(
+      if (
         list.length === 0 &&
-          !restoredFromSession &&
-          res.placesSource === 'none' &&
-          sessionSwiped >= FREE_CAP_MAX_PLACES
-      )
+        !restoredFromSession &&
+        shouldLatchFreeCapPaywall(res, sessionSwiped)
+      ) {
+        setFreeCapReached(true)
+        setDeckUnavailable(false)
+      } else {
+        setDeckUnavailable(
+          list.length === 0 &&
+            !restoredFromSession &&
+            res.placesSource === 'none' &&
+            sessionSwiped >= FREE_CAP_MAX_PLACES
+        )
+      }
       setCurrentIndex(0)
       setIntroReady(true)
       if (softRetry && !restoredFromSession) {
@@ -680,6 +698,29 @@ export function TinderView({
     if (!freeCapReached) setFreeCapLockWarnOpen(false)
   }, [freeCapReached])
 
+  // Corrige corrida: baralho vazio localmente com 10 swipes antes do discover refletir free_cap.
+  useEffect(() => {
+    if (!isActive || loading || finalizingTdv || freeCapReached) return
+    if (places.length > 0) return
+    const unlocked = Boolean(trip?.planning_unlocked_at ?? trip?.planningUnlockedAt)
+    if (unlocked) return
+    const localSwiped = likedPlaces.length + dislikedPlaces.length
+    if (localSwiped >= FREE_CAP_MAX_PLACES) {
+      freeCapSoftRetryRef.current = 0
+      setFreeCapReached(true)
+      setDeckUnavailable(false)
+    }
+  }, [
+    isActive,
+    loading,
+    finalizingTdv,
+    freeCapReached,
+    places.length,
+    likedPlaces.length,
+    dislikedPlaces.length,
+    trip,
+  ])
+
   // Antecipa o próximo lote quando o baralho encolheu (inclui baralho vazio — continuidade TDV).
   // Não aborta discover em voo por swipe: cleanup só marca cancelled; abort só em trip/unmount/finalize.
   const placesCount = places.length
@@ -735,6 +776,15 @@ export function TinderView({
       const swipeCount = likedNow.length + dislikedNow.length
       if (n !== 0) return
       if (res && !shouldRetryPrefetchOnEmpty(res, swipeCount)) {
+        if (shouldLatchFreeCapPaywall(res, swipeCount)) {
+          if (stillCurrent()) {
+            freeCapSoftRetryRef.current = 0
+            setFreeCapReached(true)
+            setDeckUnavailable(false)
+          }
+        } else if (stillCurrent()) {
+          setDeckUnavailable(true)
+        }
         return
       }
       if (prefetchEmptyAttemptsRef.current >= EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
@@ -779,12 +829,16 @@ export function TinderView({
             typeof res?.tdvLimit?.placesSwiped === 'number'
               ? res.tdvLimit.placesSwiped
               : likedNow.length + dislikedNow.length
-          if (swiped >= FREE_CAP_MAX_PLACES) {
-            setDeckUnavailable(true)
+          if (shouldLatchFreeCapPaywall(res, swiped)) {
+            freeCapSoftRetryRef.current = 0
+            setFreeCapReached(true)
+            setDeckUnavailable(false)
             return
           }
           if (shouldRetryPrefetchOnEmpty(res, swiped)) {
             scheduleEmptyRetry(res)
+          } else if (stillCurrent()) {
+            setDeckUnavailable(true)
           }
           return
         }

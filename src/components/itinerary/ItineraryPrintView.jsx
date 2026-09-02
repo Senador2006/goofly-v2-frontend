@@ -1,7 +1,15 @@
 import {
   groupActivitiesByDay,
   getIsoDateForDay,
+  sortDayActivities,
 } from '../../utils/itineraryDayHelpers'
+import {
+  buildDayTimelineItems,
+  filterRouteActivities,
+  formatMealTimeLabel,
+  getMealPositionLabel,
+  getMealTypeLabel,
+} from '../../utils/itineraryMealHelpers'
 import {
   formatIsoDatePt,
   formatTripDateRange,
@@ -70,8 +78,58 @@ export function ItineraryPrintView({
             </h2>
 
             <ol className="list-none m-0 p-0 space-y-4">
-              {dayActs.map((act, idx) => {
-                const title = resolveActivityTitle(act, idx)
+              {buildDayTimelineItems(sortDayActivities(dayActs)).map((item, idx) => {
+                if (item.type === 'mealSlot') {
+                  const mealLabel = getMealTypeLabel(item.mealType)
+                  const timeLabel = formatMealTimeLabel(item.startTime)
+                  return (
+                    <li
+                      key={`meal-${item.slotKey}`}
+                      className="break-inside-avoid-page pl-0 rounded-lg border border-dashed border-neutral-400 px-3 py-3 bg-neutral-50"
+                    >
+                      <p className="m-0 font-bold text-[11pt]">
+                        {mealLabel} · {timeLabel}
+                        <span className="font-normal text-[9pt] text-neutral-600">
+                          {' '}
+                          — sugestões de refeição
+                        </span>
+                      </p>
+                      <ul className="m-0 mt-2 p-0 list-none space-y-2">
+                        {item.options.map((opt, optIdx) => {
+                          const title = resolveActivityTitle(opt, optIdx)
+                          const description = resolveActivityDescription(opt)
+                          const position = getMealPositionLabel(
+                            opt.mealPosition ?? opt.meal_position ?? opt.position,
+                          )
+                          const links = resolveActivityLinks(opt)
+                          return (
+                            <li key={String(opt.id || `${item.slotKey}-${optIdx}`)} className="text-[10pt]">
+                              <p className="m-0 font-semibold">{title}</p>
+                              {position ? (
+                                <p className="m-0 mt-0.5 text-[9pt] text-neutral-600">{position}</p>
+                              ) : null}
+                              {description ? (
+                                <p className="m-0 mt-1 text-[9pt] text-neutral-800 whitespace-pre-wrap">
+                                  {description}
+                                </p>
+                              ) : null}
+                              {links.length > 0 ? (
+                                <p className="m-0 mt-1 text-[9pt] text-neutral-700 break-all">
+                                  Maps: {links.join(' · ')}
+                                </p>
+                              ) : null}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </li>
+                  )
+                }
+
+                const act = item.act
+                const routeActs = filterRouteActivities(dayActs)
+                const stopIndex = routeActs.findIndex((a) => String(a.id) === String(act.id))
+                const title = resolveActivityTitle(act, stopIndex >= 0 ? stopIndex : idx)
                 const schedule = resolveActivitySchedule(act)
                 const description = resolveActivityDescription(act)
                 const links = resolveActivityLinks(act)
@@ -80,7 +138,7 @@ export function ItineraryPrintView({
                   <li key={String(act.id || `${day}-${idx}`)} className="break-inside-avoid-page pl-0">
                     <div className="flex gap-3 items-baseline">
                       <span className="shrink-0 w-8 h-8 rounded-full bg-[#fec641] text-black text-[10pt] font-black flex items-center justify-center">
-                        {idx + 1}
+                        {stopIndex >= 0 ? stopIndex + 1 : idx + 1}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="m-0 font-bold text-[11pt]">{title}</p>

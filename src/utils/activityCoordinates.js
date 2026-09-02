@@ -74,3 +74,23 @@ export function googleMapsPlaceUrl(c) {
   const q = `${c.latitude.toFixed(6)},${c.longitude.toFixed(6)}`
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`
 }
+
+function normalizeHttpUrl(raw) {
+  if (raw == null) return ''
+  let u = String(raw).trim()
+  if (!u) return ''
+  u = u.replace(/[.,;:!?)\]}>]+$/, '').replace(/^<+|>+$/g, '')
+  return /^https?:\/\//i.test(u) ? u : ''
+}
+
+/** Prefere `googleMapsUrl` do agente; fallback por coordenadas. @param {unknown} act */
+export function resolveActivityGoogleMapsUrl(act) {
+  if (!act || typeof act !== 'object') return null
+  const o = /** @type {Record<string, unknown>} */ (act)
+  const fromAgent = normalizeHttpUrl(
+    o.googleMapsUrl ?? o.google_maps_url ?? o.mapsUrl ?? o.maps_url,
+  )
+  if (fromAgent) return fromAgent
+  const coords = resolveActivityCoordinates(act)
+  return coords ? googleMapsPlaceUrl(coords) : null
+}

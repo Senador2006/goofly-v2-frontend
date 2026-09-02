@@ -84,6 +84,7 @@ test('TinderView: prefetch retry condicionado a tdvLimit', () => {
 test('TinderView: paywall free_cap com Gerar roteiro e Desbloquear', () => {
   assert.match(tinderViewSource, /freeCapReached/)
   assert.match(tinderViewSource, /isHardFreeCap/)
+  assert.match(tinderViewSource, /shouldLatchFreeCapPaywall/)
   assert.match(tinderViewSource, /FREE_CAP_SOFT_RETRY_MAX/)
   assert.match(tinderViewSource, /placesSource === 'free_cap'/)
   assert.match(tinderViewSource, /tdv\.free_cap_generate/)
