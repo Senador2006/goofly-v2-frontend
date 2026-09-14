@@ -1,14 +1,18 @@
 import api, { AI_TIMEOUT_MS } from './api'
 
 export const documentService = {
-  getChecklist: (tripId) =>
+  getChecklist: (tripId, { force = false } = {}) =>
     api
-      .post('/documents/checklist', { tripId }, { timeout: AI_TIMEOUT_MS })
-      .then((res) => res.body.data || []),
-  getLuggageRecommendations: (tripId) =>
+      .post('/documents/checklist', { tripId, force: force === true }, { timeout: AI_TIMEOUT_MS })
+      .then((res) => res.body.data || null),
+  getLuggageRecommendations: (tripId, { force = false } = {}) =>
     api
-      .post('/documents/luggage/recommendations', { tripId }, { timeout: AI_TIMEOUT_MS })
-      .then((res) => res.body.data || []),
-  validate: (data) =>
-    api.post('/documents/validate', data).then((res) => res.body.data),
+      .post(
+        '/documents/luggage/recommendations',
+        { tripId, force: force === true },
+        { timeout: AI_TIMEOUT_MS }
+      )
+      .then((res) => res.body.data || null),
+  validate: (tripId, data = {}) =>
+    api.post('/documents/validate', { ...data, tripId }).then((res) => res.body.data),
 }

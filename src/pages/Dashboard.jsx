@@ -5,8 +5,8 @@ import { Icon } from '../components/common/Icon'
 import { Button } from '../components/common/Button'
 import { LoadingSpinner } from '../components/common/LoadingSpinner'
 import { dashboardService } from '../services/dashboardService'
-import { memoryService } from '../services/memoryService'
 import { formatDate } from '../utils/formatters'
+import { safeImageUrl } from '../utils/safeImageUrl'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { PLACEHOLDER_COVER } from '../constants/placeholders'
 
@@ -18,36 +18,29 @@ export function Dashboard() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    let cancelled = false
     const load = async () => {
       try {
         setError(null)
+        // Uma chamada: overview já traz recent_memories (sem N+1 no client).
         const overviewData = await dashboardService.getOverview().catch(() => null)
+        if (cancelled) return
         setOverview(overviewData)
-
-        const trips = overviewData?.recent_trips || []
-        const memoryResults = await Promise.all(
-          trips.slice(0, 2).map(async (t) => {
-            try {
-              const mems = await memoryService.getByTrip(t.id)
-              if (!mems?.[0]) return null
-              const year = new Date(mems[0].created_at || Date.now()).getFullYear().toString().slice(-2)
-              return {
-                ...mems[0],
-                tripLabel: `${t.first_destination || 'Viagem'} '${year}`,
-              }
-            } catch {
-              return null
-            }
-          })
+        setRecentMemories(
+          Array.isArray(overviewData?.recent_memories) ? overviewData.recent_memories : []
         )
-        setRecentMemories(memoryResults.filter(Boolean))
       } catch (err) {
-        setError(err.response?.data?.error?.message || 'Erro ao carregar dashboard')
+        if (!cancelled) {
+          setError(err.response?.data?.error?.message || 'Erro ao carregar dashboard')
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     load()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   if (loading) return <LoadingSpinner />
@@ -62,9 +55,12 @@ export function Dashboard() {
 
   const nextTrip = overview?.next_trip
   const daysUntil = overview?.days_until_trip ?? nextTrip?.days_until
-  const firstDest = nextTrip
-    ? { city: nextTrip.first_destination, country: nextTrip.country }
-    : null
+  const destCity = String(nextTrip?.first_destination || '').trim() || null
+  const destCountry = String(nextTrip?.country || '').trim() || null
+  const destinationLabel =
+    destCity && destCountry
+      ? `${destCity}, ${destCountry}`
+      : destCity || destCountry || 'Destino a definir'
   const dateRange =
     nextTrip?.arrival_date && nextTrip?.departure_date
       ? `${formatDate(nextTrip.arrival_date)} – ${formatDate(nextTrip.departure_date)}`
@@ -92,7 +88,7 @@ export function Dashboard() {
           </Link>
           <Link to="/discover">
             <Button variant="hero-light">
-              Explorar Destinos
+              Abrir Tinder de Viagens
             </Button>
           </Link>
         </div>
@@ -117,19 +113,16 @@ export function Dashboard() {
               />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-text-secondary uppercase tracking-wider mb-1">
-                  EM {daysUntil ?? 12} DIAS
+                  {daysUntil != null ? `EM ${daysUntil} DIAS` : 'DATAS A DEFINIR'}
                 </p>
                 <h3 className="text-xl font-bold text-foreground dark:text-white truncate">
-                  {firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Tokyo, Japan'}
+                  {destinationLabel}
                 </h3>
-                <p className="text-sm text-text-secondary mt-1">{dateRange}</p>
-                <div className="flex items-center justify-between gap-3 mt-4 flex-wrap">
-                  <div className="flex -space-x-2">
-                    <div className="size-8 rounded-full bg-surface-light dark:bg-surface-dark border-2 border-white dark:border-card-dark flex items-center justify-center text-xs font-bold">
-                      +2
-                    </div>
-                  </div>
-                  <Link to={`/trips/${nextTrip.id}/itinerary`} className="ml-auto shrink-0">
+                {dateRange ? (
+                  <p className="text-sm text-text-secondary mt-1">{dateRange}</p>
+                ) : null}
+                <div className="flex items-center justify-end gap-3 mt-4 flex-wrap">
+                  <Link to={`/trips/${nextTrip.id}/itinerary`} className="shrink-0">
                     <Button variant="primary" size="sm">
                       Ver viagem
                     </Button>
@@ -164,19 +157,24 @@ export function Dashboard() {
                 recentMemories.length > 0 ? 'grid-cols-3' : 'grid-cols-1 max-w-[140px]'
               }`}
             >
-              {recentMemories.slice(0, 2).map((mem, i) => (
-                <Link
-                  key={mem.id ?? i}
-                  to="/memories"
-                  className="aspect-square rounded-xl bg-center bg-cover overflow-hidden group"
-                  style={{
-                    backgroundImage: `url(${mem.photo_url || mem.image_url})`,
-                  }}
-                >
-                  <Icon name="add_a_photo" className="text-2xl" />
-                  <span className="text-xs font-bold">Adicionar</span>
-                </Link>
-              ))}
+              {recentMemories.slice(0, 2).map((mem, i) => {
+                const src = safeImageUrl(mem.photo_url || mem.image_url)
+                return (
+                  <Link
+                    key={mem.id ?? i}
+                    to="/memories"
+                    className="aspect-square rounded-xl bg-center bg-cover overflow-hidden group"
+                    style={
+                      src
+                        ? { backgroundImage: `url("${src.replace(/"/g, '')}")` }
+                        : undefined
+                    }
+                  >
+                    <Icon name="add_a_photo" className="text-2xl" />
+                    <span className="text-xs font-bold">Adicionar</span>
+                  </Link>
+                )
+              })}
             </div>
           ) : (
             <div className="py-8 text-center">

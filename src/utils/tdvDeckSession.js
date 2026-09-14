@@ -1,7 +1,12 @@
 /**
  * Backup síncrono do baralho TDV no sessionStorage.
- * Cobre navegação SPA (sair da viagem → outro lugar do site → voltar):
- * o POST cache-skipped pode ser cancelado no unmount, mas o baralho local permanece.
+ *
+ * Precedência no restore (`TinderView.loadPlaces`):
+ *  1. **sessionStorage** (este módulo) — sync; cobre SPA (sair → voltar) mesmo se o POST abortar
+ *  2. **POST cache-skipped** (servidor) — via sendBeacon / fetch keepalive / Axios
+ *     (`tdvCacheSkippedKeepalive` + `placeService.cacheSkippedPlaces`)
+ *
+ * No unload, `releaseDeckToServer` grava aqui **antes** do POST best-effort.
  */
 
 const PREFIX = 'goofly:tdv-deck:'

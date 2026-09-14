@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import L from 'leaflet'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
 
 /**
  * Mapa real para RF08.3 — substitui o placeholder de `left:%` por tiles OSM.

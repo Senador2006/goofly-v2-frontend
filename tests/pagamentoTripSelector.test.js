@@ -14,7 +14,13 @@ describe('U-10 — Pagamento com seletor de viagem', () => {
   const pagamento = read('src/pages/Pagamento.jsx')
   const tripSelector = read('src/components/trips/TripSelector.jsx')
   const documentos = read('src/components/itinerary/DocumentosView.jsx')
-  const itinerary = read('src/pages/Itinerary.jsx')
+  const itineraryShell = [
+    read('src/pages/Itinerary.jsx'),
+    read('src/components/itinerary/ItineraryHeader.jsx'),
+    read('src/components/itinerary/ItineraryRoteiroTimeline.jsx'),
+    read('src/components/itinerary/ItineraryStayAnchor.jsx'),
+    read('src/components/itinerary/ItineraryPremiumBanner.jsx'),
+  ].join('\n')
 
   it('Pagamento carrega lista de viagens via tripService.getTrips', () => {
     assert.match(pagamento, /tripService\.getTrips\(\)/)
@@ -81,7 +87,9 @@ describe('U-10 — Pagamento com seletor de viagem', () => {
   })
 
   it('Itinerary mantém links com tripId na URL', () => {
-    const matches = itinerary.match(/\/pagamento\?tripId=\$\{encodeURIComponent\(tripId\)\}/g)
+    const matches = itineraryShell.match(
+      /\/pagamento\?tripId=\$\{encodeURIComponent\((?:page\.)?tripId(?:\s*\|\|\s*'')?\)\}/g,
+    )
     assert.ok(matches && matches.length >= 3, 'Itinerary deve manter links /pagamento?tripId=')
   })
 

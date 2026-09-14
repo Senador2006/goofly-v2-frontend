@@ -150,16 +150,26 @@ describe('dateInput DD/MM/AAAA', () => {
 describe('formulários usam DateInput segmentado', () => {
   it('NewTrip e hospedagem não usam input type=date', () => {
     const newTrip = readFileSync(join(root, 'src/pages/NewTrip.jsx'), 'utf8')
+    const destinations = readFileSync(
+      join(root, 'src/components/planning/newTrip/NewTripStepDestinations.jsx'),
+      'utf8',
+    )
+    const stepTabs = readFileSync(
+      join(root, 'src/components/planning/newTrip/NewTripStepTabs.jsx'),
+      'utf8',
+    )
+    const wizard = readFileSync(join(root, 'src/hooks/useNewTripWizard.js'), 'utf8')
     const stay = readFileSync(join(root, 'src/components/planning/AccommodationStayForm.jsx'), 'utf8')
     const step1 = readFileSync(join(root, 'src/utils/newTripStep1Validation.js'), 'utf8')
-    assert.match(newTrip, /<DateInput/)
+    assert.match(destinations, /<DateInput/)
     assert.match(stay, /<DateInput/)
-    assert.doesNotMatch(newTrip, /type="date"/)
+    assert.doesNotMatch(destinations, /type="date"/)
     assert.doesNotMatch(stay, /type="date"/)
+    assert.doesNotMatch(newTrip, /type="date"/)
     assert.match(step1, /não podem ser anteriores a hoje/)
     assert.match(step1, /MAX_TRIP_DURATION_DAYS|no máximo/)
-    assert.match(newTrip, /tryGoToStep/)
-    assert.match(newTrip, /tripSpanMaxDepartureIso/)
+    assert.match(stepTabs, /tryGoToStep/)
+    assert.match(wizard, /tripSpanMaxDepartureIso/)
   })
 
   it('DateInput sanitiza dia/mês e reporta datas fora do intervalo', () => {

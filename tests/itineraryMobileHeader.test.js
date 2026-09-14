@@ -6,6 +6,12 @@ import { dirname, join } from 'node:path'
 
 const base = join(dirname(fileURLToPath(import.meta.url)), '..')
 const itinerarySource = readFileSync(join(base, 'src/pages/Itinerary.jsx'), 'utf8')
+const headerSource = readFileSync(join(base, 'src/components/itinerary/ItineraryHeader.jsx'), 'utf8')
+const overlaysSource = readFileSync(
+  join(base, 'src/components/itinerary/ItineraryGlobalOverlays.jsx'),
+  'utf8',
+)
+const dayViewSource = readFileSync(join(base, 'src/hooks/useItineraryDayView.js'), 'utf8')
 const indexCssSource = readFileSync(join(base, 'src/index.css'), 'utf8')
 const panelSource = readFileSync(
   join(base, 'src/components/itinerary/RoteiroModifyPanel.jsx'),
@@ -27,34 +33,34 @@ describe('Itinerary mobile header', () => {
   })
 
   it('selo Plano completo mostra o texto', () => {
-    assert.match(itinerarySource, /aria-label="Plano completo"/)
-    assert.match(itinerarySource, /text-\[10px\] font-bold uppercase tracking-wide[\s\S]*?Plano completo/)
-    assert.doesNotMatch(itinerarySource, /hidden lg:inline text-\[10px\][\s\S]*?Plano completo/)
+    assert.match(headerSource, /aria-label="Plano completo"/)
+    assert.match(headerSource, /text-\[10px\] font-bold uppercase tracking-wide[\s\S]*?Plano completo/)
+    assert.doesNotMatch(headerSource, /hidden lg:inline text-\[10px\][\s\S]*?Plano completo/)
   })
 
   it('Editar roteiro mostra o texto; exportar é ícone com folha PDF', () => {
-    assert.match(itinerarySource, /aria-label="Editar roteiro"/)
-    assert.match(itinerarySource, /<Icon name="edit" className="text-base max-lg:text-sm" \/>\s*Editar roteiro/)
-    assert.match(itinerarySource, /aria-label="Exportar"/)
-    assert.match(itinerarySource, /<Icon name="ios_share"/)
-    assert.match(itinerarySource, /max-lg:ml-auto/)
-    assert.match(itinerarySource, /<ItineraryExportSheet/)
-    assert.match(itinerarySource, /canPrintItinerary[\s\S]*?hasFullAccess/)
-    assert.doesNotMatch(itinerarySource, /<span className="hidden lg:inline">Exportar PDF<\/span>/)
+    assert.match(headerSource, /aria-label="Editar roteiro"/)
+    assert.match(headerSource, /<Icon name="edit" className="text-base max-lg:text-sm" \/>\s*Editar roteiro/)
+    assert.match(headerSource, /aria-label="Exportar"/)
+    assert.match(headerSource, /<Icon name="ios_share"/)
+    assert.match(headerSource, /max-lg:ml-auto/)
+    assert.match(overlaysSource, /<ItineraryExportSheet/)
+    assert.match(dayViewSource, /canPrintItinerary:[\s\S]*?hasFullAccess/)
+    assert.doesNotMatch(headerSource, /<span className="hidden lg:inline">Exportar PDF<\/span>/)
   })
 
   it('chip de edição é curto no mobile', () => {
-    assert.match(itinerarySource, /<span className="lg:hidden">Editando<\/span>/)
+    assert.match(headerSource, /<span className="lg:hidden">Editando<\/span>/)
     assert.match(
-      itinerarySource,
+      headerSource,
       /<span className="hidden lg:inline">Editando — guarde ou cancele antes de mudar de aba<\/span>/,
     )
   })
 
   it('não mostra chip longo de modificar com curtidas no header', () => {
-    const header = itinerarySource.slice(
-      itinerarySource.indexOf('<header'),
-      itinerarySource.indexOf('</header>') + '</header>'.length,
+    const header = headerSource.slice(
+      headerSource.indexOf('<header'),
+      headerSource.indexOf('</header>') + '</header>'.length,
     )
     assert.doesNotMatch(header, /Modificando com curtidas/)
   })
@@ -70,9 +76,15 @@ describe('Itinerary mobile modify dock', () => {
 
   it('Itinerary monta dock no mobile e sidebar no lg+', () => {
     assert.match(itinerarySource, /layout="dock"/)
-    assert.match(itinerarySource, /layout="sidebar"/)
-    assert.match(itinerarySource, /likeReplace\.open && !isLgUp/)
-    assert.match(itinerarySource, /likeReplace\.open && isLgUp/)
+    assert.match(
+      readFileSync(join(base, 'src/components/itinerary/ItineraryRoteiroMapColumn.jsx'), 'utf8'),
+      /layout="sidebar"/,
+    )
+    assert.match(itinerarySource, /likeReplace\.open &&\s*!mapUi\.isLgUp/)
+    assert.match(
+      readFileSync(join(base, 'src/components/itinerary/ItineraryRoteiroMapColumn.jsx'), 'utf8'),
+      /likeReplace\.open && mapUi\.isLgUp/,
+    )
   })
 
   it('modify no mobile não usa split 42vh', () => {

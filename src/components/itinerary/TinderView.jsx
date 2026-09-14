@@ -1,38 +1,16 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { LoadingSpinner } from '../common/LoadingSpinner'
 import { EmptyState } from '../common/EmptyState'
-import { placeService } from '../../services/placeService'
 import { getPlaceCoverImageUrl, getPlaceVideoUrls } from '../../utils/placeImages'
-import { buildTdvLikePlaceData } from '../../utils/tdvLikePlaceData'
-import {
-  getTdvPlaceId,
-  likeEntryFromTdvPlace,
-  mergeTdvLikeListsById,
-} from '../../utils/tdvLikeEntry'
-import {
-  clearTdvDeckSession,
-  readTdvDeckSession,
-  saveTdvDeckSession,
-} from '../../utils/tdvDeckSession'
-import {
-  applyOptimisticDislike,
-  applyOptimisticLike,
-  isBenignUndoPersistError,
-  rollbackOptimisticDislike,
-  rollbackOptimisticLike,
-  shouldBlockSwipeGesture,
-  shouldCancelInFlightSwipe,
-  TDV_SWIPE_COOLDOWN_MS,
-  TDV_UNDO_COOLDOWN_MS,
-} from '../../utils/tdvOptimisticSwipe'
-import { placeContentKey } from '../../utils/tdvPlaceFingerprint'
-import { getRequestErrorMessage } from '../../utils/errors'
+import { getTdvPlaceId } from '../../utils/tdvLikeEntry'
 import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
+import { TdvPaywall } from './TdvPaywall'
+import { useTdvDeck } from '../../hooks/useTdvDeck'
+import { useTdvSwipe } from '../../hooks/useTdvSwipe'
 
 function getPlaceId(p) {
   return getTdvPlaceId(p)
@@ -50,52 +28,6 @@ function videoLinkLabel(url) {
   } catch {
     return 'Link'
   }
-}
-
-/** Antecipa prefetch com ~1 lote de folga (3–5 cartas); nunca esperar baralho zerar. */
-const PREFETCH_WHEN_REMAINING_AT_MOST = 5
-/** Teto de cartas no baralho local (espelha TDV_CACHE_MAX do servidor). */
-const DECK_MAX_PLACES = 15
-/** Retentativas quando o baralho esvazia aguardando resposta do agente (máx. 3; n8n já retornou vazio → sem retry). */
-const EMPTY_DECK_PREFETCH_MAX_ATTEMPTS = 3
-const EMPTY_DECK_PREFETCH_RETRY_MS = 2000
-/** free_cap com issued < 10: race de re-cache — retry curto, não latchear paywall. */
-const FREE_CAP_SOFT_RETRY_MAX = 2
-const FREE_CAP_SOFT_RETRY_MS = 400
-const FREE_CAP_MAX_PLACES = 10
-
-function isHardFreeCap(res, swipeCount = 0) {
-  if (res?.placesSource !== 'free_cap') return false
-  // Paywall = 10 swipes (curtidas+descartes). Prefetch/issued sozinho não bloqueia.
-  const swiped = res?.tdvLimit?.placesSwiped
-  if (typeof swiped === 'number') return swiped >= FREE_CAP_MAX_PLACES
-  return swipeCount >= FREE_CAP_MAX_PLACES
-}
-
-/** Prefetch vazio/`none`: retry só se ainda há orçamento n8n ou issued recuperável. */
-function shouldRetryPrefetchOnEmpty(res, swipeCount = 0) {
-  const limit = res?.tdvLimit
-  if (!limit || limit.unlocked) return true
-  const swiped = typeof limit.placesSwiped === 'number' ? limit.placesSwiped : swipeCount
-  if (swiped >= FREE_CAP_MAX_PLACES) return false
-  const batchesUsed = Number(limit.batchesUsed) || 0
-  const freeMaxBatches = Number(limit.freeMaxBatches) || 2
-  if (refillEligible(limit) || batchesUsed < freeMaxBatches) return true
-  const placesIssued = Number(limit.placesIssued) || 0
-  return placesIssued > swiped
-}
-
-/** Baralho vazio sem novas cartas free → paywall (10 swipes ou estoque/batches esgotados). */
-function shouldLatchFreeCapPaywall(res, swipeCount = 0) {
-  if (res?.tdvLimit?.unlocked) return false
-  if (isHardFreeCap(res, swipeCount)) return true
-  if (swipeCount >= FREE_CAP_MAX_PLACES) return true
-  if (res && !shouldRetryPrefetchOnEmpty(res, swipeCount)) return true
-  return false
-}
-
-function refillEligible(limit) {
-  return Boolean(limit?.refillEligible)
 }
 
 function tdvIntroStorageKey(tripId) {
@@ -161,18 +93,10 @@ export function TinderView({
   warnTdvLockOnGenerate = false,
 }) {
   const t = useT()
-  const navigate = useNavigate()
   const isPostUnlock = tdvMode === 'postUnlock'
-  const [places, setPlaces] = useState([])
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [totalLikes, setTotalLikes] = useState(0)
-  const [likedPlaces, setLikedPlaces] = useState([])
-  const [dislikedPlaces, setDislikedPlaces] = useState([])
-  const [loading, setLoading] = useState(false)
   const [introAcknowledged, setIntroAcknowledged] = useState(() =>
     isPostUnlock ? readModifyIntroAcknowledged(tripId) : readIntroAcknowledged(tripId),
   )
-  const [introReady, setIntroReady] = useState(false)
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const [sheetDragY, setSheetDragY] = useState(0)
   const [sheetDragging, setSheetDragging] = useState(false)
@@ -181,52 +105,82 @@ export function TinderView({
   const sheetPanelRef = useRef(null)
   const sheetDismissingRef = useRef(false)
   const sheetDismissTimerRef = useRef(null)
-  const [prefetchLoading, setPrefetchLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [swipeFeedback, setSwipeFeedback] = useState(null)
-  /** Pilha LIFO: desfazer só a última curtida/descarte (espelha o servidor). */
-  const [undoStack, setUndoStack] = useState([])
-  const [undoNotice, setUndoNotice] = useState(null)
   const [finalizeConfirmOpen, setFinalizeConfirmOpen] = useState(false)
   const [balloonLockWarnOpen, setBalloonLockWarnOpen] = useState(false)
   const [panelLockWarnOpen, setPanelLockWarnOpen] = useState(false)
   const [freeCapLockWarnOpen, setFreeCapLockWarnOpen] = useState(false)
-  /** Lock anti double-tap de like/dislike — undo NÃO usa este lock. */
-  const swipeLockRef = useRef(false)
-  const swipeLockTimerRef = useRef(null)
-  const undoLockRef = useRef(false)
-  const undoLockTimerRef = useRef(null)
-  const undoStackRef = useRef(undoStack)
-  /** placeId → { type: 'like'|'dislike', cancelled: boolean } enquanto a API do swipe não terminou. */
-  const pendingSwipeRef = useRef(new Map())
   const finalizeConfirmRef = useRef(null)
 
-  const acquireSwipeLock = useCallback(() => {
-    if (shouldBlockSwipeGesture(swipeLockRef.current)) return false
-    swipeLockRef.current = true
-    if (swipeLockTimerRef.current != null) window.clearTimeout(swipeLockTimerRef.current)
-    swipeLockTimerRef.current = window.setTimeout(() => {
-      swipeLockRef.current = false
-      swipeLockTimerRef.current = null
-    }, TDV_SWIPE_COOLDOWN_MS)
-    return true
+  const replaceUndoStackBridgeRef = useRef(null)
+  const replaceUndoStackBridge = useCallback((next) => {
+    replaceUndoStackBridgeRef.current?.(next)
   }, [])
 
-  const acquireUndoLock = useCallback(() => {
-    if (shouldBlockSwipeGesture(undoLockRef.current)) return false
-    undoLockRef.current = true
-    if (undoLockTimerRef.current != null) window.clearTimeout(undoLockTimerRef.current)
-    undoLockTimerRef.current = window.setTimeout(() => {
-      undoLockRef.current = false
-      undoLockTimerRef.current = null
-    }, TDV_UNDO_COOLDOWN_MS)
-    return true
-  }, [])
+  const {
+    places,
+    setPlaces,
+    placesRef,
+    currentIndex,
+    setCurrentIndex,
+    totalLikes,
+    setTotalLikes,
+    likedPlaces,
+    setLikedPlaces,
+    dislikedPlaces,
+    setDislikedPlaces,
+    loading,
+    introReady,
+    error,
+    setError,
+    placesSource,
+    deckUnavailable,
+    setDeckUnavailable,
+    freeCapReached,
+    paidBatchCapReached,
+    loadPlaces,
+    handleRetryDeck,
+    sessionDeckBaselineRef,
+    consumedSinceSessionRef,
+  } = useTdvDeck({
+    tripId,
+    trip,
+    isActive,
+    finalizingTdv,
+    replaceUndoStack: replaceUndoStackBridge,
+  })
 
-  const replaceUndoStack = useCallback((next) => {
-    undoStackRef.current = next
-    setUndoStack(next)
-  }, [])
+  const currentPlace = places[currentIndex]
+  const placeVideoLinks = useMemo(
+    () => (currentPlace ? getPlaceVideoUrls(currentPlace) : []),
+    [currentPlace]
+  )
+
+  const {
+    swipeFeedback,
+    undoStack,
+    undoNotice,
+    replaceUndoStack,
+    handleLike,
+    handleDislike,
+    handleUndo,
+  } = useTdvSwipe({
+    tripId,
+    finalizingTdv,
+    onItineraryUpdate,
+    currentPlace,
+    totalLikes,
+    placesRef,
+    setPlaces,
+    setLikedPlaces,
+    setDislikedPlaces,
+    setTotalLikes,
+    setCurrentIndex,
+    setError,
+    setDeckUnavailable,
+    sessionDeckBaselineRef,
+    consumedSinceSessionRef,
+  })
+  replaceUndoStackBridgeRef.current = replaceUndoStack
 
   const SHEET_DISMISS_PX = 88
   const SHEET_DISMISS_MS = 340
@@ -337,601 +291,23 @@ export function TinderView({
     endSheetHeaderDrag(e, { cancelled: true })
   }
 
-  const prefetchInFlightRef = useRef(false)
-  /** Tamanho do baralho logo após o último `discoverSession` (ignora append de prefetch). */
-  const sessionDeckBaselineRef = useRef(0)
-  /** Após like/dislike que remove carta; volta a false no próximo session load ou undo que restaura o baseline. */
-  const consumedSinceSessionRef = useRef(false)
-  const loadGenRef = useRef(0)
-  const loadAbortRef = useRef(null)
-  const prefetchGenRef = useRef(0)
-  const prefetchAbortRef = useRef(null)
-  const prefetchEmptyAttemptsRef = useRef(0)
-  const freeCapSoftRetryRef = useRef(0)
-  const freeCapSoftRetryTimerRef = useRef(null)
-  const [emptyDeckRetryTick, setEmptyDeckRetryTick] = useState(0)
-  const [placesSource, setPlacesSource] = useState(null)
-  const [deckUnavailable, setDeckUnavailable] = useState(false)
-  const [freeCapReached, setFreeCapReached] = useState(false)
-
-  const placesRef = useRef(places)
-  const tripIdRef = useRef(tripId)
-  const likedPlacesRef = useRef(likedPlaces)
-  const dislikedPlacesRef = useRef(dislikedPlaces)
-  placesRef.current = places
-  tripIdRef.current = tripId
-  likedPlacesRef.current = likedPlaces
-  dislikedPlacesRef.current = dislikedPlaces
-
-  const releaseDeckToServer = useCallback(async (targetTripId = tripIdRef.current, opts = {}) => {
-    const deck = placesRef.current
-    if (!targetTripId || deck.length === 0) return
-    // Sync primeiro: sobrevive a navegação SPA mesmo se o POST for abortado.
-    saveTdvDeckSession(targetTripId, deck)
-    try {
-      await placeService.cacheSkippedPlaces(targetTripId, deck, {
-        keepalive: Boolean(opts.keepalive),
-      })
-    } catch {
-      // best-effort: cartas não consumidas voltam ao cache no servidor
-    }
-  }, [])
-  const currentPlace = places[currentIndex]
-  const placeVideoLinks = useMemo(
-    () => (currentPlace ? getPlaceVideoUrls(currentPlace) : []),
-    [currentPlace]
-  )
-
-  // Mantém backup do baralho a cada mudança (troca de rota SPA / remount).
-  // Não limpa no mount com places=[] — isso apagaria o backup antes do loadPlaces.
-  const hadDeckRef = useRef(false)
-  useEffect(() => {
-    if (!tripId) return
-    if (places.length > 0) {
-      hadDeckRef.current = true
-      saveTdvDeckSession(tripId, places)
-    } else if (hadDeckRef.current && consumedSinceSessionRef.current) {
-      clearTdvDeckSession(tripId)
-      hadDeckRef.current = false
-    }
-  }, [tripId, places])
-
-  const applyFreeCapFromResponse = useCallback((res, listLength, swipeCount = 0) => {
-    if (listLength > 0) {
-      freeCapSoftRetryRef.current = 0
-      setFreeCapReached(false)
-      return { hard: false, softRetry: false }
-    }
-    if (res?.placesSource !== 'free_cap') {
-      freeCapSoftRetryRef.current = 0
-      setFreeCapReached(false)
-      return { hard: false, softRetry: false }
-    }
-    const swiped = res?.tdvLimit?.placesSwiped ?? swipeCount
-    if (swiped < FREE_CAP_MAX_PLACES) {
-      // Prefetch/issued esgotado sem 10 swipes — não é paywall.
-      setFreeCapReached(false)
-      if (freeCapSoftRetryRef.current >= FREE_CAP_SOFT_RETRY_MAX) {
-        return { hard: false, softRetry: false }
-      }
-      freeCapSoftRetryRef.current += 1
-      return { hard: false, softRetry: true }
-    }
-    if (isHardFreeCap(res, swipeCount)) {
-      freeCapSoftRetryRef.current = 0
-      setFreeCapReached(true)
-      return { hard: true, softRetry: false }
-    }
-    setFreeCapReached(false)
-    return { hard: false, softRetry: false }
-  }, [])
-
-  const loadPlaces = useCallback(async () => {
-    if (!tripId) {
-      setLoading(false)
-      return
-    }
-    loadAbortRef.current?.abort()
-    if (freeCapSoftRetryTimerRef.current) {
-      clearTimeout(freeCapSoftRetryTimerRef.current)
-      freeCapSoftRetryTimerRef.current = null
-    }
-    const ac = new AbortController()
-    loadAbortRef.current = ac
-    const gen = ++loadGenRef.current
-    prefetchEmptyAttemptsRef.current = 0
-
-    const localDeck = readTdvDeckSession(tripId)
-    // Preferir baralho local (free e pago): ao sair da viagem o agente unlocked
-    // devolveria um lote novo e apagaria o ponto onde o usuário parou.
-    if (localDeck.length > 0) {
-      const restoredFromSession = true
-      sessionDeckBaselineRef.current = localDeck.length
-      consumedSinceSessionRef.current = false
-      hadDeckRef.current = true
-      setPlaces(localDeck)
-      replaceUndoStack([])
-      setPlacesSource(restoredFromSession ? 'cache' : null)
-      setFreeCapReached(false)
-      setDeckUnavailable(false)
-      setCurrentIndex(0)
-      setIntroReady(true)
-      setLoading(false)
-      setError(null)
-      placeService
-        .getTdvSummary(tripId)
-        .then((summary) => {
-          if (gen !== loadGenRef.current) return
-          const likedFromRes = Array.isArray(summary.likedPlaces) ? summary.likedPlaces : []
-          const dislikedFromRes = Array.isArray(summary.dislikedPlaces)
-            ? summary.dislikedPlaces
-            : []
-          const likesCount = summary.likesCount ?? likedFromRes.length
-          if (consumedSinceSessionRef.current) {
-            setLikedPlaces((prev) => mergeTdvLikeListsById(likedFromRes, prev))
-            setDislikedPlaces((prev) => mergeTdvLikeListsById(dislikedFromRes, prev))
-            setTotalLikes((prev) => Math.max(Number(prev) || 0, likesCount))
-            return
-          }
-          setLikedPlaces(likedFromRes)
-          setDislikedPlaces(dislikedFromRes)
-          setTotalLikes(likesCount)
-        })
-        .catch(() => {})
-      return
-    }
-
-    setLoading(true)
-    setIntroReady(false)
-    setError(null)
-    try {
-      const res = await placeService.discoverSession(tripId, undefined, { signal: ac.signal })
-      if (gen !== loadGenRef.current) return
-
-      const likedFromRes = Array.isArray(res.likedPlaces) ? res.likedPlaces : []
-      const dislikedFromRes = Array.isArray(res.dislikedPlaces) ? res.dislikedPlaces : []
-      const swipedIds = new Set(
-        [...likedFromRes, ...dislikedFromRes]
-          .map((p) => String(p?.placeId || p?.place_id || p?.id || '').trim())
-          .filter(Boolean)
-      )
-
-      const localDeck = readTdvDeckSession(tripId).filter((p) => {
-        const id = String(getPlaceId(p) || '').trim()
-        return id && !swipedIds.has(id)
-      })
-      const serverList = Array.isArray(res.places) ? res.places : []
-
-      // Preferir baralho local (free e pago): ao sair da viagem o agente unlocked
-      // devolveria um lote novo e apagaria o ponto onde o usuário parou.
-      let list
-      let restoredFromSession = false
-      if (localDeck.length > 0) {
-        list = localDeck
-        restoredFromSession = true
-        placeService.cacheSkippedPlaces(tripId, localDeck).catch(() => {})
-        saveTdvDeckSession(tripId, localDeck)
-      } else {
-        list = serverList
-        if (list.length > 0) saveTdvDeckSession(tripId, list)
-        else clearTdvDeckSession(tripId)
-      }
-
-      sessionDeckBaselineRef.current = list.length
-      consumedSinceSessionRef.current = false
-      setPlaces(list)
-      replaceUndoStack([])
-      setTotalLikes(res.totalLikes ?? 0)
-      setLikedPlaces(likedFromRes)
-      setDislikedPlaces(dislikedFromRes)
-      setPlacesSource(restoredFromSession ? 'cache' : res.placesSource ?? null)
-      const swipeCount = likedFromRes.length + dislikedFromRes.length
-      const { softRetry, hard } = applyFreeCapFromResponse(
-        restoredFromSession ? { ...res, placesSource: 'cache' } : res,
-        list.length,
-        swipeCount
-      )
-      if (hard && list.length === 0) clearTdvDeckSession(tripId)
-      const sessionSwiped = res?.tdvLimit?.placesSwiped ?? swipeCount
-      // `none` com orçamento de swipe restante: não latcheia — prefetch/retry rehidrata.
-      if (
-        list.length === 0 &&
-        !restoredFromSession &&
-        shouldLatchFreeCapPaywall(res, sessionSwiped)
-      ) {
-        setFreeCapReached(true)
-        setDeckUnavailable(false)
-      } else {
-        setDeckUnavailable(
-          list.length === 0 &&
-            !restoredFromSession &&
-            res.placesSource === 'none' &&
-            sessionSwiped >= FREE_CAP_MAX_PLACES
-        )
-      }
-      setCurrentIndex(0)
-      setIntroReady(true)
-      if (softRetry && !restoredFromSession) {
-        freeCapSoftRetryTimerRef.current = window.setTimeout(() => {
-          freeCapSoftRetryTimerRef.current = null
-          if (gen === loadGenRef.current) loadPlaces()
-        }, FREE_CAP_SOFT_RETRY_MS)
-      }
-    } catch (err) {
-      if (gen !== loadGenRef.current) return
-      const aborted =
-        ac.signal.aborted ||
-        err.code === 'ERR_CANCELED' ||
-        err.name === 'CanceledError' ||
-        err.message === 'canceled'
-      if (aborted) return
-      // Rede falhou ao voltar: ainda tenta o backup local.
-      const localDeck = readTdvDeckSession(tripId)
-      if (localDeck.length > 0) {
-        setPlaces(localDeck)
-        setFreeCapReached(false)
-        setDeckUnavailable(false)
-        setCurrentIndex(0)
-        setIntroReady(true)
-        setError(null)
-        return
-      }
-      setIntroReady(false)
-      setError(getRequestErrorMessage(err))
-    } finally {
-      if (gen === loadGenRef.current) setLoading(false)
-    }
-  }, [tripId, applyFreeCapFromResponse, replaceUndoStack])
-
   const lastTripIdRef = useRef(null)
   useEffect(() => {
     if (lastTripIdRef.current !== tripId) {
-      const prevTripId = lastTripIdRef.current
-      if (prevTripId != null && placesRef.current.length > 0) {
-        releaseDeckToServer(prevTripId)
-      }
       lastTripIdRef.current = tripId
-      setPlaces([])
-      setCurrentIndex(0)
-      setLikedPlaces([])
-      setDislikedPlaces([])
-      setTotalLikes(0)
-      setPlacesSource(null)
-      setDeckUnavailable(false)
-      setFreeCapReached(false)
-      freeCapSoftRetryRef.current = 0
-      setError(null)
-      replaceUndoStack([])
       setIntroAcknowledged(
         isPostUnlock ? readModifyIntroAcknowledged(tripId) : readIntroAcknowledged(tripId),
       )
-      setIntroReady(false)
-      sessionDeckBaselineRef.current = 0
-      consumedSinceSessionRef.current = false
-      hadDeckRef.current = false
     }
-  }, [tripId, releaseDeckToServer, isPostUnlock, replaceUndoStack])
-
-  // Persistência ao sair da viagem / fechar aba: keepalive para o POST completar.
-  useEffect(() => {
-    if (!tripId) return undefined
-    return () => {
-      releaseDeckToServer(tripId, { keepalive: true })
-    }
-  }, [tripId, releaseDeckToServer])
-
-  useEffect(() => {
-    const onPageHide = () => {
-      releaseDeckToServer(undefined, { keepalive: true })
-    }
-    window.addEventListener('pagehide', onPageHide)
-    return () => window.removeEventListener('pagehide', onPageHide)
-  }, [releaseDeckToServer])
-
-  useEffect(() => {
-    return () => {
-      if (freeCapSoftRetryTimerRef.current) {
-        clearTimeout(freeCapSoftRetryTimerRef.current)
-        freeCapSoftRetryTimerRef.current = null
-      }
-      if (swipeLockTimerRef.current != null) {
-        window.clearTimeout(swipeLockTimerRef.current)
-        swipeLockTimerRef.current = null
-      }
-      if (undoLockTimerRef.current != null) {
-        window.clearTimeout(undoLockTimerRef.current)
-        undoLockTimerRef.current = null
-      }
-      swipeLockRef.current = false
-      undoLockRef.current = false
-    }
-  }, [])
-
-  const deckKey = places
-    .map((p) => getPlaceId(p))
-    .filter(Boolean)
-    .sort()
-    .join('|')
-  useEffect(() => {
-    prefetchEmptyAttemptsRef.current = 0
-  }, [deckKey])
-
-  const handleRetryDeck = useCallback(() => {
-    if (finalizingTdv || freeCapReached) return
-    prefetchEmptyAttemptsRef.current = 0
-    freeCapSoftRetryRef.current = 0
-    setDeckUnavailable(false)
-    loadPlaces()
-  }, [finalizingTdv, freeCapReached, loadPlaces])
-
-  // Carrega ao ativar a aba / mudar viagem. Com deck local, reexibe na hora (sem discover).
-  useEffect(() => {
-    if (!isActive || !tripId) return
-    // Fire-and-forget: acorda gateway/services no Render antes do discover (não bloqueia UI).
-    try {
-      const base = String(import.meta.env.VITE_API_GATEWAY_URL || '').replace(/\/api\/v1\/?$/, '').replace(/\/api\/?$/, '')
-      const healthUrl = base && base.startsWith('http') ? `${base}/health` : '/health'
-      void fetch(healthUrl, { method: 'GET', credentials: 'omit', cache: 'no-store' }).catch(() => {})
-    } catch {
-      /* ignore */
-    }
-    if (placesRef.current.length > 0) return
-    loadPlaces()
-  }, [isActive, tripId, loadPlaces])
-
-  // Após unlock do planejamento, busca novos batches além do limite free (uma vez).
-  const planningUnlockedAt = trip?.planning_unlocked_at ?? trip?.planningUnlockedAt ?? null
-  const unlockReloadDoneRef = useRef(false)
-  useEffect(() => {
-    unlockReloadDoneRef.current = false
-  }, [tripId])
-  useEffect(() => {
-    if (!isActive || !tripId || !planningUnlockedAt || !freeCapReached) return
-    if (unlockReloadDoneRef.current) return
-    unlockReloadDoneRef.current = true
-    setFreeCapReached(false)
-    freeCapSoftRetryRef.current = 0
-    loadPlaces()
-  }, [isActive, tripId, planningUnlockedAt, freeCapReached, loadPlaces])
+  }, [tripId, isPostUnlock])
 
   useEffect(() => {
     if (!freeCapReached) setFreeCapLockWarnOpen(false)
   }, [freeCapReached])
 
-  // Corrige corrida: baralho vazio localmente com 10 swipes antes do discover refletir free_cap.
-  useEffect(() => {
-    if (!isActive || loading || finalizingTdv || freeCapReached) return
-    if (places.length > 0) return
-    const unlocked = Boolean(trip?.planning_unlocked_at ?? trip?.planningUnlockedAt)
-    if (unlocked) return
-    const localSwiped = likedPlaces.length + dislikedPlaces.length
-    if (localSwiped >= FREE_CAP_MAX_PLACES) {
-      freeCapSoftRetryRef.current = 0
-      setFreeCapReached(true)
-      setDeckUnavailable(false)
-    }
-  }, [
-    isActive,
-    loading,
-    finalizingTdv,
-    freeCapReached,
-    places.length,
-    likedPlaces.length,
-    dislikedPlaces.length,
-    trip,
-  ])
-
-  // Antecipa o próximo lote quando o baralho encolheu (inclui baralho vazio — continuidade TDV).
-  // Não aborta discover em voo por swipe: cleanup só marca cancelled; abort só em trip/unmount/finalize.
-  const placesCount = places.length
-  const likedCount = likedPlaces.length
-  const dislikedCount = dislikedPlaces.length
-  useEffect(() => {
-    if (!isActive || !tripId || loading || deckUnavailable || freeCapReached || finalizingTdv) return
-    const n = placesCount
-    if (n >= DECK_MAX_PLACES) return
-    if (n > PREFETCH_WHEN_REMAINING_AT_MOST) return
-    const baseline = sessionDeckBaselineRef.current
-    if (n > 0 && baseline > 0 && n === baseline && !consumedSinceSessionRef.current) return
-    if (prefetchInFlightRef.current) return
-
-    const deckNow = placesRef.current
-    const likedNow = likedPlacesRef.current
-    const dislikedNow = dislikedPlacesRef.current
-    const excludePlaceIds = deckNow
-      .map(getPlaceId)
-      .map((id) => (id != null ? String(id).trim() : ''))
-      .filter(Boolean)
-    const existingIds = new Set(
-      [
-        ...excludePlaceIds,
-        ...likedNow.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
-        ...dislikedNow.map((p) => p?.placeId ?? p?.place_id ?? p?.id),
-      ]
-        .map((id) => (id != null ? String(id).trim() : ''))
-        .filter(Boolean)
-    )
-    const existingContentKeys = new Set(
-      [
-        ...deckNow.map(placeContentKey),
-        ...likedNow.map(placeContentKey),
-        ...dislikedNow.map(placeContentKey),
-      ].filter(Boolean)
-    )
-
-    const ac = new AbortController()
-    prefetchAbortRef.current = ac
-    const prefetchGen = ++prefetchGenRef.current
-    const startedTripId = tripId
-
-    prefetchInFlightRef.current = true
-    setPrefetchLoading(true)
-
-    const stillCurrent = () =>
-      prefetchGen === prefetchGenRef.current &&
-      tripIdRef.current === startedTripId &&
-      !ac.signal.aborted
-
-    const scheduleEmptyRetry = (res = null) => {
-      const swipeCount = likedNow.length + dislikedNow.length
-      if (n !== 0) return
-      if (res && !shouldRetryPrefetchOnEmpty(res, swipeCount)) {
-        if (shouldLatchFreeCapPaywall(res, swipeCount)) {
-          if (stillCurrent()) {
-            freeCapSoftRetryRef.current = 0
-            setFreeCapReached(true)
-            setDeckUnavailable(false)
-          }
-        } else if (stillCurrent()) {
-          setDeckUnavailable(true)
-        }
-        return
-      }
-      if (prefetchEmptyAttemptsRef.current >= EMPTY_DECK_PREFETCH_MAX_ATTEMPTS) {
-        if (stillCurrent()) setDeckUnavailable(true)
-        return
-      }
-      prefetchEmptyAttemptsRef.current += 1
-      window.setTimeout(() => {
-        if (stillCurrent()) {
-          setEmptyDeckRetryTick((t) => t + 1)
-        }
-      }, EMPTY_DECK_PREFETCH_RETRY_MS)
-    }
-
-    ;(async () => {
-      try {
-        const res = await placeService.discover(tripId, excludePlaceIds, { signal: ac.signal })
-        if (!stillCurrent()) return
-        const incoming = Array.isArray(res.places) ? res.places : []
-        if (res.placesSource) setPlacesSource(res.placesSource)
-
-        if (res.placesSource === 'free_cap') {
-          // Ainda há cartas locais: só para o prefetch — não mostra paywall.
-          if (n > 0) return
-          const swipeCount = likedNow.length + dislikedNow.length
-          const { hard, softRetry } = applyFreeCapFromResponse(res, incoming.length, swipeCount)
-          if (hard) return
-          if (softRetry) {
-            window.setTimeout(() => {
-              if (stillCurrent()) {
-                setEmptyDeckRetryTick((t) => t + 1)
-              }
-            }, FREE_CAP_SOFT_RETRY_MS)
-          }
-          return
-        }
-
-        if (res.placesSource === 'none') {
-          // Baralho ainda tem cartas: prefetch falhou mas usuário segue swipando.
-          if (n > 0) return
-          const swiped =
-            typeof res?.tdvLimit?.placesSwiped === 'number'
-              ? res.tdvLimit.placesSwiped
-              : likedNow.length + dislikedNow.length
-          if (shouldLatchFreeCapPaywall(res, swiped)) {
-            freeCapSoftRetryRef.current = 0
-            setFreeCapReached(true)
-            setDeckUnavailable(false)
-            return
-          }
-          if (shouldRetryPrefetchOnEmpty(res, swiped)) {
-            scheduleEmptyRetry(res)
-          } else if (stillCurrent()) {
-            setDeckUnavailable(true)
-          }
-          return
-        }
-
-        if (incoming.length === 0) {
-          scheduleEmptyRetry(res)
-          return
-        }
-
-        prefetchEmptyAttemptsRef.current = 0
-        freeCapSoftRetryRef.current = 0
-        let wouldAdd = 0
-        for (const p of incoming) {
-          const id = getPlaceId(p)
-          const sid = id != null ? String(id) : ''
-          const ckey = placeContentKey(p)
-          if (sid && existingIds.has(sid)) continue
-          if (ckey && existingContentKeys.has(ckey)) continue
-          if (sid || ckey) wouldAdd += 1
-        }
-        if (wouldAdd === 0) {
-          scheduleEmptyRetry(res)
-          return
-        }
-        setDeckUnavailable(false)
-        setPlaces((prev) => {
-          const room = DECK_MAX_PLACES - prev.length
-          if (room <= 0) return prev
-          const seen = new Set(
-            prev.map(getPlaceId).filter(Boolean).map((id) => String(id))
-          )
-          const seenContent = new Set(prev.map(placeContentKey).filter(Boolean))
-          for (const id of existingIds) seen.add(id)
-          for (const k of existingContentKeys) seenContent.add(k)
-          const out = [...prev]
-          for (const p of incoming) {
-            if (out.length >= DECK_MAX_PLACES) break
-            const id = getPlaceId(p)
-            const sid = id != null ? String(id) : ''
-            const ckey = placeContentKey(p)
-            if (sid && seen.has(sid)) continue
-            if (ckey && seenContent.has(ckey)) continue
-            if (sid) seen.add(sid)
-            if (ckey) seenContent.add(ckey)
-            out.push(p)
-          }
-          return out
-        })
-        if (typeof res.totalLikes === 'number') setTotalLikes(res.totalLikes)
-      } catch (err) {
-        if (ac.signal.aborted || !stillCurrent()) return
-        if (n === 0) scheduleEmptyRetry()
-      } finally {
-        if (prefetchAbortRef.current === ac) {
-          prefetchInFlightRef.current = false
-        }
-        if (prefetchGen === prefetchGenRef.current) {
-          setPrefetchLoading(false)
-        }
-      }
-    })()
-
-    // Sem cleanup abort/cancelled: swipe re-render não descarta discover em voo.
-  }, [
-    isActive,
-    tripId,
-    loading,
-    placesCount,
-    deckUnavailable,
-    freeCapReached,
-    emptyDeckRetryTick,
-    finalizingTdv,
-    applyFreeCapFromResponse,
-    likedCount,
-    dislikedCount,
-  ])
-
-  // Abort prefetch só ao trocar viagem ou desmontar (não a cada swipe).
-  useEffect(() => {
-    return () => {
-      prefetchAbortRef.current?.abort()
-      prefetchInFlightRef.current = false
-    }
-  }, [tripId])
-
-  // Congela o TDV durante finalize: aborta discover/prefetch em voo (não compete com n8n).
   useEffect(() => {
     if (!finalizingTdv) return
     setFinalizeConfirmOpen(false)
-    loadAbortRef.current?.abort()
-    prefetchAbortRef.current?.abort()
-    prefetchInFlightRef.current = false
-    setPrefetchLoading(false)
   }, [finalizingTdv])
 
   useEffect(() => {
@@ -960,305 +336,6 @@ export function TinderView({
     setFinalizeConfirmOpen(false)
     setBalloonLockWarnOpen(false)
   }, [])
-
-  const handleLike = useCallback(() => {
-    if (finalizingTdv || !currentPlace || !tripId) return
-    if (!acquireSwipeLock()) return
-    const placeId = getPlaceId(currentPlace)
-    if (!placeId) {
-      setError('Lugar sem ID válido')
-      return
-    }
-    const placeSnapshot = {
-      ...currentPlace,
-      id: currentPlace.id ?? placeId,
-      placeId: currentPlace.placeId ?? currentPlace.place_id ?? placeId,
-    }
-    const likeEntry = likeEntryFromTdvPlace(placeSnapshot)
-    setSwipeFeedback('like')
-    setUndoNotice(null)
-    setTimeout(() => setSwipeFeedback(null), 400)
-
-    setPlaces((prev) => {
-      const next = applyOptimisticLike(
-        { places: prev, likedPlaces: [], undoStack: [], totalLikes },
-        placeSnapshot,
-        placeId,
-        likeEntry
-      ).places
-      placesRef.current = next
-      return next
-    })
-    setLikedPlaces((prev) =>
-      applyOptimisticLike(
-        { places: [], likedPlaces: prev, undoStack: [], totalLikes },
-        placeSnapshot,
-        placeId,
-        likeEntry
-      ).likedPlaces
-    )
-    setUndoStack((prev) => {
-      const next = applyOptimisticLike(
-        { places: [], likedPlaces: [], undoStack: prev, totalLikes },
-        placeSnapshot,
-        placeId,
-        likeEntry
-      ).undoStack
-      undoStackRef.current = next
-      return next
-    })
-    setTotalLikes((prev) => (typeof prev === 'number' ? prev + 1 : prev))
-    consumedSinceSessionRef.current = true
-    setCurrentIndex(0)
-
-    pendingSwipeRef.current.set(placeId, { type: 'like', cancelled: false })
-    void (async () => {
-      try {
-        const placeData = buildTdvLikePlaceData(placeSnapshot)
-        const res = await placeService.like(tripId, placeId, placeData)
-        const pending = pendingSwipeRef.current.get(placeId)
-        pendingSwipeRef.current.delete(placeId)
-        if (shouldCancelInFlightSwipe(pending, 'like')) {
-          try {
-            const undoRes = await placeService.undoLike(tripId, placeId)
-            if (typeof undoRes?.likesUsedTotal === 'number') setTotalLikes(undoRes.likesUsedTotal)
-          } catch {
-            /* like pode não ter persistido; UI já desfeita */
-          }
-          return
-        }
-        if (typeof res?.likesUsedTotal === 'number') setTotalLikes(res.likesUsedTotal)
-        onItineraryUpdate?.()
-      } catch (err) {
-        const pending = pendingSwipeRef.current.get(placeId)
-        pendingSwipeRef.current.delete(placeId)
-        // Undo já restituiu a carta (ou cancelou): não mexer no baralho.
-        if (shouldCancelInFlightSwipe(pending, 'like')) return
-        if (placesRef.current.some((p) => getPlaceId(p) === placeId)) return
-        setSwipeFeedback(null)
-        setPlaces((prev) => {
-          const next = rollbackOptimisticLike(
-            { places: prev, likedPlaces: [], undoStack: [], totalLikes: 0 },
-            placeSnapshot,
-            placeId
-          ).places
-          placesRef.current = next
-          return next
-        })
-        setLikedPlaces((prev) =>
-          rollbackOptimisticLike(
-            { places: [], likedPlaces: prev, undoStack: [], totalLikes: 0 },
-            placeSnapshot,
-            placeId
-          ).likedPlaces
-        )
-        setUndoStack((prev) => {
-          const next = rollbackOptimisticLike(
-            { places: [], likedPlaces: [], undoStack: prev, totalLikes: 0 },
-            placeSnapshot,
-            placeId
-          ).undoStack
-          undoStackRef.current = next
-          return next
-        })
-        setTotalLikes((prev) => (typeof prev === 'number' ? Math.max(0, prev - 1) : prev))
-        setError(getRequestErrorMessage(err, 'Erro ao dar like'))
-      }
-    })()
-  }, [finalizingTdv, currentPlace, tripId, totalLikes, onItineraryUpdate, acquireSwipeLock])
-
-  const handleDislike = useCallback(() => {
-    if (finalizingTdv || !currentPlace || !tripId) return
-    if (!acquireSwipeLock()) return
-    const placeId = getPlaceId(currentPlace)
-    if (!placeId) {
-      setError('Lugar sem ID válido')
-      return
-    }
-    const placeSnapshot = {
-      ...currentPlace,
-      id: currentPlace.id ?? placeId,
-      placeId: currentPlace.placeId ?? currentPlace.place_id ?? placeId,
-    }
-    setSwipeFeedback('dislike')
-    setUndoNotice(null)
-    setTimeout(() => setSwipeFeedback(null), 400)
-
-    setPlaces((prev) => {
-      const next = applyOptimisticDislike(
-        { places: prev, dislikedPlaces: [], undoStack: [] },
-        placeSnapshot,
-        placeId
-      ).places
-      placesRef.current = next
-      return next
-    })
-    setDislikedPlaces((prev) =>
-      applyOptimisticDislike(
-        { places: [], dislikedPlaces: prev, undoStack: [] },
-        placeSnapshot,
-        placeId
-      ).dislikedPlaces
-    )
-    setUndoStack((prev) => {
-      const next = applyOptimisticDislike(
-        { places: [], dislikedPlaces: [], undoStack: prev },
-        placeSnapshot,
-        placeId
-      ).undoStack
-      undoStackRef.current = next
-      return next
-    })
-    consumedSinceSessionRef.current = true
-    setCurrentIndex(0)
-
-    pendingSwipeRef.current.set(placeId, { type: 'dislike', cancelled: false })
-    void (async () => {
-      try {
-        await placeService.dislike(tripId, placeId, placeSnapshot)
-        const pending = pendingSwipeRef.current.get(placeId)
-        pendingSwipeRef.current.delete(placeId)
-        if (shouldCancelInFlightSwipe(pending, 'dislike')) {
-          try {
-            await placeService.undoDislike(tripId, placeId)
-          } catch {
-            /* dislike pode não ter persistido; UI já desfeita */
-          }
-          return
-        }
-      } catch (err) {
-        const pending = pendingSwipeRef.current.get(placeId)
-        pendingSwipeRef.current.delete(placeId)
-        // Undo já restituiu a carta: NÃO fazer rollback (era o bug do desfazer após dislike).
-        if (shouldCancelInFlightSwipe(pending, 'dislike')) return
-        if (placesRef.current.some((p) => getPlaceId(p) === placeId)) return
-        setSwipeFeedback(null)
-        setPlaces((prev) => {
-          const next = rollbackOptimisticDislike(
-            { places: prev, dislikedPlaces: [], undoStack: [] },
-            placeSnapshot,
-            placeId
-          ).places
-          placesRef.current = next
-          return next
-        })
-        setDislikedPlaces((prev) =>
-          rollbackOptimisticDislike(
-            { places: [], dislikedPlaces: prev, undoStack: [] },
-            placeSnapshot,
-            placeId
-          ).dislikedPlaces
-        )
-        setUndoStack((prev) => {
-          const next = rollbackOptimisticDislike(
-            { places: [], dislikedPlaces: [], undoStack: prev },
-            placeSnapshot,
-            placeId
-          ).undoStack
-          undoStackRef.current = next
-          return next
-        })
-        setError(getRequestErrorMessage(err, 'Erro ao descartar'))
-      }
-    })()
-  }, [finalizingTdv, currentPlace, tripId, acquireSwipeLock])
-
-  const handleUndo = useCallback(() => {
-    if (finalizingTdv || !tripId) return
-    if (!acquireUndoLock()) return
-
-    const stack = undoStackRef.current
-    if (stack.length === 0) return
-    const entry = stack[stack.length - 1]
-    if (!entry?.place || (entry.type !== 'like' && entry.type !== 'dislike')) return
-
-    const pid = getPlaceId(entry.place)
-    if (!pid) return
-
-    const placeToRestore = {
-      ...entry.place,
-      id: entry.place.id ?? entry.place.placeId ?? entry.place.place_id ?? pid,
-      placeId: entry.place.placeId ?? entry.place.place_id ?? entry.place.id ?? pid,
-    }
-
-    replaceUndoStack(stack.slice(0, -1))
-    setUndoNotice(null)
-    setSwipeFeedback(null)
-
-    // Sempre restaura a partir do estado React atual — like e dislike iguais.
-    setPlaces((prev) => {
-      const next = [placeToRestore, ...prev.filter((x) => getPlaceId(x) !== pid)]
-      placesRef.current = next
-      if (next.length === sessionDeckBaselineRef.current) {
-        consumedSinceSessionRef.current = false
-      }
-      return next
-    })
-    setCurrentIndex(0)
-    setDeckUnavailable(false)
-
-    if (entry.type === 'like') {
-      setLikedPlaces((prev) => prev.filter((p) => String(p?.placeId ?? p?.place_id ?? p?.id) !== pid))
-      setTotalLikes((prev) => (typeof prev === 'number' ? Math.max(0, prev - 1) : prev))
-    } else {
-      setDislikedPlaces((prev) =>
-        prev.filter((p) => String(p?.placeId ?? p?.place_id ?? p?.id) !== pid)
-      )
-    }
-
-    const pending = pendingSwipeRef.current.get(pid)
-    if (pending && pending.type === entry.type) {
-      pending.cancelled = true
-      // Mesmo com swipe in-flight, a UI já voltou. A reconciliação do swipe chama undo*.
-      return
-    }
-
-    void (async () => {
-      try {
-        if (entry.type === 'like') {
-          const res = await placeService.undoLike(tripId, pid)
-          if (typeof res?.likesUsedTotal === 'number') setTotalLikes(res.likesUsedTotal)
-          onItineraryUpdate?.()
-        } else {
-          await placeService.undoDislike(tripId, pid)
-        }
-      } catch (err) {
-        // A carta já está de volta na UI — nunca remover por falha de persistência.
-        if (isBenignUndoPersistError(err)) return
-        setUndoNotice(
-          err.response?.data?.error?.message || err.message || 'Não foi possível sincronizar o desfazer'
-        )
-        // Retry best-effort: se o dislike/like ainda ficou no servidor, tenta de novo.
-        try {
-          if (entry.type === 'like') await placeService.undoLike(tripId, pid)
-          else await placeService.undoDislike(tripId, pid)
-        } catch {
-          /* keep optimistic UI */
-        }
-      }
-    })()
-  }, [finalizingTdv, tripId, onItineraryUpdate, acquireUndoLock, replaceUndoStack])
-
-  useEffect(() => {
-    if (finalizingTdv) return undefined
-    const onKeyDown = (e) => {
-      if (!currentPlace) return
-      // Desktop: ← → trocam fotos (PlaceCardGallery). Mobile: curtida/descarte.
-      if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
-        return
-      }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        handleDislike()
-      }
-      if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        handleLike()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [finalizingTdv, currentPlace, handleLike, handleDislike])
 
   const likesChip = (
     <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-200/90 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-[#5c4810] shadow-sm dark:border-primary/25 dark:bg-primary/10 dark:text-primary dark:shadow-none sm:text-xs">
@@ -1376,7 +453,7 @@ export function TinderView({
 
   const choicesPanel = renderChoicesPanel('sidebar')
 
-  const requestGenerateFromTdv = useCallback((opts = {}) => {
+  const requestGenerateFromTdv = useCallback(() => {
     onTdvSatisfied?.()
   }, [onTdvSatisfied])
 
@@ -1753,74 +830,47 @@ export function TinderView({
             <div className="absolute inset-0">
               {currentPlace ? (
                 placeCard
-              ) : freeCapReached ? (
+              ) : freeCapReached && !isPostUnlock ? (
+                <TdvPaywall
+                  tripId={tripId}
+                  finalizingTdv={finalizingTdv}
+                  warnTdvLockOnGenerate={warnTdvLockOnGenerate}
+                  freeCapLockWarnOpen={freeCapLockWarnOpen}
+                  setFreeCapLockWarnOpen={setFreeCapLockWarnOpen}
+                  onGenerate={requestGenerateFromTdv}
+                />
+              ) : freeCapReached && isPostUnlock ? (
                 <div className="flex h-full w-full flex-col items-center justify-center px-3">
                   <EmptyState
-                    icon="lock"
-                    title={t('tdv.free_cap_title')}
-                    description={t('tdv.free_cap_body')}
+                    icon="explore"
+                    title={t('tdv.unlock_reload_title')}
+                    description={t('tdv.unlock_reload_body')}
                     action={
-                      <div className="flex w-full max-w-sm flex-col gap-2">
-                        {freeCapLockWarnOpen && warnTdvLockOnGenerate ? (
-                          <div
-                            className="rounded-2xl border border-border-light bg-white p-3 text-left shadow-xl dark:border-white/[0.1] dark:bg-surface-dark sm:p-4"
-                            role="dialog"
-                            aria-modal="true"
-                            aria-label={t('tdv.lock_warn_title')}
-                          >
-                            <p className="mb-2 text-[11px] leading-snug text-text-secondary sm:text-xs lg:mb-3 lg:text-[13px] lg:leading-relaxed">
-                              {t('tdv.lock_warn_body')}
-                            </p>
-                            <Button
-                              onClick={() => {
-                                setFreeCapLockWarnOpen(false)
-                                requestGenerateFromTdv()
-                              }}
-                              disabled={finalizingTdv}
-                              className="w-full rounded-full py-2.5 sm:py-3 lg:py-3.5 lg:text-[15px]"
-                            >
-                              {finalizingTdv
-                                ? t('tdv.finalize_generating')
-                                : t('tdv.lock_warn_confirm')}
-                            </Button>
-                            <button
-                              type="button"
-                              onClick={() => setFreeCapLockWarnOpen(false)}
-                              className="mt-2 w-full text-center text-[11px] font-semibold text-text-secondary transition-colors hover:text-[#1c1c0d] dark:hover:text-white"
-                            >
-                              {t('tdv.lock_warn_cancel')}
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <Button
-                              onClick={() => {
-                                if (warnTdvLockOnGenerate) {
-                                  setFreeCapLockWarnOpen(true)
-                                  return
-                                }
-                                requestGenerateFromTdv()
-                              }}
-                              disabled={finalizingTdv}
-                              className="w-full rounded-full"
-                            >
-                              {t('tdv.free_cap_generate')}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() =>
-                                navigate(
-                                  `/pagamento?tripId=${encodeURIComponent(tripId)}&from=tdv`,
-                                )
-                              }
-                              disabled={finalizingTdv}
-                              className="w-full rounded-full"
-                            >
-                              {t('tdv.free_cap_unlock')}
-                            </Button>
-                          </>
-                        )}
-                      </div>
+                      <Button onClick={handleRetryDeck} disabled={finalizingTdv} className="rounded-full">
+                        {t('tdv.retry')}
+                      </Button>
+                    }
+                  />
+                </div>
+              ) : paidBatchCapReached ? (
+                <div className="flex h-full w-full flex-col items-center justify-center px-3">
+                  <EmptyState
+                    icon="explore_off"
+                    title={t('tdv.paid_batch_cap_title')}
+                    description={t('tdv.paid_batch_cap_body')}
+                    action={
+                      isPostUnlock && onRequestClose ? (
+                        <Button onClick={onRequestClose} className="rounded-full">
+                          {t('tdv.paid_batch_cap_back')}
+                        </Button>
+                      ) : onModifyRoteiro ? (
+                        <Button
+                          onClick={() => onModifyRoteiro?.(likedPlaces)}
+                          className="rounded-full"
+                        >
+                          {t('tdv.modify_cta')}
+                        </Button>
+                      ) : null
                     }
                   />
                 </div>

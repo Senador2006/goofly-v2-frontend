@@ -21,7 +21,7 @@ describe('jsxBalance', () => {
 
   it('Itinerary.jsx não chama hooks após early return (Rules of Hooks)', () => {
     const source = readFileSync(join(base, 'src/pages/Itinerary.jsx'), 'utf8')
-    const loadingReturn = source.indexOf('if (loading && !trip)')
+    const loadingReturn = source.search(/if\s*\(\(loading && !trip\)/)
     assert.ok(loadingReturn >= 0, 'marcador de loading return ausente')
     const afterLoadingGate = source.slice(loadingReturn)
     assert.doesNotMatch(

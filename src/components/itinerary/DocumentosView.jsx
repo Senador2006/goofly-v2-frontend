@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
@@ -6,10 +6,14 @@ import { LoadingSpinner } from '../common/LoadingSpinner'
 import { documentService } from '../../services/documentService'
 import { userService } from '../../services/userService'
 import { useAuth } from '../../context/AuthContext'
+import {
+  readDocsAssistSession,
+  writeDocsAssistSession,
+} from '../../utils/docsAssistSession'
 
 /**
  * Assistente de Documentos na área de planejamento.
- * Exibe checklist e lista de bagagem gerados pelo agente de IA.
+ * Checklist + bagagem sob CTA (C13) — não dispara agentes no mount.
  * Disponível apenas para usuários com planejamento completo (pago).
  */
 export function DocumentosView({
@@ -23,47 +27,57 @@ export function DocumentosView({
   const [luggage, setLuggage] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const loadedForTripRef = useRef(null)
+  const [hydrated, setHydrated] = useState(false)
+  const generateInFlightRef = useRef(false)
   const { isAdmin } = useAuth()
 
   useEffect(() => {
-    if (loadedForTripRef.current === tripId) return
-    loadedForTripRef.current = null
     setChecklist(null)
     setLuggage(null)
     setError(null)
-  }, [tripId])
+    setHydrated(false)
+    generateInFlightRef.current = false
 
-  useEffect(() => {
-    if (!tripId || !hasPlanejamentoCompleto || !isActive) return
-    if (loadedForTripRef.current === tripId) return
+    if (!tripId || !hasPlanejamentoCompleto) {
+      setHydrated(true)
+      return
+    }
 
-    let cancelled = false
-    const load = async () => {
+    const cached = readDocsAssistSession(tripId)
+    if (cached) {
+      setChecklist(cached.checklist)
+      setLuggage(cached.luggage)
+    }
+    setHydrated(true)
+  }, [tripId, hasPlanejamentoCompleto])
+
+  const generateAssist = useCallback(
+    async ({ force = false } = {}) => {
+      if (!tripId || !hasPlanejamentoCompleto) return
+      if (generateInFlightRef.current) return
+      generateInFlightRef.current = true
       setLoading(true)
       setError(null)
       try {
         const [checklistData, luggageData] = await Promise.all([
-          documentService.getChecklist(tripId),
-          documentService.getLuggageRecommendations(tripId),
+          documentService.getChecklist(tripId, { force }),
+          documentService.getLuggageRecommendations(tripId, { force }),
         ])
-        if (cancelled) return
         setChecklist(checklistData)
         setLuggage(luggageData)
-        loadedForTripRef.current = tripId
+        writeDocsAssistSession(tripId, {
+          checklist: checklistData,
+          luggage: luggageData,
+        })
       } catch (err) {
-        if (!cancelled) {
-          setError(err.response?.data?.error?.message || 'Erro ao carregar documentos')
-        }
+        setError(err.response?.data?.error?.message || 'Erro ao carregar documentos')
       } finally {
-        if (!cancelled) setLoading(false)
+        generateInFlightRef.current = false
+        setLoading(false)
       }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [tripId, hasPlanejamentoCompleto, isActive])
+    },
+    [tripId, hasPlanejamentoCompleto]
+  )
 
   const handleAdminUpgrade = async () => {
     if (!tripId) return
@@ -83,7 +97,7 @@ export function DocumentosView({
           <h2 className="text-2xl font-bold mb-2">Assistente de Documentos</h2>
           <p className="text-text-secondary mb-6">
             Checklist de viagem, recomendações de bagagem por IA e apoio documental — tudo alinhado ao seu roteiro (não é o
-            mesmo fluxo da página Descobrir). Incluso no Planejamento Completo.
+            mesmo fluxo do Tinder de Viagens). Incluso no Planejamento Completo.
           </p>
           {tripId ? (
             <Link
@@ -115,22 +129,78 @@ export function DocumentosView({
     )
   }
 
+  if (!isActive) {
+    return null
+  }
+
+  if (!hydrated) return <LoadingSpinner />
+
   if (loading) return <LoadingSpinner />
 
-  if (error) {
+  if (error && !checklist && !luggage) {
     return (
-      <div className="p-6">
+      <div className="p-6 space-y-4">
         <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl text-sm">{error}</div>
+        <Button onClick={() => generateAssist({ force: true })}>Tentar novamente</Button>
       </div>
     )
   }
 
   const docs = checklist?.checklist || []
   const categories = luggage?.categories || []
+  const hasGenerated = docs.length > 0 || categories.length > 0
+
+  if (!hasGenerated) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center p-8 md:p-12">
+        <div className="max-w-md w-full text-center space-y-4">
+          <div className="size-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <Icon name="folder_shared" className="text-3xl text-primary" />
+          </div>
+          <h2 className="text-2xl font-bold">Checklist e bagagem</h2>
+          <p className="text-text-secondary text-sm">
+            Gere uma vez o checklist de documentos e a lista de bagagem com IA para esta viagem. O resultado fica
+            disponível ao voltar nesta aba.
+          </p>
+          {error ? (
+            <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-3 rounded-xl text-sm text-left">
+              {error}
+            </div>
+          ) : null}
+          <Button onClick={() => generateAssist({ force: false })} disabled={loading}>
+            <Icon name="auto_awesome" />
+            Gerar com IA
+          </Button>
+          {trip?.destinations?.[0]?.city ? (
+            <p className="text-xs text-text-secondary">Destino: {trip.destinations[0].city}</p>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-6 md:p-8">
       <div className="max-w-4xl mx-auto space-y-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-text-secondary">
+            Gerado para esta viagem. Atualize só se mudar destino ou datas.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => generateAssist({ force: true })}
+            disabled={loading}
+          >
+            <Icon name="refresh" />
+            Atualizar
+          </Button>
+        </div>
+
+        {error ? (
+          <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-3 rounded-xl text-sm">{error}</div>
+        ) : null}
+
         <section>
           <h3 className="text-xl font-bold flex items-center gap-2 mb-4">
             <Icon name="folder_shared" className="text-primary" />

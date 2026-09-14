@@ -16,12 +16,24 @@ function where(dests, index) {
 
 /**
  * Erros do passo 1 (Destinos), na ordem de exibição.
+ * Coordenadas são obrigatórias (BE `coalesceCoordinates`) — B15.
+ * @param {unknown} destinations
+ * @param {{ requirePlaceSelection?: boolean, mapsUnavailable?: boolean }} [options]
  * @returns {StepError[]}
  */
-export function collectStep1Errors(destinations, { requirePlaceSelection = false } = {}) {
+export function collectStep1Errors(destinations, { requirePlaceSelection = true, mapsUnavailable = false } = {}) {
   const dests = Array.isArray(destinations) ? destinations : []
   /** @type {StepError[]} */
   const errors = []
+
+  if (mapsUnavailable) {
+    errors.push({
+      code: 'maps_unavailable',
+      message:
+        'O Google Maps não está disponível neste ambiente. Configure VITE_GOOGLE_MAPS_API_KEY e recarregue a página para escolher destinos no autocomplete.',
+      field: 'destinations',
+    })
+  }
 
   if (dests.length === 0) {
     errors.push({
@@ -55,7 +67,9 @@ export function collectStep1Errors(destinations, { requirePlaceSelection = false
     } else if (requirePlaceSelection && !readLatLng({ coordinates: d.coordinates })) {
       errors.push({
         code: 'place_selection_required',
-        message: `Selecione "${city}" nas sugestões do autocomplete para localizar o destino no mapa`,
+        message: mapsUnavailable
+          ? `Não é possível localizar "${city}" sem Google Maps. Configure a chave e selecione a cidade nas sugestões.`
+          : `Selecione "${city}" nas sugestões do autocomplete para localizar o destino no mapa`,
         destIndex: i,
         field: 'city',
       })

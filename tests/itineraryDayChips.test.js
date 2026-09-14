@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const chipsSource = readFileSync(join(root, 'src/components/itinerary/ItineraryDayChips.jsx'), 'utf8')
-const itinerarySource = readFileSync(join(root, 'src/pages/Itinerary.jsx'), 'utf8')
+const editSessionSource = readFileSync(join(root, 'src/hooks/useRoteiroEditSession.js'), 'utf8')
+const headerSource = readFileSync(join(root, 'src/components/itinerary/ItineraryHeader.jsx'), 'utf8')
 const hookSource = readFileSync(join(root, 'src/hooks/useRoteiroDaySwap.js'), 'utf8')
 
 describe('ItineraryDayChips — swap de dias', () => {
@@ -50,17 +51,20 @@ describe('ItineraryDayChips — swap de dias', () => {
 
 describe('Itinerary — wiring swap de dias', () => {
   it('liga swap só em modo edição com acesso completo', () => {
-    assert.match(itinerarySource, /useRoteiroDaySwap/)
+    assert.match(editSessionSource, /useRoteiroDaySwap/)
     assert.match(
-      itinerarySource,
+      editSessionSource,
       /enabled:\s*roteiroEditOpen\s*&&\s*!loading\s*&&\s*Boolean\(trip\)\s*&&\s*hasFullAccess/,
     )
-    assert.match(itinerarySource, /swapEnabled=\{roteiroEditOpen && hasFullAccess && !loading && !likeReplace.open\}/)
+    assert.match(
+      headerSource,
+      /swapEnabled=\{edit\.roteiroEditOpen && modes\.hasFullAccess && !page\.loading && !edit\.likeReplace\.open\}/,
+    )
   })
 
   it('foca o dia do swap com ghost na mão (delay curto)', () => {
-    assert.match(itinerarySource, /onFocusSwapDay/)
-    assert.match(itinerarySource, /selectedDay,/)
+    assert.match(editSessionSource, /onFocusSwapDay/)
+    assert.match(editSessionSource, /selectedDay,/)
     assert.match(hookSource, /onFocusSwapDayRef\.current\?\.\(day\)/)
     assert.match(hookSource, /resolveGhostSize/)
     assert.match(hookSource, /ROTEIRO_DAY_SWAP_FOCUS_DELAY_MS/)
@@ -68,16 +72,19 @@ describe('Itinerary — wiring swap de dias', () => {
   })
 
   it('mutua exclusão com drag de atividades e cancela ao sair da edição', () => {
-    assert.match(itinerarySource, /onActivityDragHandlePointerDown/)
-    assert.match(itinerarySource, /onDayChipPointerDown/)
-    assert.match(itinerarySource, /daySwapCancelRef\.current\?\.\(\)/)
-    assert.match(itinerarySource, /dragReorderCancelRef\.current\?\.\(\)/)
-    assert.match(itinerarySource, /handleCancelRoteiroEdit[\s\S]*daySwapCancelRef/)
+    assert.match(editSessionSource, /onActivityDragHandlePointerDown/)
+    assert.match(editSessionSource, /onDayChipPointerDown/)
+    assert.match(editSessionSource, /daySwapCancelRef\.current\?\.\(\)/)
+    assert.match(editSessionSource, /dragReorderCancelRef\.current\?\.\(\)/)
+    assert.match(editSessionSource, /handleCancelRoteiroEdit[\s\S]*daySwapCancelRef/)
   })
 
   it('aplica swapActivitiesBetweenDays no draft e seleciona o dia alvo', () => {
-    assert.match(itinerarySource, /swapActivitiesBetweenDays\(prev, dateToDayMap, fromDay, toDay\)/)
-    assert.match(itinerarySource, /setSelectedDay\(toDay\)/)
+    assert.match(
+      editSessionSource,
+      /swapActivitiesBetweenDays\(previous, dateToDayMap, fromDay, toDay\)/,
+    )
+    assert.match(editSessionSource, /setSelectedDay\(toDay\)/)
   })
 })
 

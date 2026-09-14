@@ -4,19 +4,46 @@ import { useAuth } from './context/AuthContext'
 import { Layout } from './components/layout/Layout'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
-import { Dashboard } from './pages/Dashboard'
-import { Discover } from './pages/Discover'
-import { TripList } from './pages/TripList'
-import { Itinerary } from './pages/Itinerary'
-import { Memories } from './pages/Memories'
-import { Settings } from './pages/Settings'
-import { NewTrip } from './pages/NewTrip'
-import { Pagamento } from './pages/Pagamento'
-import { AdminDashboard } from './pages/AdminDashboard'
 import { AdminRoute } from './components/AdminRoute'
 import { LoadingSpinner } from './components/common/LoadingSpinner'
+import { RouteErrorBoundary } from './components/common/ErrorBoundary'
 
 const Landing = lazy(() => import('./pages/Landing'))
+const Dashboard = lazy(() =>
+  import('./pages/Dashboard').then((m) => ({ default: m.Dashboard }))
+)
+const Discover = lazy(() =>
+  import('./pages/Discover').then((m) => ({ default: m.Discover }))
+)
+const TripList = lazy(() =>
+  import('./pages/TripList').then((m) => ({ default: m.TripList }))
+)
+const Itinerary = lazy(() =>
+  import('./pages/Itinerary').then((m) => ({ default: m.Itinerary }))
+)
+const Memories = lazy(() =>
+  import('./pages/Memories').then((m) => ({ default: m.Memories }))
+)
+const Settings = lazy(() =>
+  import('./pages/Settings').then((m) => ({ default: m.Settings }))
+)
+const NewTrip = lazy(() =>
+  import('./pages/NewTrip').then((m) => ({ default: m.NewTrip }))
+)
+const Pagamento = lazy(() =>
+  import('./pages/Pagamento').then((m) => ({ default: m.Pagamento }))
+)
+const AdminDashboard = lazy(() =>
+  import('./pages/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
+)
+
+function RouteFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
+      <LoadingSpinner />
+    </div>
+  )
+}
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth()
@@ -35,7 +62,13 @@ function ProtectedRoute({ children }) {
 
 function PublicRoute({ children }) {
   const { isAuthenticated, loading } = useAuth()
-  if (loading) return null
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
+        <LoadingSpinner />
+      </div>
+    )
+  }
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />
   }
@@ -73,43 +106,57 @@ export function CatchAllRedirect() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<LandingOrRedirect />} />
-      <Route path="/login" element={
-        <PublicRoute>
-          <Login />
-        </PublicRoute>
-      } />
-      <Route path="/register" element={
-        <PublicRoute>
-          <Register />
-        </PublicRoute>
-      } />
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute>
-            <AdminRoute>
-              <AdminDashboard />
-            </AdminRoute>
-          </ProtectedRoute>
-        }
-      />
-      <Route element={
-        <ProtectedRoute>
-          <Layout />
-        </ProtectedRoute>
-      }>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/trips" element={<TripList />} />
-        <Route path="/trips/new" element={<NewTrip />} />
-        <Route path="/trips/:tripId/itinerary" element={<Itinerary />} />
-        <Route path="/pagamento" element={<Pagamento />} />
-        <Route path="/discover" element={<Discover />} />
-        <Route path="/memories" element={<Memories />} />
-        <Route path="/settings" element={<Settings />} />
-      </Route>
-      <Route path="*" element={<CatchAllRedirect />} />
-    </Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route path="/" element={
+          <RouteErrorBoundary name="auth">
+            <LandingOrRedirect />
+          </RouteErrorBoundary>
+        } />
+        <Route path="/login" element={
+          <RouteErrorBoundary name="auth">
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          </RouteErrorBoundary>
+        } />
+        <Route path="/register" element={
+          <RouteErrorBoundary name="auth">
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          </RouteErrorBoundary>
+        } />
+        <Route
+          path="/admin"
+          element={
+            <RouteErrorBoundary name="app">
+              <ProtectedRoute>
+                <AdminRoute>
+                  <AdminDashboard />
+                </AdminRoute>
+              </ProtectedRoute>
+            </RouteErrorBoundary>
+          }
+        />
+        <Route element={
+          <RouteErrorBoundary name="app">
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          </RouteErrorBoundary>
+        }>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/trips" element={<TripList />} />
+          <Route path="/trips/new" element={<NewTrip />} />
+          <Route path="/trips/:tripId/itinerary" element={<Itinerary />} />
+          <Route path="/pagamento" element={<Pagamento />} />
+          <Route path="/discover" element={<Discover />} />
+          <Route path="/memories" element={<Memories />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+        <Route path="*" element={<CatchAllRedirect />} />
+      </Routes>
+    </Suspense>
   )
 }

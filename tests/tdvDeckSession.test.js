@@ -4,14 +4,16 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-const sessionSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../src/utils/tdvDeckSession.js'),
-  'utf8'
-)
-const tinderSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../src/components/itinerary/TinderView.jsx'),
-  'utf8'
-)
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const readSrc = (rel) => readFileSync(join(root, rel), 'utf8')
+
+const sessionSource = readSrc('src/utils/tdvDeckSession.js')
+const tinderView = readSrc('src/components/itinerary/TinderView.jsx')
+const useTdvDeck = readSrc('src/hooks/useTdvDeck.js')
+const useTdvSwipe = readSrc('src/hooks/useTdvSwipe.js')
+const tdvFreeCapPolicy = readSrc('src/utils/tdvFreeCapPolicy.js')
+const TdvPaywall = readSrc('src/components/itinerary/TdvPaywall.jsx')
+const tdvSource = [tinderView, useTdvDeck, useTdvSwipe, tdvFreeCapPolicy, TdvPaywall].join('\n')
 
 test('tdvDeckSession: API de backup do baralho', () => {
   assert.match(sessionSource, /saveTdvDeckSession/)
@@ -21,21 +23,21 @@ test('tdvDeckSession: API de backup do baralho', () => {
 })
 
 test('TinderView: prioriza baralho do sessionStorage (free e pago)', () => {
-  assert.match(tinderSource, /readTdvDeckSession/)
-  assert.match(tinderSource, /saveTdvDeckSession/)
-  assert.match(tinderSource, /localDeck\.length > 0/)
-  assert.match(tinderSource, /restoredFromSession/)
+  assert.match(tdvSource, /readTdvDeckSession/)
+  assert.match(tdvSource, /saveTdvDeckSession/)
+  assert.match(tdvSource, /localDeck\.length > 0/)
+  assert.match(tdvSource, /restoredFromSession/)
   assert.match(
-    tinderSource,
+    tdvSource,
     /Preferir baralho local \(free e pago\)/
   )
 })
 
 test('TinderView: baralho local restaura sem spinner nem discoverSession', () => {
-  const loadStart = tinderSource.indexOf('const loadPlaces = useCallback')
-  const loadEnd = tinderSource.indexOf('const lastTripIdRef', loadStart)
+  const loadStart = useTdvDeck.indexOf('const loadPlaces = useCallback')
+  const loadEnd = useTdvDeck.indexOf('const lastTripIdRef', loadStart)
   assert.ok(loadStart >= 0 && loadEnd > loadStart)
-  const loadPlaces = tinderSource.slice(loadStart, loadEnd)
+  const loadPlaces = useTdvDeck.slice(loadStart, loadEnd)
 
   const readIdx = loadPlaces.indexOf('readTdvDeckSession(tripId)')
   const loadingIdx = loadPlaces.indexOf('setLoading(true)')
