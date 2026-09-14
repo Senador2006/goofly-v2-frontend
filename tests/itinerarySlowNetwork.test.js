@@ -6,30 +6,43 @@ import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const itinerarySource = readFileSync(join(root, 'src/pages/Itinerary.jsx'), 'utf8')
+const dataHookSource = readFileSync(join(root, 'src/hooks/useItineraryData.js'), 'utf8')
+const dayViewSource = readFileSync(join(root, 'src/hooks/useItineraryDayView.js'), 'utf8')
+const bannersSource = readFileSync(
+  join(root, 'src/components/itinerary/ItineraryStatusBanners.jsx'),
+  'utf8',
+)
+const timelineSource = readFileSync(
+  join(root, 'src/components/itinerary/ItineraryRoteiroTimeline.jsx'),
+  'utf8',
+)
 const tripServiceSource = readFileSync(join(root, 'src/services/tripService.js'), 'utf8')
 const apiSource = readFileSync(join(root, 'src/services/api.js'), 'utf8')
 const chipsSource = readFileSync(join(root, 'src/components/itinerary/ItineraryDayChips.jsx'), 'utf8')
-const drawerSource = readFileSync(join(root, 'src/components/itinerary/ItineraryMobileMapDrawer.jsx'), 'utf8')
+const drawerSource = readFileSync(
+  join(root, 'src/components/itinerary/ItineraryMobileMapDrawer.jsx'),
+  'utf8',
+)
 const indexCss = readFileSync(join(root, 'src/index.css'), 'utf8')
 const indexHtml = readFileSync(join(root, 'index.html'), 'utf8')
 
 describe('Roteiro — carga em rede lenta', () => {
   it('GET trip e itinerário disparam em paralelo com AbortController', () => {
-    assert.match(itinerarySource, /new AbortController/)
-    assert.match(itinerarySource, /tripService\.getTrip\(tripId, \{ signal: ac\.signal \}\)/)
-    assert.match(itinerarySource, /tripService\.getItinerary\(tripId, \{[\s\S]*signal: ac\.signal/)
-    assert.match(itinerarySource, /ac\.abort\(\)/)
+    assert.match(dataHookSource, /new AbortController/)
+    assert.match(dataHookSource, /tripService\.getTrip\(tripId, \{ signal: ac\.signal \}\)/)
+    assert.match(dataHookSource, /tripService\.getItinerary\(tripId, \{[\s\S]*signal: ac\.signal/)
+    assert.match(dataHookSource, /ac\.abort\(\)/)
     assert.match(itinerarySource, /loading && !trip/)
     assert.match(itinerarySource, /itineraryError/)
-    assert.match(itinerarySource, /Tentar de novo/)
-    assert.match(itinerarySource, /RoteiroStopsSkeleton/)
+    assert.match(bannersSource, /Tentar de novo/)
+    assert.match(timelineSource, /RoteiroStopsSkeleton/)
   })
 
   it('não reseta selectedDay para a primeira parada quando o dia está vazio', () => {
-    assert.doesNotMatch(itinerarySource, /setSelectedDay\(first\)/)
+    assert.doesNotMatch(dayViewSource, /setSelectedDay\(first\)/)
     assert.match(
-      itinerarySource,
-      /setSelectedDay\(\(prev\) => \(days\.includes\(prev\) \? prev : days\[0\]\)\)/,
+      dayViewSource,
+      /setSelectedDay\(\(previous\) =>\s*view\.days\.includes\(previous\) \? previous : view\.days\[0\]/,
     )
   })
 

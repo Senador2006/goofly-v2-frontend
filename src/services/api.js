@@ -12,6 +12,8 @@ import axios from 'axios'
  * 2. **VITE_USE_SERVICES_DIRECT**: pular o gateway é exclusivo de
  *    desenvolvimento. Em produção (`import.meta.env.PROD`) a flag é
  *    ignorada — preserva rate limit, CORS e circuit breaker do gateway.
+ *    Auth (login/register/refresh) **exige** o gateway: o services responde
+ *    `GATEWAY_REQUIRED` sem o header interno e não emite JWT no JSON ao browser.
  * 3. **Contrato {data, meta, error, message}**: a backend ainda devolve
  *    shapes mistos (`{ data, currentDay }`, `{ data, count }`, etc.). Em vez
  *    de um refactor destrutivo na backend (M5), normalizamos no cliente e

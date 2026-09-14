@@ -4,22 +4,25 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-const itinerarySource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../src/pages/Itinerary.jsx'),
-  'utf8'
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const itinerarySource = readFileSync(join(root, 'src/pages/Itinerary.jsx'), 'utf8')
+const headerSource = readFileSync(join(root, 'src/components/itinerary/ItineraryHeader.jsx'), 'utf8')
+const overlaysSource = readFileSync(
+  join(root, 'src/components/itinerary/ItineraryGlobalOverlays.jsx'),
+  'utf8',
 )
 const overlaySource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '../src/components/itinerary/DeletePlanningOverlay.jsx'),
-  'utf8'
+  join(root, 'src/components/itinerary/DeletePlanningOverlay.jsx'),
+  'utf8',
 )
 
 test('confirm de apagar não expande o header', () => {
-  const headerBlock = itinerarySource.slice(
-    itinerarySource.indexOf('<header'),
-    itinerarySource.indexOf('</header>') + '</header>'.length
+  const headerBlock = headerSource.slice(
+    headerSource.indexOf('<header'),
+    headerSource.indexOf('</header>') + '</header>'.length,
   )
   assert.doesNotMatch(headerBlock, /showDeleteConfirm/)
-  assert.match(itinerarySource, /DeletePlanningOverlay/)
+  assert.match(overlaysSource, /DeletePlanningOverlay/)
 })
 
 test('sem barra mobile duplicada Roteiro/TDV/Docs', () => {

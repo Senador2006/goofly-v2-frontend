@@ -18,6 +18,7 @@ function dest(partial = {}) {
     country: 'França',
     arrivalDate: '',
     departureDate: '',
+    coordinates: { latitude: 48.8566, longitude: 2.3522 },
     ...partial,
   }
 }
@@ -80,6 +81,29 @@ describe('newTripStep1Validation', () => {
       [],
     )
   })
+
+  it('B15: exige coordenadas mesmo sem mapsUnavailable', () => {
+    const today = todayIsoCalendarDate()
+    const dep = addCalendarDaysIso(today, 3)
+    const errors = collectStep1Errors([
+      dest({ arrivalDate: today, departureDate: dep, coordinates: undefined }),
+    ])
+    assert.ok(errors.some((e) => e.code === 'place_selection_required'))
+  })
+
+  it('B15: mapsUnavailable bloqueia o passo 1 com mensagem clara', () => {
+    const today = todayIsoCalendarDate()
+    const dep = addCalendarDaysIso(today, 3)
+    const errors = collectStep1Errors(
+      [dest({ arrivalDate: today, departureDate: dep })],
+      { mapsUnavailable: true },
+    )
+    assert.ok(errors.some((e) => e.code === 'maps_unavailable'))
+    assert.match(
+      errors.find((e) => e.code === 'maps_unavailable').message,
+      /VITE_GOOGLE_MAPS_API_KEY/,
+    )
+  })
 })
 
 describe('collectStep3Errors', () => {
@@ -92,6 +116,54 @@ describe('collectStep3Errors', () => {
     )
     assert.deepEqual(
       collectStep3Errors({ interests: ['historia'], travelers: { adults: 2 } }),
+      [],
+    )
+  })
+})
+
+describe('collectStepErrors step 2 (B06 coords)', () => {
+  it('exige coordenadas da hospedagem quando requireAccommodationCoordinates', () => {
+    const today = todayIsoCalendarDate()
+    const dep = addCalendarDaysIso(today, 3)
+    const data = {
+      destinations: [dest({ arrivalDate: today, departureDate: dep })],
+      accommodations: [
+        {
+          id: 'a1',
+          destinationId: 'd1',
+          type: 'hotel',
+          name: 'Hotel Sem Pin',
+          address: 'Hotel Sem Pin',
+          checkIn: today,
+          checkOut: dep,
+        },
+      ],
+    }
+    assert.deepEqual(collectStepErrors(2, data), [])
+    const errors = collectStepErrors(2, data, { requireAccommodationCoordinates: true })
+    assert.ok(errors.some((e) => e.field === 'accommodation'))
+  })
+
+  it('aceita hospedagem com coordenadas quando exigidas', () => {
+    const today = todayIsoCalendarDate()
+    const dep = addCalendarDaysIso(today, 3)
+    const data = {
+      destinations: [dest({ arrivalDate: today, departureDate: dep })],
+      accommodations: [
+        {
+          id: 'a1',
+          destinationId: 'd1',
+          type: 'hotel',
+          name: 'Hotel Com Pin',
+          address: 'Hotel Com Pin',
+          checkIn: today,
+          checkOut: dep,
+          coordinates: { latitude: 48.86, longitude: 2.34 },
+        },
+      ],
+    }
+    assert.deepEqual(
+      collectStepErrors(2, data, { requireAccommodationCoordinates: true }),
       [],
     )
   })

@@ -150,6 +150,23 @@ describe('itineraryMealHelpers', () => {
     assert.equal(visible[0].activityId, 'meal-2')
   })
 
+  it('resolveVisibleMealMarkers encontra marker por placeId quando activityId diverge', () => {
+    const apiMarkers = [
+      {
+        activityId: 'act-opt-day-5',
+        placeId: 'suggested-lunch-b',
+        slotKey: 'lunch@12:30',
+        coords: [9, 9],
+      },
+    ]
+    const slots = [{ slotKey: 'lunch@12:30', options: [lunchA, lunchB] }]
+    const visible = resolveVisibleMealMarkers(apiMarkers, slots, {
+      'lunch@12:30': 'meal-2',
+    })
+    assert.equal(visible.length, 1)
+    assert.deepEqual(visible[0].coords, [9, 9])
+  })
+
   it('buildMealMapMarkerHtml usa material-icons-outlined da timeline', () => {
     const html = buildMealMapMarkerHtml('lunch')
     assert.match(html, /material-icons-outlined/)

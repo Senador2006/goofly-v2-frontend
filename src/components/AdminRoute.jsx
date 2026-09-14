@@ -1,10 +1,13 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { resolveIsAdmin } from '../utils/jwtRole'
 
+/**
+ * Gate de UX para /admin.
+ * Autorização real: gateway + services (`requireAdmin` no banco).
+ * Aqui só libera UI se a sessão foi confirmada via /me (ou login) — não via cache.
+ */
 export function AdminRoute({ children }) {
-  const { user, loading } = useAuth()
-  const isAdmin = resolveIsAdmin(user)
+  const { user, loading, isAdmin, sessionVerified } = useAuth()
 
   if (loading) {
     return (
@@ -14,7 +17,7 @@ export function AdminRoute({ children }) {
     )
   }
 
-  if (!user || !isAdmin) {
+  if (!sessionVerified || !user || !isAdmin) {
     return <Navigate to="/dashboard" replace />
   }
 

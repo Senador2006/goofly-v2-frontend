@@ -424,17 +424,36 @@ export function resolveMealRouteAnchor(sortedDayActivities, mealAct) {
  * @param {Record<string, string>} [selectedMealIds]
  */
 export function resolveVisibleMealMarkers(apiMealMarkers, mealSlots, selectedMealIds = {}) {
-  const byActivityId = new Map(
-    (apiMealMarkers || []).map((m) => [String(m.activityId ?? ''), m]),
-  )
+  /** @type {Map<string, Record<string, unknown>>} */
+  const byKey = new Map()
+  for (const m of apiMealMarkers || []) {
+    if (!m || typeof m !== 'object') continue
+    for (const raw of [m.activityId, m.placeId, m.place_id, m.id]) {
+      const key = String(raw ?? '').trim()
+      if (key) byKey.set(key, m)
+    }
+  }
+
   /** @type {Record<string, unknown>[]} */
   const out = []
 
   for (const slot of mealSlots || []) {
     const selected = resolveSelectedMealForSlot(slot.options, selectedMealIds[slot.slotKey])
     if (!selected) continue
-    const id = resolveMealActivityId(selected)
-    const marker = byActivityId.get(id)
+    const candidates = [
+      resolveMealActivityId(selected),
+      selected.id,
+      selected.placeId,
+      selected.place_id,
+    ]
+    let marker = null
+    for (const raw of candidates) {
+      const key = String(raw ?? '').trim()
+      if (key && byKey.has(key)) {
+        marker = byKey.get(key)
+        break
+      }
+    }
     if (marker) {
       out.push({ ...marker, slotKey: slot.slotKey, optionCount: slot.options.length })
     }

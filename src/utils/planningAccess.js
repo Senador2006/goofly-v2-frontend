@@ -16,8 +16,9 @@ export function hasActivePlanningAccess(user) {
 }
 
 /**
- * UI do roteiro — fonte de verdade é a resposta da API desta viagem.
- * Não usa subscription global do usuário (pode existir de outro pagamento).
+ * UI do roteiro — fonte de verdade é a resposta da API desta viagem
+ * (`_access.fullAccess` / `_premiumRestriction` / `planning_unlocked_at`).
+ * Não usa subscription global do usuário (pagamento é por trip).
  */
 export function hasItineraryFullAccess(itinerary, trip) {
   if (itinerary?._premiumRestriction) return false

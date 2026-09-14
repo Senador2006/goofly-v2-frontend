@@ -15,7 +15,15 @@ export const tripService = {
   getTrip: (id, options = {}) =>
     api.get(`/trips/${id}`, { signal: options.signal }).then((res) => res.body.data),
   getPlanningPrice: (id) => api.get(`/trips/${id}/planning-price`).then((res) => res.body.data),
-  createTrip: (data) => api.post('/trips', data).then((res) => res.body.data),
+  createTrip: (data, options = {}) =>
+    api
+      .post('/trips', data, {
+        signal: options.signal,
+        headers: options.idempotencyKey
+          ? { 'Idempotency-Key': options.idempotencyKey }
+          : undefined,
+      })
+      .then((res) => res.body.data),
   updateTrip: (id, data) => api.put(`/trips/${id}`, data).then((res) => res.body.data),
   deleteTrip: (id) => api.delete(`/trips/${id}`).then(() => undefined),
   getItinerary: (tripId, options = {}) =>
@@ -33,9 +41,13 @@ export const tripService = {
       }),
   updateItinerary: (tripId, payload) =>
     api.put(`/trips/${tripId}/itinerary`, payload).then((res) => res.body.data),
-  optimizeItinerary: (tripId) =>
+  optimizeItinerary: (tripId, options = {}) =>
     api
-      .post(`/trips/${tripId}/optimize`, {}, { timeout: AI_TIMEOUT_MS })
+      .post(
+        `/trips/${tripId}/optimize`,
+        options.mode ? { mode: options.mode } : {},
+        { timeout: AI_TIMEOUT_MS },
+      )
       .then((res) => res.body.data),
   finalizeTdvPlanning: (tripId) =>
     api

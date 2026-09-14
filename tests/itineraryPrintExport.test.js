@@ -5,19 +5,21 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 const base = join(dirname(fileURLToPath(import.meta.url)), '..')
-const itineraryPath = join(base, 'src/pages/Itinerary.jsx')
-const printViewPath = join(base, 'src/components/itinerary/ItineraryPrintView.jsx')
-
-const itinerarySource = readFileSync(itineraryPath, 'utf8')
-const printViewSource = readFileSync(printViewPath, 'utf8')
+const itinerarySource = readFileSync(join(base, 'src/pages/Itinerary.jsx'), 'utf8')
+const headerSource = readFileSync(join(base, 'src/components/itinerary/ItineraryHeader.jsx'), 'utf8')
+const overlaysSource = readFileSync(
+  join(base, 'src/components/itinerary/ItineraryGlobalOverlays.jsx'),
+  'utf8',
+)
+const printViewSource = readFileSync(join(base, 'src/components/itinerary/ItineraryPrintView.jsx'), 'utf8')
 
 describe('Itinerary PDF print export', () => {
   it('importa ItineraryPrintView e chama window.print via folha de exportar', () => {
-    assert.match(itinerarySource, /import\s*\{[^}]*ItineraryPrintView/)
-    assert.match(itinerarySource, /import\s*\{[^}]*ItineraryExportSheet/)
+    assert.match(overlaysSource, /import\s*\{[^}]*ItineraryPrintView/)
+    assert.match(overlaysSource, /import\s*\{[^}]*ItineraryExportSheet/)
     assert.match(itinerarySource, /globalThis\.print\?\.\(\)/)
-    assert.match(itinerarySource, /<ItineraryExportSheet/)
-    assert.match(itinerarySource, /ios_share/)
+    assert.match(overlaysSource, /<ItineraryExportSheet/)
+    assert.match(headerSource, /ios_share/)
   })
 
   it('folha de exportar oferece só Exportar para PDF', () => {
@@ -37,7 +39,7 @@ describe('Itinerary PDF print export', () => {
 
   it('oculta UI na impressão e renderiza layout dedicado', () => {
     assert.match(itinerarySource, /print:hidden/)
-    assert.match(itinerarySource, /<ItineraryPrintView/)
+    assert.match(overlaysSource, /<ItineraryPrintView/)
     assert.match(printViewSource, /id="itinerary-print"/)
     assert.match(printViewSource, /hidden print:block/)
   })

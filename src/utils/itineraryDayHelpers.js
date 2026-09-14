@@ -1,3 +1,5 @@
+import { getTripDayCount } from './planningAccess.js'
+
 /** Garante a qual dia (1-based) cada atividade pertence — `day`, `dayNumber` ou datas (`dayDate`, `canonicalDate`, etc.). */
 export function getActivityDayNumber(act, dateToDayMap) {
   if (!act || typeof act !== 'object') return null
@@ -27,6 +29,24 @@ export function getActivityDayNumber(act, dateToDayMap) {
     if (isoMatch && dateToDayMap.has(isoMatch[1])) return dateToDayMap.get(isoMatch[1])
   }
   return null
+}
+
+export function computeDaysList(activities, dateToDayMap, trip) {
+  const chronologicalDays = Array.from({ length: getTripDayCount(trip) }, (_, i) => i + 1)
+  const numericDays = [
+    ...new Set(
+      (activities || [])
+        .map((activity) => getActivityDayNumber(activity, dateToDayMap))
+        .filter((day) => day != null),
+    ),
+  ]
+  return numericDays.length
+    ? [...new Set([...chronologicalDays, ...numericDays])].sort((a, b) => a - b)
+    : chronologicalDays
+}
+
+export function resolveEffectiveSelectedDay(selectedDay, days) {
+  return days.includes(selectedDay) ? selectedDay : (days[0] ?? 1)
 }
 
 function isoCalendarPrefix(raw) {

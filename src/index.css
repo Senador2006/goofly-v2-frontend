@@ -3,11 +3,11 @@
 @tailwind utilities;
 
 /* Leaflet — RF08.3.
- * Estilos base do Leaflet são importados em `main.jsx` (PostCSS exige
- * que `@import` esteja antes de qualquer outra diretiva; misturar com
- * `@tailwind` quebra o build do Vite). Aqui ficam só as overrides do
- * tema escuro, aplicadas via filtro CSS sobre os tiles OSM para evitar
- * dependência de provedores pagos (Mapbox/Stadia) só por dark mode. */
+ * Estilos base (`leaflet/dist/leaflet.css`) entram só nos módulos de mapa
+ * (`ItineraryDayMap`, `MemoryMap`) — não no entry — para não bloquear
+ * Login/Landing. Aqui ficam só as overrides do tema escuro, aplicadas via
+ * filtro CSS sobre os tiles OSM para evitar dependência de provedores
+ * pagos (Mapbox/Stadia) só por dark mode. */
 .dark .leaflet-container .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.95) saturate(0.85);
 }
@@ -37,6 +37,10 @@
   margin: 0;
   width: 200px !important;
   min-width: 200px;
+}
+.goofly-map-stop-popup:has(.goofly-map-stop-stack-popup) .leaflet-popup-content {
+  width: 220px !important;
+  min-width: 220px;
 }
 .goofly-map-stop-popup .leaflet-popup-tip {
   background: #ffffff;

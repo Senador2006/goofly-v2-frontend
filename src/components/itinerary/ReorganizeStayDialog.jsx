@@ -71,9 +71,9 @@ export function ReorganizeStayDialog({ open, onKeep, onReorganize, stayName }) {
               id="reorganize-stay-desc"
               className="mt-2 text-sm text-text-secondary leading-relaxed"
             >
-              O otimizador pode mudar a ordem do dia para ficar mais perto
-              {stayName ? ` de ${stayName}` : ' da estadia'}. Suas paradas curtidas no TDV são
-              preservadas.
+              O otimizador reordena as paradas do roteiro atual
+              {stayName ? ` para ficar mais perto de ${stayName}` : ' para ficar mais perto da estadia'}
+              . Edições manuais (Modificar Roteiro) são preservadas — não recria a partir das curtidas TDV.
             </p>
           </div>
         </div>

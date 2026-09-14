@@ -194,6 +194,15 @@ describe('ItineraryDayMap premium route contract', () => {
     assert.match(dayMapSource, /apiRouteMatchesVisibleActivities/)
   })
 
+  it('preview de rota usa slimActivitiesForRoutePreview', () => {
+    assert.match(dayMapSource, /slimActivitiesForRoutePreview/)
+    assert.match(dayMapSource, /activities:\s*slimActivitiesForRoutePreview\(activities\)/)
+    assert.match(
+      dayMapSource,
+      /mealActivities:\s*slimActivitiesForRoutePreview\(allMealActivities\)/,
+    )
+  })
+
   it('supports accommodation pin and leg polylines', () => {
     assert.match(dayMapSource, /accommodations/)
     assert.match(dayMapSource, /getHomeIcon/)

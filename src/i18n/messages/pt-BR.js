@@ -18,7 +18,7 @@ export default {
   nav: {
     dashboard: 'Dashboard',
     trips: 'Minhas viagens',
-    discover: 'Descobrir',
+    discover: 'Tinder',
     memories: 'Memórias',
     settings: 'Configurações'
   },
@@ -89,11 +89,18 @@ export default {
     retry: 'Tentar de novo',
     agent_unavailable:
       'Não foi possível carregar recomendações. Verifique sua conexão ou tente novamente em instantes.',
+    paid_batch_cap_title: 'Limite de descobertas desta viagem',
+    paid_batch_cap_body:
+      'Você explorou o máximo de recomendações do Tinder de Viagens nesta viagem. Use suas curtidas no Modificar Roteiro ou volte ao roteiro.',
+    paid_batch_cap_back: 'Voltar ao roteiro',
     free_cap_title: 'Limite do modo gratuito',
     free_cap_body:
       'Você explorou até 10 lugares no TDV gratuito. Gere o roteiro com o que curtiu ou desbloqueie o plano completo para continuar descobrindo.',
     free_cap_generate: 'Gerar roteiro',
     free_cap_unlock: 'Desbloquear plano completo',
+    unlock_reload_title: 'Recarregando descobertas…',
+    unlock_reload_body:
+      'Seu plano completo já está ativo. Estamos buscando novas recomendações — se nada aparecer, tente de novo.',
     already_liked: 'Este lugar já recebeu seu like',
     skip: 'Pular',
     like: 'Adicionar ao roteiro',

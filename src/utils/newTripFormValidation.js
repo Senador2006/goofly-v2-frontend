@@ -7,19 +7,21 @@ import {
 /**
  * @param {number} step
  * @param {Record<string, unknown>} data
- * @param {{ requirePlaceSelection?: boolean }} [options]
+ * @param {{ requirePlaceSelection?: boolean, requireAccommodationCoordinates?: boolean, mapsUnavailable?: boolean }} [options]
  * @returns {import('./newTripStep1Validation').StepError[]}
  */
 export function collectStepErrors(step, data, options = {}) {
   if (step === 1) {
     return collectStep1Errors(data?.destinations, {
-      requirePlaceSelection: options.requirePlaceSelection,
+      requirePlaceSelection: options.requirePlaceSelection !== false,
+      mapsUnavailable: options.mapsUnavailable === true,
     })
   }
   if (step === 2) {
     const msg = validateAccommodationFields(
       data?.destinations || [],
       data?.accommodations || [],
+      { requireCoordinates: options.requireAccommodationCoordinates === true },
     )
     if (!msg) return []
     return [{ code: 'accommodation', message: msg, field: 'accommodation' }]
@@ -40,7 +42,7 @@ export function firstStepErrorMessage(step, data, options) {
  * Só trava quando há erros — não exige ter clicado em "Próximo" antes.
  * @param {number} visited
  * @param {Record<string, unknown>} data
- * @param {{ requirePlaceSelection?: boolean }} [options]
+ * @param {{ requirePlaceSelection?: boolean, mapsUnavailable?: boolean }} [options]
  */
 export function furthestUnlockedStep(visited, data, options = {}) {
   const peak = Math.max(1, Math.min(4, Number(visited) || 1))

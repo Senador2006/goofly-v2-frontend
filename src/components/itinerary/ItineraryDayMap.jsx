@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import L from 'leaflet'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
 import { tripService } from '../../services/tripService'
 import {
   readLatLng,
@@ -34,6 +35,15 @@ import {
   resolveMealRouteAnchor,
   resolveVisibleMealMarkers,
 } from '../../utils/itineraryMealHelpers'
+import {
+  buildLayoutPins,
+  computePinLayout,
+  layoutPinId,
+  pinZIndexOffset,
+  stackedStopIdSet,
+} from '../../utils/itineraryMapPinLayout'
+import { slimActivitiesForRoutePreview } from '../../utils/itineraryPersistPayload'
+import { ItineraryMapStopStackPopup } from './ItineraryMapStopStackPopup'
 
 /**
  * RF04.3 — Mapa do roteiro por dia: pins numerados + rota (Geoapify pelo nome).
@@ -183,6 +193,49 @@ function getMealPopupProps(isMobileMap) {
  * Pin de refeição com balão Leaflet ancorado ao marcador.
  * Abre o popup ao receber destaque (ex.: "Ver no mapa" na timeline).
  */
+/**
+ * Recalcula layout de pins (stacks + offset lateral) em zoom/pan.
+ * Deve viver dentro de MapContainer (usa useMap).
+ */
+function PinOverlapLayoutSync({ pins, onLayout }) {
+  const map = useMap()
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    if (typeof onLayout !== 'function') return undefined
+
+    const run = () => {
+      const result = computePinLayout(pins, {
+        project: (ll) => {
+          const p = map.latLngToLayerPoint(L.latLng(ll[0], ll[1]))
+          return { x: p.x, y: p.y }
+        },
+        unproject: (pt) => {
+          const ll = map.layerPointToLatLng(L.point(pt.x, pt.y))
+          return [ll.lat, ll.lng]
+        },
+      })
+      onLayout(result)
+    }
+
+    const schedule = () => {
+      if (timerRef.current != null) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(run, 50)
+    }
+
+    run()
+    map.on('zoomend', schedule)
+    map.on('moveend', schedule)
+    return () => {
+      if (timerRef.current != null) clearTimeout(timerRef.current)
+      map.off('zoomend', schedule)
+      map.off('moveend', schedule)
+    }
+  }, [map, pins, onLayout])
+
+  return null
+}
+
 function MealMapMarker({
   marker,
   idx,
@@ -193,6 +246,8 @@ function MealMapMarker({
   onMealGoToTimeline,
   onMealViewOptions,
   onMealDismiss,
+  position = null,
+  zIndexOffset = 200,
 }) {
   const map = useMap()
   const markerRef = useRef(null)
@@ -232,9 +287,9 @@ function MealMapMarker({
   return (
     <Marker
       ref={markerRef}
-      position={marker.coords}
+      position={position || marker.coords}
       icon={getMealIcon(marker.mealType, isHighlighted)}
-      zIndexOffset={400}
+      zIndexOffset={zIndexOffset}
       eventHandlers={{
         click: () => {
           armSkipCloseDismiss()
@@ -292,6 +347,32 @@ function getNumberedIcon(order, isHighlighted) {
     html:
       `<div style="width:${size}px;height:${size}px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:800;color:#1c1c0d;background:#FEC641;box-shadow:${ring};">` +
       String(order) +
+      '</div>',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 4)],
+  })
+}
+
+/** Pin de stack: número da parada selecionada + badge com quantidade. */
+function getStackedStopIcon(order, count, isHighlighted) {
+  const size = isHighlighted ? 30 : 26
+  const fontSize = isHighlighted ? 12 : 11
+  const ring = isHighlighted
+    ? '0 0 0 3px #fff, 0 0 0 7px #FEC641, 0 0 18px 4px rgba(254,198,65,0.85)'
+    : '0 0 0 2px #fff, 0 0 0 4px rgba(254,198,65,0.45)'
+  const badge =
+    count > 1
+      ? `<span style="position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:9999px;background:#1c1c0d;color:#FEC641;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #fff;line-height:1;">${count}</span>`
+      : ''
+  return L.divIcon({
+    className: isHighlighted
+      ? 'goofly-itinerary-marker goofly-itinerary-marker--stack goofly-itinerary-marker--tracked'
+      : 'goofly-itinerary-marker goofly-itinerary-marker--stack',
+    html:
+      `<div style="position:relative;width:${size}px;height:${size}px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:800;color:#1c1c0d;background:#FEC641;box-shadow:${ring};">` +
+      String(order) +
+      badge +
       '</div>',
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -414,7 +495,27 @@ export function ItineraryDayMap({
   const [routeDay, setRouteDay] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [pinLayout, setPinLayout] = useState(() => ({
+    entries: new Map(),
+    stacks: [],
+  }))
+  /** @type {[Record<string, string>, Function]} */
+  const [stackSelection, setStackSelection] = useState({})
   const fetchGenRef = useRef(0)
+
+  const onPinLayout = useCallback((result) => {
+    setPinLayout({
+      entries: result?.entries instanceof Map ? result.entries : new Map(),
+      stacks: Array.isArray(result?.stacks) ? result.stacks : [],
+    })
+  }, [])
+
+  const selectStackMember = useCallback((stackId, pinId) => {
+    setStackSelection((prev) => {
+      if (prev[stackId] === pinId) return prev
+      return { ...prev, [stackId]: pinId }
+    })
+  }, [])
 
   const activitySig = useMemo(() => activitiesCacheSignature(activities), [activities])
   const mealSig = useMemo(
@@ -423,14 +524,6 @@ export function ItineraryDayMap({
         (mealSlots || []).flatMap((slot) => slot.options || []),
       ),
     [mealSlots],
-  )
-  const mealSelectionSig = useMemo(
-    () =>
-      Object.entries(selectedMealIds || {})
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, v]) => `${k}:${v}`)
-        .join('|'),
-    [selectedMealIds],
   )
   const accSig = useMemo(() => accommodationsCacheSignature(accommodations), [accommodations])
   const dayNum = day != null ? Number(day) : null
@@ -462,11 +555,13 @@ export function ItineraryDayMap({
       return undefined
     }
 
+    // mealSelection NÃO entra na key: a API devolve todos os mealMarkers;
+    // a opção ativa é filtrada no client (resolveVisibleMealMarkers).
     const key = preferLocalRoute
       ? draftCacheKey(tripId, dayNum, accSig)
-      : cacheKey(tripId, dayNum, routeRestricted ? `${activitySig}|${mealSig}|${mealSelectionSig}` : `${mealSig}|${mealSelectionSig}`, accSig)
+      : cacheKey(tripId, dayNum, routeRestricted ? `${activitySig}|${mealSig}` : mealSig, accSig)
     const cached = routeCacheByKey.get(key)
-    const combinedSig = `${activitySig}|${mealSig}|${mealSelectionSig}`
+    const combinedSig = `${activitySig}|${mealSig}`
     if (
       cached &&
       cached.activitySig === combinedSig &&
@@ -497,8 +592,8 @@ export function ItineraryDayMap({
         ? tripService.previewItineraryRoute(tripId, {
             day: dayNum,
             profile: ROUTE_PROFILE,
-            activities,
-            mealActivities: allMealActivities,
+            activities: slimActivitiesForRoutePreview(activities),
+            mealActivities: slimActivitiesForRoutePreview(allMealActivities),
           })
         : tripService.getItineraryRoute(tripId, { day: dayNum, profile: ROUTE_PROFILE })
 
@@ -533,7 +628,7 @@ export function ItineraryDayMap({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [tripId, dayNum, activitySig, mealSig, mealSelectionSig, accSig, disabled, preferLocalRoute, routeRestricted, activities, accommodations, allMealActivities])
+  }, [tripId, dayNum, activitySig, mealSig, accSig, disabled, preferLocalRoute, routeRestricted, activities, accommodations, allMealActivities])
 
   const routePayloadValid =
     routeData != null && routeDay === dayNum && routeDataMatchesDay(routeData, dayNum)
@@ -699,6 +794,58 @@ export function ItineraryDayMap({
     return coords
   }, [markers, mapAccommodations, showMealsOnMap, visibleMealMarkers])
 
+  const layoutPins = useMemo(
+    () =>
+      buildLayoutPins({
+        markers,
+        mealMarkers: visibleMealMarkers,
+        accommodations: mapAccommodations,
+        showMeals: showMealsOnMap,
+      }),
+    [markers, visibleMealMarkers, mapAccommodations, showMealsOnMap],
+  )
+
+  const pinEntries = pinLayout.entries
+  const pinStacks = pinLayout.stacks
+
+  const stackedIds = useMemo(() => stackedStopIdSet(pinStacks), [pinStacks])
+
+  const markerByPinId = useMemo(() => {
+    const map = new Map()
+    markers.forEach((m, idx) => {
+      const id = layoutPinId('stop', m.activityId, m.coords, idx)
+      map.set(id, { marker: m, idx })
+    })
+    return map
+  }, [markers])
+
+  // Se a timeline destaca uma parada que está num stack, seleciona essa parada no pin.
+  useEffect(() => {
+    if (highlightedIndex == null || !markers[highlightedIndex]) return
+    const m = markers[highlightedIndex]
+    const pinId = layoutPinId('stop', m.activityId, m.coords, highlightedIndex)
+    const entry = pinEntries.get(pinId)
+    if (!entry?.stackId) return
+    setStackSelection((prev) => {
+      if (prev[entry.stackId] === pinId) return prev
+      return { ...prev, [entry.stackId]: pinId }
+    })
+  }, [highlightedIndex, markers, pinEntries])
+
+  const pinLeaderLines = useMemo(() => {
+    const lines = []
+    for (const [id, entry] of pinEntries) {
+      if (!entry?.isOffset || !entry.trueLatLng || !entry.displayLatLng) continue
+      const kind = id.startsWith('meal:') ? 'meal' : id.startsWith('home:') ? 'home' : 'stop'
+      lines.push({
+        id,
+        kind,
+        positions: [entry.trueLatLng, entry.displayLatLng],
+      })
+    }
+    return lines
+  }, [pinEntries])
+
   const hasMapContent =
     markers.length > 0 || mapAccommodations.length > 0 || visibleMealMarkers.length > 0
   const showHomeNumbers = mapAccommodations.length > 1
@@ -805,11 +952,34 @@ export function ItineraryDayMap({
               />
             ))
           : null}
-        {mapAccommodations.map((acc, accIdx) => (
+        <PinOverlapLayoutSync pins={layoutPins} onLayout={onPinLayout} />
+        {pinLeaderLines.map((line) => (
+          <Polyline
+            key={`pin-leader-${line.id}`}
+            positions={line.positions}
+            pathOptions={{
+              color: line.kind === 'meal' ? '#f59e0b' : '#94a3b8',
+              weight: 1.5,
+              opacity: 0.7,
+              dashArray: '3 5',
+              interactive: false,
+              className: 'goofly-pin-leader-polyline',
+            }}
+          />
+        ))}
+        {mapAccommodations.map((acc, accIdx) => {
+          const pinId = layoutPinId('home', acc.id, acc.coords, accIdx)
+          const layoutEntry = pinEntries.get(pinId)
+          const displayPos = layoutEntry?.displayLatLng ?? acc.coords
+          return (
           <Marker
             key={acc.id || `home-${acc.coords[0]}-${acc.coords[1]}-${accIdx}`}
-            position={acc.coords}
+            position={displayPos}
             icon={getHomeIcon(showHomeNumbers ? accIdx + 1 : null)}
+            zIndexOffset={pinZIndexOffset({
+              kind: 'home',
+              sideIndex: layoutEntry?.sideIndex ?? accIdx,
+            })}
           >
             <Popup>
               <p className="m-0 text-sm font-bold text-foreground">
@@ -826,16 +996,79 @@ export function ItineraryDayMap({
               </p>
             </Popup>
           </Marker>
-        ))}
-        {markers.map((m, idx) => {
-          const imageUrls = imagesByActivityId.get(String(m.activityId ?? '')) || []
-          const isHighlighted = highlightedIndex === idx
+          )
+        })}
+        {pinStacks.map((stack) => {
+          const members = (stack.memberIds || [])
+            .map((pinId) => {
+              const hit = markerByPinId.get(pinId)
+              if (!hit) return null
+              const { marker: m, idx } = hit
+              return {
+                pinId,
+                order: m.order ?? idx + 1,
+                name: m.name,
+                startTime: m.startTime,
+                imageUrls: imagesByActivityId.get(String(m.activityId ?? '')) || [],
+                idx,
+              }
+            })
+            .filter(Boolean)
+          if (members.length === 0) return null
+          const selectedPinId =
+            stackSelection[stack.stackId] &&
+            members.some((m) => m.pinId === stackSelection[stack.stackId])
+              ? stackSelection[stack.stackId]
+              : members[0].pinId
+          const selected = members.find((m) => m.pinId === selectedPinId) || members[0]
+          const isHighlighted =
+            highlightedIndex != null && members.some((m) => m.idx === highlightedIndex)
           const popupProps = getActivityPopupProps(isMobileMap)
           return (
             <Marker
+              key={stack.stackId}
+              position={stack.displayLatLng}
+              icon={getStackedStopIcon(selected.order, members.length, isHighlighted)}
+              zIndexOffset={pinZIndexOffset({
+                kind: 'stop',
+                order: selected.order,
+                isHighlighted,
+                isStack: true,
+              })}
+            >
+              <Popup
+                className={popupProps.className}
+                offset={popupProps.offset}
+                autoPan={popupProps.autoPan}
+                autoPanPadding={popupProps.autoPanPadding}
+              >
+                <ItineraryMapStopStackPopup
+                  members={members}
+                  selectedPinId={selectedPinId}
+                  onSelect={(pinId) => selectStackMember(stack.stackId, pinId)}
+                />
+              </Popup>
+            </Marker>
+          )
+        })}
+        {markers.map((m, idx) => {
+          const pinId = layoutPinId('stop', m.activityId, m.coords, idx)
+          if (stackedIds.has(pinId)) return null
+          const imageUrls = imagesByActivityId.get(String(m.activityId ?? '')) || []
+          const isHighlighted = highlightedIndex === idx
+          const popupProps = getActivityPopupProps(isMobileMap)
+          const layoutEntry = pinEntries.get(pinId)
+          const displayPos = layoutEntry?.displayLatLng ?? m.coords
+          return (
+            <Marker
               key={m.activityId || `${m.coords[0]}-${m.coords[1]}-${idx}`}
-              position={m.coords}
+              position={displayPos}
               icon={getNumberedIcon(m.order ?? idx + 1, isHighlighted)}
+              zIndexOffset={pinZIndexOffset({
+                kind: 'stop',
+                order: m.order ?? idx + 1,
+                isHighlighted,
+              })}
             >
               <Popup
                 className={popupProps.className}
@@ -856,15 +1089,23 @@ export function ItineraryDayMap({
         {showMealsOnMap
           ? visibleMealMarkers.map((m, idx) => {
               const mealPopupProps = getMealPopupProps(isMobileMap)
+              const pinId = layoutPinId('meal', m.activityId ?? m.slotKey, m.coords, idx)
+              const layoutEntry = pinEntries.get(pinId)
+              const isHighlighted =
+                highlightedMealSlotKey != null && highlightedMealSlotKey === m.slotKey
               return (
                 <MealMapMarker
-                  key={m.activityId || `meal-${m.coords[0]}-${m.coords[1]}-${idx}`}
+                  key={`${m.slotKey || 'meal'}:${m.activityId || idx}`}
                   marker={m}
                   idx={idx}
                   isMobileMap={isMobileMap}
-                  isHighlighted={
-                    highlightedMealSlotKey != null && highlightedMealSlotKey === m.slotKey
-                  }
+                  position={layoutEntry?.displayLatLng ?? m.coords}
+                  zIndexOffset={pinZIndexOffset({
+                    kind: 'meal',
+                    sideIndex: layoutEntry?.sideIndex ?? idx,
+                    isHighlighted,
+                  })}
+                  isHighlighted={isHighlighted}
                   popupProps={mealPopupProps}
                   onMealSlotFocus={onMealSlotFocus}
                   onMealGoToTimeline={onMealGoToTimeline}
@@ -884,7 +1125,7 @@ export function ItineraryDayMap({
       </MapContainer>
 
       {dayNum != null && !disabled ? (
-        <div className="pointer-events-none absolute top-3 left-3 z-[500]">
+        <div className="pointer-events-none absolute top-3 left-14 z-[1000]">
           <span className="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full bg-white/92 dark:bg-card-dark/92 border border-border-light dark:border-border-dark shadow-sm text-foreground dark:text-white">
             Dia {dayNum}
           </span>
@@ -974,7 +1215,7 @@ export function ItineraryDayMap({
           ) : null}
           {warnings.includes('geocode_fallback_coordinates') ? (
             <div className="rounded-lg bg-amber-500/15 border border-amber-500/30 px-2 py-1 text-[10px] text-amber-900 dark:text-amber-200 max-w-[11rem]">
-              Algumas paradas usaram coordenadas salvas
+              Algumas paradas sem coordenadas precisas
             </div>
           ) : null}
         </div>
