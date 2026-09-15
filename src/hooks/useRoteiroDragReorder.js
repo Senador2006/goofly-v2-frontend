@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { moveActivityToIndexInSameDay } from '../utils/itineraryDayHelpers'
+import { moveUnitToIndexInSameDay } from '../utils/itineraryDayUnits'
 import { applyRoteiroScheduleReorder } from '../utils/roteiroScheduleContract'
+import { getMealTypeLabel } from '../utils/itineraryMealHelpers'
 import { prefersReducedFlipMotion } from '../utils/flipListAnimation'
 import {
   buildGhostRect,
@@ -373,7 +374,7 @@ export function useRoteiroDragReorder({
       setDraftActivities((prev) =>
         prev
           ? applyRoteiroScheduleReorder(prev, dateToDayMap, dayNum, (list) =>
-              moveActivityToIndexInSameDay(list, dateToDayMap, dayNum, id, targetIndex),
+              moveUnitToIndexInSameDay(list, dateToDayMap, dayNum, id, targetIndex),
             )
           : prev,
       )
@@ -576,10 +577,33 @@ export function useRoteiroDragReorder({
     phase === 'dragging' || phase === 'landing' || phase === 'reverting' || phase === 'expanding'
   const isInteractionBlocked = isDragMode
 
-  const ghostActivity =
-    draggingId != null
-      ? dayActivities.find((a) => String(a.id) === String(draggingId)) ?? null
-      : null
+  const ghostActivity = (() => {
+    if (draggingId == null) return null
+    const item = dayActivities.find((a) => String(a.id) === String(draggingId))
+    if (!item) return null
+    if (item.unit?.type === 'mealSlot') {
+      const primary = item.unit.options?.[0] || {}
+      const label = getMealTypeLabel(item.unit.mealType)
+      const selectedName =
+        primary.title || primary.name || primary.placeName || label
+      return {
+        ...primary,
+        id: item.id,
+        title: selectedName,
+        name: selectedName,
+        mealType: item.unit.mealType,
+        isMealRecommendation: true,
+        __isMealGhost: true,
+        __mealOptionCount: item.unit.ids?.length || item.unit.options?.length || 0,
+        startTime: primary.startTime || primary.start_time || '',
+        endTime: primary.endTime || primary.end_time || '',
+      }
+    }
+    if (item.unit?.type === 'activity') {
+      return item.unit.act ?? item
+    }
+    return item.act ?? item
+  })()
 
   return {
     phase,

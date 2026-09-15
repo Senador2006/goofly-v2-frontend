@@ -503,7 +503,9 @@ function GooglePlaceAutocompleteMobile({
       left: Math.max(8, rect.left),
       width: Math.min(rect.width, window.innerWidth - 16),
       maxHeight: height,
-      zIndex: 80,
+      // Acima de AccommodationEditorSheet / overlays do roteiro (z-[1200]),
+      // abaixo do diálogo de confirmação de substituição (z-[1220]).
+      zIndex: 1215,
       ...(placeAbove
         ? { bottom: window.innerHeight - rect.top + gap, top: 'auto' }
         : { top: rect.bottom + gap, bottom: 'auto' }),

@@ -244,48 +244,47 @@ export function AccommodationEditorSheet({
           role="dialog"
           aria-modal="true"
           aria-labelledby="accommodation-editor-title"
-          className={`relative flex max-h-[min(92dvh,44rem)] w-full max-w-[100vw] flex-col overflow-hidden rounded-t-3xl border-x-0 border-b-0 border-t border-border-light bg-white shadow-2xl dark:border-white/10 dark:bg-card-dark dark:shadow-black/50 sm:max-w-lg sm:rounded-2xl sm:border motion-reduce:transition-none ${
+          className={`relative flex max-h-[min(78dvh,36rem)] w-full max-w-[100vw] flex-col overflow-hidden rounded-t-2xl border-x-0 border-b-0 border-t border-border-light bg-white shadow-2xl dark:border-white/10 dark:bg-card-dark dark:shadow-black/50 sm:max-h-[min(92dvh,44rem)] sm:max-w-lg sm:rounded-2xl sm:border motion-reduce:transition-none ${
             dragging ? '' : 'transition-all duration-300 ease-out'
           } ${visible ? 'opacity-100 sm:scale-100' : 'opacity-0 sm:scale-[0.96]'}`}
           style={{ transform: `translate3d(0, ${sheetOffset}px, 0)` }}
           onClick={(e) => e.stopPropagation()}
         >
           <div
-            className="flex cursor-grab touch-none justify-center pt-[max(0.625rem,env(safe-area-inset-top))] pb-1 active:cursor-grabbing sm:hidden sm:pt-2.5"
+            className="flex cursor-grab touch-none justify-center pt-[max(0.5rem,env(safe-area-inset-top))] pb-0.5 active:cursor-grabbing sm:hidden sm:pt-2.5"
             onPointerDown={onHandlePointerDown}
             onPointerMove={onHandlePointerMove}
             onPointerUp={onHandlePointerUp}
             onPointerCancel={onHandlePointerUp}
             aria-label="Arraste para fechar"
           >
-            <span className="h-1 w-10 rounded-full bg-zinc-300 dark:bg-white/20" />
+            <span className="h-1 w-9 rounded-full bg-zinc-300 dark:bg-white/20" />
           </div>
 
-          <div className="flex items-start justify-between gap-3 px-4 pt-2 sm:px-5 sm:pt-5">
+          <div className="flex items-start justify-between gap-2 px-3.5 pt-1.5 sm:gap-3 sm:px-5 sm:pt-5">
             <div className="min-w-0 flex-1 pr-1">
               <h2
                 id="accommodation-editor-title"
-                className="text-base font-black tracking-tight text-foreground dark:text-white"
+                className="text-[0.9375rem] font-black tracking-tight text-foreground dark:text-white sm:text-base"
               >
                 Gerenciar hospedagens
               </h2>
-              <p className="mt-1 text-[11px] leading-snug text-text-secondary dark:text-zinc-400">
-                Várias estadias são permitidas. Se as datas se cruzarem, a hospedagem mais recente
-                substitui a anterior nos dias em comum.
+              <p className="mt-0.5 text-[10px] leading-snug text-text-secondary dark:text-zinc-400 sm:mt-1 sm:text-[11px]">
+                Datas sobrepostas: a hospedagem mais recente vale nos dias em comum.
               </p>
             </div>
             <button
               type="button"
               onClick={onClose}
               disabled={saving || Boolean(pendingSave)}
-              className="shrink-0 rounded-full p-1.5 text-text-secondary dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-white/10"
+              className="shrink-0 rounded-full p-1 text-text-secondary dark:text-zinc-400 hover:bg-black/5 dark:hover:bg-white/10 sm:p-1.5"
               aria-label="Fechar"
             >
               <Icon name="close" />
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 space-y-4 sm:px-5">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3.5 py-2.5 space-y-2.5 sm:space-y-4 sm:px-5 sm:py-4">
             {destinations.map((dest) => (
               <AccommodationDestinationGroup
                 key={dest.id}
@@ -297,6 +296,7 @@ export function AccommodationEditorSheet({
                 disabled={saving || Boolean(pendingSave)}
                 fieldIdPrefix="itinerary-acc"
                 requirePlaceSuggestion
+                compact
                 onAdd={addAccommodation}
                 onChange={updateAccommodation}
                 onRemove={removeAccommodation}
@@ -309,7 +309,7 @@ export function AccommodationEditorSheet({
                 {replacementWarnings.map((msg) => (
                   <p
                     key={msg}
-                    className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed bg-amber-500/10 rounded-xl px-3 py-2"
+                    className="text-[11px] sm:text-xs text-amber-800 dark:text-amber-200 leading-relaxed bg-amber-500/10 rounded-lg px-2.5 py-1.5 sm:rounded-xl sm:px-3 sm:py-2"
                   >
                     {msg}
                   </p>
@@ -317,29 +317,29 @@ export function AccommodationEditorSheet({
               </div>
             ) : null}
             {displayError ? (
-              <p className="text-xs text-red-600 dark:text-red-400 leading-relaxed" role="alert">
+              <p className="text-[11px] sm:text-xs text-red-600 dark:text-red-400 leading-relaxed" role="alert">
                 {displayError}
               </p>
             ) : null}
           </div>
 
-          <div className="flex flex-col gap-2 border-t border-border-light dark:border-border-dark px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
-            <Button
-              type="button"
-              className="rounded-xl font-bold w-full"
-              onClick={handleSubmit}
-              disabled={saving || Boolean(pendingSave)}
-            >
-              {saving ? 'Salvando…' : 'Salvar hospedagens'}
-            </Button>
+          <div className="flex gap-2 border-t border-border-light dark:border-border-dark px-3.5 py-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-col sm:gap-2 sm:px-5 sm:py-4 sm:pb-5">
             <Button
               type="button"
               variant="secondary"
-              className="rounded-xl font-bold w-full"
+              className="rounded-xl font-bold flex-1 !py-2.5 text-sm sm:w-full sm:order-2 sm:!py-3"
               onClick={onClose}
               disabled={saving || Boolean(pendingSave)}
             >
               Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="rounded-xl font-bold flex-[1.35] !py-2.5 text-sm sm:w-full sm:order-1 sm:flex-none sm:!py-3"
+              onClick={handleSubmit}
+              disabled={saving || Boolean(pendingSave)}
+            >
+              {saving ? 'Salvando…' : 'Salvar'}
             </Button>
           </div>
         </div>

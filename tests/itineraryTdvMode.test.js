@@ -49,10 +49,15 @@ test('Itinerary: planejamento com TDV e confirmação de apagar fora do header',
 })
 
 test('Itinerary: TDV mobile trava scroll do Layout e reserva MobileNav', () => {
-  // C12: lock vive em usePlanningModes; shell ainda reserva altura da MobileNav
+  // C12: lock vive em usePlanningModes; altura da MobileNav vem do Layout (pb = var)
   assert.match(planningModesSource, /tdv-mobile-lock/)
-  assert.match(itinerarySource, /max-lg:pb-\[var\(--goofly-mobile-nav-height,0px\)\]/)
+  assert.match(layoutSource, /pb-\[var\(--goofly-mobile-nav-height/)
   assert.match(indexCssSource, /main\.tdv-mobile-lock/)
+  // Lock zera padding lateral/topo, mas deve manter pb da nav — senão action bar some
+  assert.match(
+    indexCssSource,
+    /main\.tdv-mobile-lock\s*\{[^}]*padding:\s*0\s+0\s+var\(--goofly-mobile-nav-height/s,
+  )
 })
 
 const mobileNavSource = readFileSync(

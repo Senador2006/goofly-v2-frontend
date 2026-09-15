@@ -1,13 +1,22 @@
 /**
- * Contrato de horários do roteiro: a atividade editada é prioritária (duração pode mudar);
+ * Contrato de horários do roteiro: a unidade editada é prioritária (duração pode mudar);
  * as demais do mesmo dia deslocam em bloco preservando duração e gaps.
+ * Blocos de refeição (N opções) contam como uma única unidade de schedule.
  */
 
 import {
   getActivityDayNumber,
   sortDayActivities,
 } from './itineraryDayHelpers.js'
+import {
+  buildDayEditUnits,
+  findUnitIndex,
+  getUnitActivityIds,
+  getUnitDragId,
+  resolveUnitPrimaryActivity,
+} from './itineraryDayUnits.js'
 import { minutesBetweenStarts } from './formatActivityDuration.js'
+import { resolveMealActivityId } from './itineraryMealHelpers.js'
 
 const DAY_MINUTES = 24 * 60
 const DEFAULT_DURATION_MINUTES = 120
@@ -140,13 +149,102 @@ function writeScheduleFields(act, start, end, durationMinutes) {
 }
 
 /**
- * Aplica edição de horário em uma atividade do dia e realinha as demais
+ * @param {any[]} allActivities
+ * @param {Map<string, number>} dateToDayMap
+ * @param {number} dayNum
+ */
+function dayContext(allActivities, dateToDayMap, dayNum) {
+  const onDay = sortDayActivities(
+    (allActivities || []).filter(
+      (a) => getActivityDayNumber(a, dateToDayMap) === dayNum,
+    ),
+  )
+  const units = buildDayEditUnits(onDay, dayNum)
+  /** @type {Map<string, Record<string, unknown>>} */
+  const byId = new Map(
+    onDay.map((a) => [String(resolveMealActivityId(a)), a]),
+  )
+  return { onDay, units, byId }
+}
+
+/**
+ * Duração da unidade: max das opções (meal) ou duração da parada.
+ * @param {import('./itineraryDayUnits.js').DayEditUnit} unit
+ * @param {Map<string, Record<string, unknown>>} byId
+ */
+function resolveUnitDurationMinutes(unit, byId) {
+  const ids = getUnitActivityIds(unit)
+  let max = 0
+  for (const id of ids) {
+    const act = byId.get(String(id))
+    if (!act) continue
+    max = Math.max(max, resolveActivityDurationMinutes(act))
+  }
+  if (max > 0) return max
+  const primary = resolveUnitPrimaryActivity(unit, byId)
+  return primary ? resolveActivityDurationMinutes(primary) : DEFAULT_DURATION_MINUTES
+}
+
+/**
+ * @param {import('./itineraryDayUnits.js').DayEditUnit} unit
+ * @param {Map<string, Record<string, unknown>>} byId
+ */
+function resolveUnitStartMinutes(unit, byId) {
+  const primary = resolveUnitPrimaryActivity(unit, byId)
+  return parseTimeToMinutes(readStartRaw(primary)) ?? 9 * 60
+}
+
+/**
+ * Escreve o mesmo horário em todos os activity ids da unidade.
+ * @param {Map<string, Record<string, unknown>>} updatedById
+ * @param {import('./itineraryDayUnits.js').DayEditUnit} unit
+ * @param {Map<string, Record<string, unknown>>} byId
+ * @param {string} startStr
+ * @param {string | null} endStr
+ * @param {number} duration
+ * @param {Record<string, unknown> | null} [mergedPrimary]
+ */
+function writeUnitSchedule(
+  updatedById,
+  unit,
+  byId,
+  startStr,
+  endStr,
+  duration,
+  mergedPrimary = null,
+) {
+  const ids = getUnitActivityIds(unit)
+  const primaryId = ids[0]
+  for (const id of ids) {
+    const base =
+      mergedPrimary && String(id) === String(primaryId)
+        ? mergedPrimary
+        : byId.get(String(id))
+    if (!base) continue
+    const withPatch =
+      mergedPrimary && String(id) !== String(primaryId)
+        ? {
+            ...base,
+            ...Object.fromEntries(
+              Object.entries(mergedPrimary).filter(([k]) => TIME_PATCH_KEYS.has(k)),
+            ),
+          }
+        : base
+    updatedById.set(
+      String(id),
+      writeScheduleFields(withPatch, startStr, endStr, duration),
+    )
+  }
+}
+
+/**
+ * Aplica edição de horário em uma unidade do dia e realinha as demais
  * preservando gaps e durações (exceto a editada).
  *
  * @param {unknown[]} allActivities
  * @param {Map<string, number>} dateToDayMap
  * @param {number} dayNum
- * @param {string | number} editedId
+ * @param {string | number} editedId activity id ou slotId
  * @param {Record<string, unknown>} patch
  * @returns {unknown[]}
  */
@@ -161,15 +259,13 @@ export function applyRoteiroScheduleEdit(
     return allActivities
   }
 
-  const onDay = sortDayActivities(
-    allActivities.filter((a) => getActivityDayNumber(a, dateToDayMap) === dayNum),
-  )
-  const k = onDay.findIndex((a) => String(a.id) === String(editedId))
+  const { units, byId } = dayContext(allActivities, dateToDayMap, dayNum)
+  const k = findUnitIndex(units, editedId)
   if (k < 0) return allActivities
 
-  const n = onDay.length
-  const starts = onDay.map((a) => parseTimeToMinutes(readStartRaw(a)) ?? 9 * 60)
-  const durations = onDay.map((a) => resolveActivityDurationMinutes(a))
+  const n = units.length
+  const starts = units.map((u) => resolveUnitStartMinutes(u, byId))
+  const durations = units.map((u) => resolveUnitDurationMinutes(u, byId))
   const endsResolved = starts.map((s, i) => s + durations[i])
 
   /** @type {number[]} */
@@ -178,7 +274,9 @@ export function applyRoteiroScheduleEdit(
     gaps.push(Math.max(0, starts[i + 1] - endsResolved[i]))
   }
 
-  const merged = { ...onDay[k], ...patch }
+  const primary = resolveUnitPrimaryActivity(units[k], byId)
+  if (!primary) return allActivities
+  const merged = { ...primary, ...patch }
 
   const patchHasStart =
     Object.prototype.hasOwnProperty.call(patch, 'startTime') ||
@@ -209,9 +307,7 @@ export function applyRoteiroScheduleEdit(
       endK = parsedEnd
     }
   } else {
-    // Só início: se havia fim explícito, mantém o fim absoluto (duração muda);
-    // se não, desloca o bloco com duração snapshot.
-    const prevEndRaw = readEndRaw(onDay[k])
+    const prevEndRaw = readEndRaw(primary)
     if (prevEndRaw && parseTimeToMinutes(prevEndRaw) != null) {
       endK = parseTimeToMinutes(prevEndRaw)
     } else {
@@ -221,7 +317,6 @@ export function applyRoteiroScheduleEdit(
   }
 
   if (!(endK > startK)) {
-    // Janela inválida: não aplica
     return allActivities
   }
 
@@ -247,31 +342,40 @@ export function applyRoteiroScheduleEdit(
     layout[i] = { start: end - duration, end, duration }
   }
 
+  /** @type {Map<string, Record<string, unknown>>} */
   const updatedById = new Map()
   for (let i = 0; i < n; i += 1) {
     const startStr = minutesToTime(layout[i].start)
     const endStr = minutesToTime(layout[i].end)
-    const base = i === k ? merged : onDay[i]
     const writeEnd = i === k && clearEndOnEdited ? null : endStr
-    updatedById.set(
-      String(onDay[i].id),
-      writeScheduleFields(base, startStr, writeEnd, layout[i].duration),
+    writeUnitSchedule(
+      updatedById,
+      units[i],
+      byId,
+      startStr,
+      writeEnd,
+      layout[i].duration,
+      i === k ? merged : null,
     )
   }
 
   return allActivities.map((a) => {
     if (getActivityDayNumber(a, dateToDayMap) !== dayNum) return a
-    const next = updatedById.get(String(a.id))
+    const next = updatedById.get(String(resolveMealActivityId(a)))
     return next ?? a
   })
 }
 
 /**
- * @typedef {{ anchorStart: number, gaps: number[], durationById: Map<string, number> }} DayScheduleSnapshot
+ * @typedef {{
+ *   anchorStart: number,
+ *   gaps: number[],
+ *   durationByUnitId: Map<string, number>,
+ * }} DayScheduleSnapshot
  */
 
 /**
- * Snapshot de âncora, gaps posicionais e durações do dia (ordem atual).
+ * Snapshot de âncora, gaps posicionais e durações do dia por unidade.
  *
  * @param {unknown[]} allActivities
  * @param {Map<string, number>} dateToDayMap
@@ -280,41 +384,41 @@ export function applyRoteiroScheduleEdit(
  */
 export function snapshotDaySchedule(allActivities, dateToDayMap, dayNum) {
   if (!Array.isArray(allActivities)) return null
-  const onDay = sortDayActivities(
-    allActivities.filter((a) => getActivityDayNumber(a, dateToDayMap) === dayNum),
-  )
-  if (onDay.length === 0) return null
+  const { units, byId } = dayContext(allActivities, dateToDayMap, dayNum)
+  if (units.length === 0) return null
 
-  const starts = onDay.map((a) => parseTimeToMinutes(readStartRaw(a)) ?? 9 * 60)
-  const durations = onDay.map((a) => resolveActivityDurationMinutes(a))
+  const starts = units.map((u) => resolveUnitStartMinutes(u, byId))
+  const durations = units.map((u) => resolveUnitDurationMinutes(u, byId))
   const endsResolved = starts.map((s, i) => s + durations[i])
 
   /** @type {number[]} */
   const gaps = []
-  for (let i = 0; i < onDay.length - 1; i += 1) {
+  for (let i = 0; i < units.length - 1; i += 1) {
     gaps.push(Math.max(0, starts[i + 1] - endsResolved[i]))
   }
 
   /** @type {Map<string, number>} */
-  const durationById = new Map()
-  for (let i = 0; i < onDay.length; i += 1) {
-    durationById.set(String(onDay[i].id), durations[i])
+  const durationByUnitId = new Map()
+  for (let i = 0; i < units.length; i += 1) {
+    durationByUnitId.set(getUnitDragId(units[i]), durations[i])
   }
 
   return {
     anchorStart: starts[0],
     gaps,
-    durationById,
+    durationByUnitId,
+    /** @deprecated alias para testes legados que leem durationById */
+    durationById: durationByUnitId,
   }
 }
 
 /**
- * Realinha horários do dia na ordem dada, usando snapshot (âncora + gaps + durações).
+ * Realinha horários do dia na ordem de unidades dada.
  *
  * @param {unknown[]} allActivities
  * @param {Map<string, number>} dateToDayMap
  * @param {number} dayNum
- * @param {Array<string | number>} orderedIds
+ * @param {Array<string | number>} orderedUnitIds
  * @param {DayScheduleSnapshot} snapshot
  * @returns {unknown[]}
  */
@@ -322,39 +426,44 @@ export function relayoutDaySchedule(
   allActivities,
   dateToDayMap,
   dayNum,
-  orderedIds,
+  orderedUnitIds,
   snapshot,
 ) {
-  if (!Array.isArray(allActivities) || !snapshot || !Array.isArray(orderedIds)) {
+  if (!Array.isArray(allActivities) || !snapshot || !Array.isArray(orderedUnitIds)) {
     return allActivities
   }
-  if (orderedIds.length === 0) return allActivities
+  if (orderedUnitIds.length === 0) return allActivities
 
-  const byId = new Map(
-    allActivities
-      .filter((a) => getActivityDayNumber(a, dateToDayMap) === dayNum)
-      .map((a) => [String(a.id), a]),
-  )
+  const { units, byId } = dayContext(allActivities, dateToDayMap, dayNum)
+  /** @type {Map<string, (typeof units)[number]>} */
+  const unitByDragId = new Map(units.map((u) => [getUnitDragId(u), u]))
 
   /** @type {Map<string, Record<string, unknown>>} */
   const updatedById = new Map()
   let cursor = snapshot.anchorStart
+  const durationMap = snapshot.durationByUnitId ?? snapshot.durationById
 
-  for (let i = 0; i < orderedIds.length; i += 1) {
-    const id = String(orderedIds[i])
-    const base = byId.get(id)
-    if (!base) continue
+  for (let i = 0; i < orderedUnitIds.length; i += 1) {
+    const unitKey = String(orderedUnitIds[i])
+    const unit = unitByDragId.get(unitKey)
+    if (!unit) continue
 
+    const primary = resolveUnitPrimaryActivity(unit, byId)
     const duration =
-      snapshot.durationById.get(id) ?? resolveActivityDurationMinutes(base)
+      durationMap?.get(unitKey) ??
+      (primary ? resolveActivityDurationMinutes(primary) : DEFAULT_DURATION_MINUTES)
     const start = cursor
     const end = start + duration
-    updatedById.set(
-      id,
-      writeScheduleFields(base, minutesToTime(start), minutesToTime(end), duration),
+    writeUnitSchedule(
+      updatedById,
+      unit,
+      byId,
+      minutesToTime(start),
+      minutesToTime(end),
+      duration,
     )
 
-    if (i < orderedIds.length - 1) {
+    if (i < orderedUnitIds.length - 1) {
       const gap = snapshot.gaps[i] ?? 0
       cursor = end + gap
     }
@@ -362,13 +471,13 @@ export function relayoutDaySchedule(
 
   return allActivities.map((a) => {
     if (getActivityDayNumber(a, dateToDayMap) !== dayNum) return a
-    return updatedById.get(String(a.id)) ?? a
+    return updatedById.get(String(resolveMealActivityId(a))) ?? a
   })
 }
 
 /**
  * Após mutação de ordem no mesmo dia, realinha horários preservando
- * âncora, gaps posicionais e duração de cada atividade.
+ * âncora, gaps posicionais e duração de cada unidade.
  *
  * @param {unknown[]} allActivities
  * @param {Map<string, number>} dateToDayMap
@@ -392,15 +501,14 @@ export function applyRoteiroScheduleReorder(
   const next = mutateFn(allActivities)
   if (next === allActivities || !Array.isArray(next)) return allActivities
 
-  const orderedIds = sortDayActivities(
-    next.filter((a) => getActivityDayNumber(a, dateToDayMap) === dayNum),
-  ).map((a) => a.id)
+  const { units } = dayContext(next, dateToDayMap, dayNum)
+  const orderedUnitIds = units.map((u) => getUnitDragId(u))
 
-  return relayoutDaySchedule(next, dateToDayMap, dayNum, orderedIds, snapshot)
+  return relayoutDaySchedule(next, dateToDayMap, dayNum, orderedUnitIds, snapshot)
 }
 
 /**
- * Anexa uma atividade no fim do dia com horário após a última parada.
+ * Anexa uma atividade no fim do dia com horário após a última unidade.
  * Dia vazio: 09:00. Dia com paradas: fim da última + INSERT_END_GAP_MINUTES.
  *
  * @param {unknown[]} allActivities
@@ -419,16 +527,15 @@ export function scheduleActivityInsertedAtEnd(
   if (!newAct || typeof newAct !== 'object') return list
 
   const day = Math.max(1, Math.floor(Number(dayNum) || 1))
-  const onDay = sortDayActivities(
-    list.filter((a) => getActivityDayNumber(a, dateToDayMap) === day),
-  )
+  const { units, byId } = dayContext(list, dateToDayMap, day)
 
   const duration = resolveActivityDurationMinutes(newAct)
   let startMins = 9 * 60
-  if (onDay.length > 0) {
-    const last = onDay[onDay.length - 1]
-    const lastStart = parseTimeToMinutes(readStartRaw(last)) ?? 9 * 60
-    startMins = lastStart + resolveActivityDurationMinutes(last) + INSERT_END_GAP_MINUTES
+  if (units.length > 0) {
+    const lastUnit = units[units.length - 1]
+    const lastStart = resolveUnitStartMinutes(lastUnit, byId)
+    startMins =
+      lastStart + resolveUnitDurationMinutes(lastUnit, byId) + INSERT_END_GAP_MINUTES
   }
 
   const start = minutesToTime(startMins)

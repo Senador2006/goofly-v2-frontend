@@ -42,7 +42,54 @@ export function resolveMapMarkers({
   let markers = Array.isArray(apiMarkers) && apiMarkers.length > 0 ? apiMarkers : []
   markers = filterMarkersByVisibleIds(markers, visibleActivityIds)
   if (markers.length > 0) return markers
-  return []
+  // Pins otimistas enquanto a rota do dia carrega (coords já no itinerário).
+  const local = Array.isArray(localMarkers) ? localMarkers : []
+  return filterMarkersByVisibleIds(local, visibleActivityIds)
+}
+
+/**
+ * Markers locais a partir das activities do dia (coords persistidas / likes).
+ * Usados só até a API de rota responder.
+ * @param {Record<string, unknown>[]} activities
+ */
+export function buildOptimisticMarkersFromActivities(activities) {
+  const list = Array.isArray(activities) ? activities : []
+  const out = []
+  let order = 0
+  for (let i = 0; i < list.length; i += 1) {
+    const act = list[i]
+    if (!act || typeof act !== 'object') continue
+    const coords = readLatLng(act)
+    if (!coords) continue
+    order += 1
+    const activityId = String(act.id || act.placeId || act.place_id || `idx-${i}`)
+    out.push({
+      order,
+      activityId,
+      name: String(act.name || act.title || act.placeName || 'Parada').trim() || 'Parada',
+      startTime: act.startTime ?? act.start_time ?? act.time ?? null,
+      source: act.source ?? null,
+      placeId: act.placeId ?? act.place_id ?? null,
+      coords,
+      coordSource: 'optimistic',
+    })
+  }
+  return out
+}
+
+/** Ordena dias para prefetch: vizinhos do atual primeiro, depois o restante. */
+export function orderDaysForPrefetch(days, currentDay) {
+  const list = [...new Set((days || []).map(Number).filter((d) => Number.isFinite(d) && d >= 1))]
+  const cur = Number(currentDay)
+  if (!Number.isFinite(cur)) return list.sort((a, b) => a - b)
+  const rest = list.filter((d) => d !== cur)
+  rest.sort((a, b) => {
+    const da = Math.abs(a - cur)
+    const db = Math.abs(b - cur)
+    if (da !== db) return da - db
+    return a - b
+  })
+  return rest
 }
 
 export function resolvePolylinePositions({

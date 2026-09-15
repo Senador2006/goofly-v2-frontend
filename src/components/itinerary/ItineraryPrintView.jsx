@@ -78,7 +78,7 @@ export function ItineraryPrintView({
             </h2>
 
             <ol className="list-none m-0 p-0 space-y-4">
-              {buildDayTimelineItems(sortDayActivities(dayActs)).map((item, idx) => {
+              {buildDayTimelineItems(sortDayActivities(dayActs), day).map((item, idx) => {
                 if (item.type === 'mealSlot') {
                   const mealLabel = getMealTypeLabel(item.mealType)
                   const timeLabel = formatMealTimeLabel(item.startTime)

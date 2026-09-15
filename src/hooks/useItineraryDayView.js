@@ -10,6 +10,7 @@ import {
   buildDayTimelineItems,
   filterRouteActivities,
 } from '../utils/itineraryMealHelpers'
+import { buildDayEditUnits, getUnitDragId } from '../utils/itineraryDayUnits'
 import {
   findDestinationCoveringIso,
   resolveAccommodationsForDay,
@@ -50,9 +51,13 @@ export function useItineraryDayView({
           getActivityDayNumber(activity, dateToDayMap) === effectiveSelectedDay,
       ),
     )
-    const dayTimelineItems = buildDayTimelineItems(dayActivities)
+    const dayTimelineItems = buildDayTimelineItems(dayActivities, effectiveSelectedDay)
+    const dayEditUnits = buildDayEditUnits(dayActivities, effectiveSelectedDay)
     const dayRouteActivities = filterRouteActivities(dayActivities)
     const dayMealSlots = dayTimelineItems.filter((item) => item.type === 'mealSlot')
+    const unitIndexByDragId = new Map(
+      dayEditUnits.map((unit, index) => [getUnitDragId(unit), index]),
+    )
     const dayAccommodations = resolveAccommodationsForDay(
       trip,
       effectiveSelectedDay,
@@ -114,6 +119,8 @@ export function useItineraryDayView({
       effectiveSelectedDay,
       dayActivities,
       dayTimelineItems,
+      dayEditUnits,
+      unitIndexByDragId,
       dayRouteActivities,
       dayMealSlots,
       dayAccommodations,

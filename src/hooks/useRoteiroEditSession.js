@@ -7,15 +7,24 @@ import { useRoteiroDaySwap } from './useRoteiroDaySwap'
 import { useRoteiroLikeReplace } from './useRoteiroLikeReplace'
 import { useRoteiroLikeDrag } from './useRoteiroLikeDrag'
 import {
-  assignActivityToDay,
   computeDaysList,
   getActivityDayNumber,
-  reorderActivityInSameDay,
   resolveEffectiveSelectedDay,
   sortDayActivities,
   swapActivitiesBetweenDays,
 } from '../utils/itineraryDayHelpers'
 import { filterRouteActivities } from '../utils/itineraryMealHelpers'
+import {
+  assignDayUnitToDay,
+  buildDayEditUnits,
+  findUnitIndex,
+  getUnitDragId,
+  moveUnitToIndexInSameDay,
+  removeDayUnit,
+  removeMealOptionFromSlot,
+  addMealOptionToSlot,
+  reorderUnitInSameDay,
+} from '../utils/itineraryDayUnits'
 import { normalizeActivitiesForPersist } from '../utils/itineraryPersistPayload'
 import {
   applyRoteiroScheduleEdit,
@@ -83,13 +92,20 @@ export function useRoteiroEditSession({
           : persistedActivities
     const days = computeDaysList(activities, dateToDayMap, trip)
     const dayNum = resolveEffectiveSelectedDay(selectedDay, days)
+    const dayActivities = sortDayActivities(
+      activities.filter(
+        (activity) => getActivityDayNumber(activity, dateToDayMap) === dayNum,
+      ),
+    )
+    const dayEditUnits = buildDayEditUnits(dayActivities, dayNum)
     return {
       dayNum,
-      dayActivities: sortDayActivities(
-        activities.filter(
-          (activity) => getActivityDayNumber(activity, dateToDayMap) === dayNum,
-        ),
-      ),
+      dayActivities,
+      dayEditUnits,
+      dayDragItems: dayEditUnits.map((unit) => ({
+        id: getUnitDragId(unit),
+        unit,
+      })),
     }
   }, [
     roteiroEditOpen,
@@ -126,7 +142,7 @@ export function useRoteiroEditSession({
 
   const dragReorder = useRoteiroDragReorder({
     enabled: roteiroEditOpen && !loading && Boolean(trip),
-    dayActivities: filterRouteActivities(dragListContext.dayActivities),
+    dayActivities: dragListContext.dayDragItems,
     dateToDayMap,
     dayNum: dragListContext.dayNum,
     setDraftActivities,
@@ -428,21 +444,29 @@ export function useRoteiroEditSession({
   const patchActivity = useCallback((activity, patch) => {
     setDraftActivities((previous) => {
       const list = previous ?? []
+      const editedId =
+        activity && typeof activity === 'object'
+          ? activity.id ?? activity.slotId
+          : activity
       if (isScheduleTimePatch(patch)) {
         const current =
-          list.find((item) => String(item.id) === String(activity.id)) ?? activity
+          list.find((item) => String(item.id) === String(editedId)) ??
+          (activity && typeof activity === 'object' && activity.id != null
+            ? activity
+            : null)
         const dayNum =
-          getActivityDayNumber(current, dateToDayMap) ?? dragListContext.dayNum
+          (current ? getActivityDayNumber(current, dateToDayMap) : null) ??
+          dragListContext.dayNum
         return applyRoteiroScheduleEdit(
           list,
           dateToDayMap,
           dayNum,
-          activity.id,
+          editedId,
           patch,
         )
       }
       return list.map((item) =>
-        String(item.id) === String(activity.id) ? { ...item, ...patch } : item,
+        String(item.id) === String(editedId) ? { ...item, ...patch } : item,
       )
     })
   }, [dateToDayMap, dragListContext.dayNum])
@@ -453,27 +477,70 @@ export function useRoteiroEditSession({
       trackedFollowRef.current = { id: null, reason: null }
     }
     setDraftActivities((previous) =>
-      (previous ?? []).filter((item) => String(item.id) !== String(activityId)),
+      previous
+        ? removeDayUnit(
+            previous,
+            dateToDayMap,
+            dragListContext.dayNum,
+            activityId,
+          )
+        : previous,
     )
-  }, [trackedStopId])
+  }, [trackedStopId, dateToDayMap, dragListContext.dayNum])
 
-  const moveActivity = useCallback((activity, index, direction) => {
+  const removeMealOption = useCallback((slotId, optionId) => {
+    setDraftActivities((previous) =>
+      previous
+        ? removeMealOptionFromSlot(
+            previous,
+            dateToDayMap,
+            dragListContext.dayNum,
+            slotId,
+            optionId,
+          )
+        : previous,
+    )
+  }, [dateToDayMap, dragListContext.dayNum])
+
+  const addMealOption = useCallback((slotId, placeFields) => {
+    setDraftActivities((previous) =>
+      previous
+        ? addMealOptionToSlot(
+            previous,
+            dateToDayMap,
+            dragListContext.dayNum,
+            slotId,
+            placeFields,
+          )
+        : previous,
+    )
+  }, [dateToDayMap, dragListContext.dayNum])
+
+  const moveActivity = useCallback((activityOrUnitId, index, direction) => {
     if (dragReorder.isInteractionBlocked) return
-    const routeActivities = filterRouteActivities(dragListContext.dayActivities)
+    const unitId =
+      activityOrUnitId && typeof activityOrUnitId === 'object'
+        ? String(activityOrUnitId.id ?? activityOrUnitId.slotId ?? '')
+        : String(activityOrUnitId)
+    const units = dragListContext.dayEditUnits
+    const unitIndex = index != null && Number.isFinite(index)
+      ? index
+      : findUnitIndex(units, unitId)
+    if (unitIndex < 0) return
+
     if (!prefersReducedFlipMotion()) {
       reorderFrozenLayoutRef.current = captureDayFrozenLayout(
-        routeActivities,
+        units.map((unit) => ({ id: getUnitDragId(unit) })),
         0,
       )
+      const neighbor = units[unitIndex + direction]
       flipBeforeReorderRef.current = {
         snapshot: captureReorderSnapshot(
           stopCardRefs.current,
           roteiroListScrollRef.current,
         ),
-        movedId: String(activity.id),
-        neighborId: routeActivities[index + direction]
-          ? String(routeActivities[index + direction].id)
-          : null,
+        movedId: getUnitDragId(units[unitIndex]) || unitId,
+        neighborId: neighbor ? getUnitDragId(neighbor) : null,
         direction,
       }
     }
@@ -484,11 +551,11 @@ export function useRoteiroEditSession({
             dateToDayMap,
             dragListContext.dayNum,
             (list) =>
-              reorderActivityInSameDay(
+              reorderUnitInSameDay(
                 list,
                 dateToDayMap,
                 dragListContext.dayNum,
-                activity.id,
+                unitId,
                 direction,
               ),
           )
@@ -496,24 +563,27 @@ export function useRoteiroEditSession({
     )
   }, [
     dragReorder.isInteractionBlocked,
-    dragListContext.dayActivities,
+    dragListContext.dayEditUnits,
     dragListContext.dayNum,
     dateToDayMap,
   ])
 
-  const changeActivityDay = useCallback((activity, dayNum) => {
+  const changeActivityDay = useCallback((activityOrUnitId, dayNum) => {
+    const unitId =
+      activityOrUnitId && typeof activityOrUnitId === 'object'
+        ? String(activityOrUnitId.id ?? activityOrUnitId.slotId ?? '')
+        : String(activityOrUnitId)
+    const fromDay = dragListContext.dayNum
     setDraftActivities((previous) =>
-      (previous ?? []).map((item) =>
-        String(item.id) === String(activity.id)
-          ? assignActivityToDay(item, dayNum, dateToDayMap)
-          : item,
-      ),
+      previous
+        ? assignDayUnitToDay(previous, dateToDayMap, fromDay, unitId, dayNum)
+        : previous,
     )
-    if (String(activity.id) === String(trackedStopId)) {
-      trackedFollowRef.current = { id: activity.id, reason: 'day-change' }
+    if (String(unitId) === String(trackedStopId)) {
+      trackedFollowRef.current = { id: unitId, reason: 'day-change' }
       setSelectedDay(dayNum)
     }
-  }, [dateToDayMap, trackedStopId, setSelectedDay])
+  }, [dateToDayMap, trackedStopId, setSelectedDay, dragListContext.dayNum])
 
   const removeLikeActivity = useCallback((activityId) => {
     if (String(activityId) === String(trackedStopId)) {
@@ -551,6 +621,8 @@ export function useRoteiroEditSession({
     handleAddRoteiroStop,
     patchActivity,
     removeActivity,
+    removeMealOption,
+    addMealOption,
     moveActivity,
     changeActivityDay,
     removeLikeActivity,

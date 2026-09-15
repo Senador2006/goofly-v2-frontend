@@ -16,6 +16,7 @@ import {
   reorderActivityInSameDay,
   sortDayActivities,
 } from '../src/utils/itineraryDayHelpers.js'
+import { reorderUnitInSameDay } from '../src/utils/itineraryDayUnits.js'
 
 const emptyDayMap = new Map()
 
@@ -411,5 +412,73 @@ describe('scheduleActivityInsertedAtEnd', () => {
     const inserted = next.find((x) => x.id === 'n')
     assert.equal(inserted.startTime, '12:15')
     assert.equal(inserted.endTime, '14:15')
+  })
+})
+
+describe('schedule com meal units', () => {
+  const museum = act({
+    id: 'museum',
+    order: 0,
+    startTime: '10:00',
+    endTime: '11:30',
+    duration_minutes: 90,
+  })
+  const lunchA = act({
+    id: 'meal-1',
+    order: 1,
+    startTime: '12:30',
+    endTime: '13:30',
+    duration_minutes: 60,
+    mealType: 'lunch',
+    isMealRecommendation: true,
+  })
+  const lunchB = act({
+    id: 'meal-2',
+    order: 2,
+    startTime: '12:30',
+    endTime: '13:30',
+    duration_minutes: 60,
+    mealType: 'lunch',
+    isMealRecommendation: true,
+  })
+  const park = act({
+    id: 'park',
+    order: 3,
+    startTime: '14:00',
+    endTime: '15:30',
+    duration_minutes: 90,
+  })
+
+  it('reorder trata meal slot como uma unidade e sincroniza horários das opções', () => {
+    const base = [museum, lunchA, lunchB, park]
+    const next = applyRoteiroScheduleReorder(base, emptyDayMap, 1, (list) =>
+      reorderUnitInSameDay(list, emptyDayMap, 1, 'museum', 1),
+    )
+    const ordered = sortDayActivities(
+      next.filter((x) => getActivityDayNumber(x, emptyDayMap) === 1),
+    )
+    assert.deepEqual(
+      ordered.map((x) => x.id),
+      ['meal-1', 'meal-2', 'museum', 'park'],
+    )
+    assert.equal(ordered[0].startTime, ordered[1].startTime)
+    assert.equal(ordered[0].endTime, ordered[1].endTime)
+    assert.equal(ordered[0].startTime, '10:00')
+    assert.equal(durationOf(ordered[0]), 60)
+    assert.equal(durationOf(ordered[2]), 90)
+  })
+
+  it('edit de horário no slot propaga para ambas as opções', () => {
+    const base = [museum, lunchA, lunchB, park]
+    const next = applyRoteiroScheduleEdit(base, emptyDayMap, 1, 'meal-1', {
+      startTime: '13:00',
+      start_time: '13:00',
+      time: '13:00',
+    })
+    const a = next.find((x) => x.id === 'meal-1')
+    const b = next.find((x) => x.id === 'meal-2')
+    assert.equal(a.startTime, '13:00')
+    assert.equal(b.startTime, '13:00')
+    assert.equal(a.endTime, b.endTime)
   })
 })

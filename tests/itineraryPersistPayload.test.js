@@ -5,6 +5,7 @@ import {
   slimActivityForPersist,
   slimActivitiesForRoutePreview,
 } from '../src/utils/itineraryPersistPayload.js'
+import { moveUnitToIndexInSameDay } from '../src/utils/itineraryDayUnits.js'
 
 const emptyMap = new Map()
 
@@ -129,6 +130,57 @@ describe('normalizeActivitiesForPersist', () => {
       assert.equal(a.image_url, undefined)
       assert.equal(a.image_urls, undefined)
     }
+  })
+
+  it('mantém opções de meal contíguas após reorder unit-aware + persist', () => {
+    const base = [
+      {
+        id: 'stop-a',
+        title: 'Museu',
+        day: 1,
+        order: 0,
+        startTime: '10:00',
+        endTime: '11:00',
+      },
+      {
+        id: 'meal-1',
+        title: 'Lunch A',
+        day: 1,
+        order: 1,
+        startTime: '12:30',
+        endTime: '13:30',
+        mealType: 'lunch',
+        isMealRecommendation: true,
+      },
+      {
+        id: 'meal-2',
+        title: 'Lunch B',
+        day: 1,
+        order: 2,
+        startTime: '12:30',
+        endTime: '13:30',
+        mealType: 'lunch',
+        isMealRecommendation: true,
+      },
+      {
+        id: 'stop-b',
+        title: 'Parque',
+        day: 1,
+        order: 3,
+        startTime: '15:00',
+        endTime: '16:00',
+      },
+    ]
+    const reordered = moveUnitToIndexInSameDay(base, emptyMap, 1, 'stop-b', 1)
+    const persisted = normalizeActivitiesForPersist(reordered, emptyMap, 1)
+    const day1 = persisted.filter((a) => a.day === 1)
+    assert.deepEqual(
+      day1.map((a) => a.id),
+      ['stop-a', 'stop-b', 'meal-1', 'meal-2'],
+    )
+    assert.equal(day1[2].order + 1, day1[3].order)
+    assert.equal(day1[2].isMealRecommendation, true)
+    assert.equal(day1[3].isMealRecommendation, true)
   })
 })
 

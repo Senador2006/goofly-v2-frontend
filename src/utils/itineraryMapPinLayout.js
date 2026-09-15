@@ -212,8 +212,10 @@ export function computePinLayout(pins, opts) {
     if (stopIndices.length >= 2) {
       anchorPx = centroidPx(points, stopIndices)
       anchorLatLng = unproject(anchorPx)
-      stackId = `stack:${groupId}`
+      // Id estável por membros (não por groupId efêmero) — evita sheet/popup
+      // perder o alvo quando o layout recalcula no zoom/pan.
       const memberIds = stopIndices.map((i) => pins[i].id)
+      stackId = `stack:${[...memberIds].sort().join('+')}`
       stacks.push({
         stackId,
         groupId,
@@ -268,6 +270,125 @@ export function computePinLayout(pins, opts) {
       })
     }
   }
+
+  return { entries, stacks }
+}
+
+/**
+ * Layout seguro durante pan/fly/zoom animado.
+ * Preserva stacks e congela offsets laterais quando as coords verdadeiras
+ * não mudaram (evita teleport). Se o true lat/lng mudou (troca de restaurante),
+ * colapsa só esse pin para a nova coordenada.
+ *
+ * @param {LayoutPin[]} pins
+ * @param {PinLayoutResult | null | undefined} previousLayout
+ * @returns {PinLayoutResult}
+ */
+export function buildAnimSafePinLayout(pins, previousLayout) {
+  const prevEntries =
+    previousLayout?.entries instanceof Map ? previousLayout.entries : null
+  const prevStacks = Array.isArray(previousLayout?.stacks)
+    ? previousLayout.stacks
+    : []
+
+  if (!prevEntries || prevEntries.size === 0) {
+    /** @type {Map<string, PinLayoutEntry>} */
+    const entries = new Map()
+    for (const pin of pins || []) {
+      if (!pin?.id || !Array.isArray(pin.latLng) || pin.latLng.length < 2) continue
+      entries.set(pin.id, {
+        displayLatLng: pin.latLng,
+        trueLatLng: pin.latLng,
+        groupId: 0,
+        isOffset: false,
+        sideIndex: 0,
+        stackId: null,
+      })
+    }
+    return { entries, stacks: [] }
+  }
+
+  /** @type {Map<string, PinLayoutEntry>} */
+  const entries = new Map()
+  for (const pin of pins || []) {
+    if (!pin?.id || !Array.isArray(pin.latLng) || pin.latLng.length < 2) continue
+    const prev = prevEntries.get(pin.id)
+    if (prev?.stackId) {
+      entries.set(pin.id, {
+        displayLatLng: prev.displayLatLng || pin.latLng,
+        trueLatLng: pin.latLng,
+        groupId: prev.groupId ?? 0,
+        isOffset: false,
+        sideIndex: 0,
+        stackId: prev.stackId,
+      })
+      continue
+    }
+    if (prev?.isOffset) {
+      const prevTrue = prev.trueLatLng
+      const sameTrue =
+        Array.isArray(prevTrue) &&
+        prevTrue.length >= 2 &&
+        Math.abs(Number(prevTrue[0]) - Number(pin.latLng[0])) < 1e-7 &&
+        Math.abs(Number(prevTrue[1]) - Number(pin.latLng[1])) < 1e-7
+      if (sameTrue) {
+        // Congela offset durante pan de câmera — evita teleport de meal/home.
+        entries.set(pin.id, {
+          displayLatLng: prev.displayLatLng || pin.latLng,
+          trueLatLng: pin.latLng,
+          groupId: prev.groupId ?? 0,
+          isOffset: true,
+          sideIndex: prev.sideIndex ?? 0,
+          stackId: null,
+        })
+      } else {
+        // True coords mudaram (ex.: troca de restaurante) — sem offset velho.
+        entries.set(pin.id, {
+          displayLatLng: pin.latLng,
+          trueLatLng: pin.latLng,
+          groupId: prev.groupId ?? 0,
+          isOffset: false,
+          sideIndex: 0,
+          stackId: null,
+        })
+      }
+      continue
+    }
+    if (prev) {
+      entries.set(pin.id, {
+        displayLatLng: prev.displayLatLng || pin.latLng,
+        trueLatLng: pin.latLng,
+        groupId: prev.groupId ?? 0,
+        isOffset: false,
+        sideIndex: prev.sideIndex ?? 0,
+        stackId: prev.stackId ?? null,
+      })
+      continue
+    }
+    entries.set(pin.id, {
+      displayLatLng: pin.latLng,
+      trueLatLng: pin.latLng,
+      groupId: 0,
+      isOffset: false,
+      sideIndex: 0,
+      stackId: null,
+    })
+  }
+
+  const stacks = prevStacks
+    .map((stack) => {
+      const memberIds = (stack.memberIds || []).filter((id) => entries.has(id))
+      if (memberIds.length < 2) return null
+      const first = entries.get(memberIds[0])
+      const displayLatLng = first?.displayLatLng || stack.displayLatLng
+      return {
+        ...stack,
+        memberIds,
+        displayLatLng,
+        trueLatLng: displayLatLng,
+      }
+    })
+    .filter(Boolean)
 
   return { entries, stacks }
 }

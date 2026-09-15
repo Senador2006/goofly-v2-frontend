@@ -9,9 +9,15 @@ import { ACCOMMODATION_TYPES } from '../../utils/accommodationForm'
 const fieldClass =
   'w-full min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 rounded-[10px] border border-border-light dark:border-white/15 bg-background-light dark:bg-zinc-900/90 text-base text-[#1c1c0d] dark:text-zinc-100 placeholder:text-text-secondary dark:placeholder:text-zinc-500'
 
+const fieldClassCompact =
+  'w-full min-w-0 px-2.5 py-2 sm:px-4 sm:py-3 rounded-[10px] border border-border-light dark:border-white/15 bg-background-light dark:bg-zinc-900/90 text-[0.9375rem] sm:text-base text-[#1c1c0d] dark:text-zinc-100 placeholder:text-text-secondary dark:placeholder:text-zinc-500'
+
 const dateFieldClass = `${fieldClass} !pr-10 sm:!pr-11`
+const dateFieldClassCompact = `${fieldClassCompact} !pr-10 sm:!pr-11`
 
 const labelClass = 'block text-sm font-semibold mb-2 text-[#1c1c0d] dark:text-zinc-100'
+const labelClassCompact =
+  'block text-xs font-semibold mb-1 sm:mb-2 sm:text-sm text-[#1c1c0d] dark:text-zinc-100'
 
 const ADD_FLY_MS = 420
 
@@ -26,6 +32,7 @@ export function AccommodationStayForm({
   disabled = false,
   fieldIdPrefix = 'acc',
   requirePlaceSuggestion = false,
+  compact = false,
   highlighted = false,
   entering = false,
   cardRef = null,
@@ -33,25 +40,32 @@ export function AccommodationStayForm({
   onRemove,
 }) {
   const dest = destinations.find((d) => d.id === (acc.destinationId || acc.destination_id))
+  const inputClass = compact ? fieldClassCompact : fieldClass
+  const dateInputClass = compact ? dateFieldClassCompact : dateFieldClass
+  const label = compact ? labelClassCompact : labelClass
 
   return (
     <div
       ref={cardRef}
-      className={`p-3 sm:p-4 rounded-[12px] border border-dashed space-y-3 sm:space-y-4 bg-background-light/40 dark:bg-white/[0.04] ${
+      className={`rounded-[12px] border border-dashed bg-background-light/40 dark:bg-white/[0.04] ${
+        compact
+          ? 'p-2.5 space-y-2 sm:p-4 sm:space-y-4'
+          : 'p-3 sm:p-4 space-y-3 sm:space-y-4'
+      } ${
         highlighted
           ? 'border-primary/50 ring-2 ring-primary/25'
           : 'border-border-light dark:border-white/15'
       } ${entering ? 'acc-stay-card-entering' : ''}`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-bold uppercase tracking-wide text-text-secondary dark:text-zinc-400">
+        <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wide text-text-secondary dark:text-zinc-400">
           Hospedagem {accIndex + 1}
         </span>
         {onRemove ? (
           <button
             type="button"
             onClick={onRemove}
-            className="shrink-0 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline py-1"
+            className="shrink-0 text-[11px] sm:text-xs font-semibold text-red-600 dark:text-red-400 hover:underline py-0.5 sm:py-1"
           >
             Remover
           </button>
@@ -60,7 +74,7 @@ export function AccommodationStayForm({
 
       {showDestinationSelect && destinations.length > 1 ? (
         <div>
-          <label className={labelClass} htmlFor={`${fieldIdPrefix}-dest-${acc.id}`}>
+          <label className={label} htmlFor={`${fieldIdPrefix}-dest-${acc.id}`}>
             Destino
           </label>
           <select
@@ -75,7 +89,7 @@ export function AccommodationStayForm({
                 checkOut: acc.checkOut || nextDest?.departureDate || '',
               })
             }}
-            className={fieldClass}
+            className={inputClass}
           >
             {destinations.map((d) => (
               <option key={d.id} value={d.id}>
@@ -87,7 +101,7 @@ export function AccommodationStayForm({
       ) : null}
 
       <div>
-        <label className={labelClass} htmlFor={`${fieldIdPrefix}-type-${acc.id}`}>
+        <label className={label} htmlFor={`${fieldIdPrefix}-type-${acc.id}`}>
           Tipo
         </label>
         <select
@@ -95,7 +109,7 @@ export function AccommodationStayForm({
           value={acc.type || 'hotel'}
           disabled={disabled}
           onChange={(e) => onChange({ type: e.target.value })}
-          className={fieldClass}
+          className={inputClass}
         >
           {ACCOMMODATION_TYPES.map((t) => (
             <option key={t.value} value={t.value}>
@@ -106,7 +120,7 @@ export function AccommodationStayForm({
       </div>
 
       <div>
-        <label className={labelClass}>Nome / Endereço</label>
+        <label className={label}>Nome / Endereço</label>
         {hasGoogleMapsApiKey() ? (
           <>
             <GooglePlaceAutocompleteField
@@ -116,8 +130,10 @@ export function AccommodationStayForm({
               value={acc.name || acc.address || ''}
               placeholder="Ex.: Hotel Plaza Athénée"
               disabled={disabled}
-              className="goofly-google-place-ac-frame relative z-[42] w-full min-w-0 min-h-[3.125rem] overflow-visible rounded-[10px] border border-border-light dark:border-white/15 bg-background-light dark:bg-zinc-900/90"
-              inputClassName={fieldClass}
+              className={`goofly-google-place-ac-frame relative z-[42] w-full min-w-0 overflow-visible rounded-[10px] border border-border-light dark:border-white/15 bg-background-light dark:bg-zinc-900/90 ${
+                compact ? 'min-h-[2.75rem] sm:min-h-[3.125rem]' : 'min-h-[3.125rem]'
+              }`}
+              inputClassName={inputClass}
               onDraftChange={(text) =>
                 onChange({
                   name: text,
@@ -133,7 +149,13 @@ export function AccommodationStayForm({
                 })
               }
             />
-            <p className="mt-2 text-[11px] text-text-secondary dark:text-zinc-400 leading-snug">
+            <p
+              className={`text-text-secondary dark:text-zinc-400 leading-snug ${
+                compact
+                  ? 'mt-1 text-[10px] sm:mt-2 sm:text-[11px]'
+                  : 'mt-2 text-[11px]'
+              }`}
+            >
               {requirePlaceSuggestion
                 ? 'Escolha uma sugestão do Google para fixar a hospedagem no mapa do roteiro.'
                 : 'Opcional. Escolha uma sugestão do Google para fixar a hospedagem no mapa do roteiro.'}
@@ -151,14 +173,16 @@ export function AccommodationStayForm({
               })
             }
             placeholder="Ex: Hotel Plaza Athénée"
-            className={fieldClass}
+            className={inputClass}
           />
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+      <div
+        className={`grid grid-cols-2 ${compact ? 'gap-2 sm:gap-4' : 'grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4'}`}
+      >
         <div className="min-w-0">
-          <label className={labelClass}>Check-in</label>
+          <label className={label}>Check-in</label>
           <DateInput
             value={acc.checkIn || ''}
             min={dest?.arrivalDate || undefined}
@@ -172,11 +196,11 @@ export function AccommodationStayForm({
               onChange(patch)
             }}
             aria-label="Check-in"
-            className={dateFieldClass}
+            className={dateInputClass}
           />
         </div>
         <div className="min-w-0">
-          <label className={labelClass}>Check-out</label>
+          <label className={label}>Check-out</label>
           <DateInput
             value={acc.checkOut || ''}
             min={acc.checkIn || dest?.arrivalDate || undefined}
@@ -184,7 +208,7 @@ export function AccommodationStayForm({
             disabled={disabled}
             onChange={(next) => onChange({ checkOut: next })}
             aria-label="Check-out"
-            className={dateFieldClass}
+            className={dateInputClass}
           />
         </div>
       </div>
@@ -204,6 +228,7 @@ export function AccommodationDestinationGroup({
   disabled,
   fieldIdPrefix,
   requirePlaceSuggestion,
+  compact = false,
   addDisabled = false,
   addDisabledTitle,
   focusStayId = null,
@@ -314,22 +339,39 @@ export function AccommodationDestinationGroup({
   }
 
   return (
-    <div className="relative p-3 sm:p-4 rounded-[12px] border border-border-light dark:border-white/15 space-y-3 sm:space-y-4 bg-transparent dark:bg-white/[0.02]">
-      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+    <div
+      className={`relative rounded-[12px] border border-border-light dark:border-white/15 bg-transparent dark:bg-white/[0.02] ${
+        compact
+          ? 'p-2.5 space-y-2 sm:p-4 sm:space-y-4'
+          : 'p-3 sm:p-4 space-y-3 sm:space-y-4'
+      }`}
+    >
+      <div
+        className={`flex ${
+          compact
+            ? 'flex-row items-center justify-between gap-2'
+            : 'flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3'
+        }`}
+      >
         <span className="min-w-0 text-sm font-bold text-[#1c1c0d] dark:text-zinc-200">
-          {dest.city || 'Destino'} — hospedagens
+          {dest.city || 'Destino'}
+          {compact ? '' : ' — hospedagens'}
         </span>
         <Button
           ref={addBtnRef}
           type="button"
           variant="secondary"
-          className="w-full !py-2.5 !px-3 text-xs sm:w-auto sm:!py-2"
+          className={
+            compact
+              ? 'shrink-0 !py-1.5 !px-2.5 text-[11px] sm:w-auto sm:!py-2 sm:!px-3 sm:text-xs'
+              : 'w-full !py-2.5 !px-3 text-xs sm:w-auto sm:!py-2'
+          }
           disabled={disabled || addDisabled}
           title={addDisabled ? addDisabledTitle : undefined}
           onClick={handleAddClick}
         >
           <Icon name="add" />
-          Adicionar hospedagem
+          {compact ? 'Adicionar' : 'Adicionar hospedagem'}
         </Button>
       </div>
       {destAccs.length === 0 ? (
@@ -348,6 +390,7 @@ export function AccommodationDestinationGroup({
             disabled={disabled}
             fieldIdPrefix={fieldIdPrefix}
             requirePlaceSuggestion={requirePlaceSuggestion}
+            compact={compact}
             highlighted={isFocused}
             entering={enteringId != null && String(acc.id) === String(enteringId)}
             cardRef={(el) => setCardRef(acc.id, el)}
