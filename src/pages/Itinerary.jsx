@@ -145,7 +145,10 @@ export function Itinerary() {
   const mapUi = useItineraryMapUi(modes.mode)
   const meals = useItineraryMeals({
     tripId,
-    activities: itinerary?.activities,
+    activities:
+      edit.roteiroEditOpen && Array.isArray(edit.draftActivities)
+        ? edit.draftActivities
+        : itinerary?.activities,
     dateToDayMap,
     selectedDay,
     isLgUp: mapUi.isLgUp,
@@ -211,8 +214,10 @@ export function Itinerary() {
       <div
         className={`print:hidden flex flex-col min-h-0 bg-background-light/50 dark:bg-background-dark/30 ${
           modes.tdvUiActive
-            ? 'flex h-full min-h-0 flex-1 flex-col overflow-hidden max-lg:pb-[var(--goofly-mobile-nav-height,0px)] lg:h-[100dvh] lg:-mx-12 lg:-my-8'
-            : 'flex h-[calc(100vh-4rem)] min-h-0 flex-1 flex-col overflow-hidden -m-4 lg:h-[100dvh] lg:-mx-12 lg:-my-8'
+            ? 'flex h-full min-h-0 flex-1 flex-col overflow-hidden lg:h-[100dvh] lg:-mx-12 lg:-my-8'
+            : // Mobile: h-full até a MobileNav (padding do Layout = altura real da nav).
+              // Só cancela p-4 laterais/topo — sem -mb, senão abre faixa sob o mapa.
+              'flex h-full min-h-0 flex-1 flex-col overflow-hidden max-lg:-mx-4 max-lg:-mt-4 lg:h-[100dvh] lg:-mx-12 lg:-my-8'
         }`}
       >
         <ItineraryHeader
@@ -279,6 +284,7 @@ export function Itinerary() {
                   onOpenChange={mapUi.setMobileMapOpen}
                   tripId={tripId}
                   day={view.effectiveSelectedDay}
+                  days={view.days}
                   activities={view.dayRouteActivities}
                   timelineActivities={view.dayActivities}
                   accommodations={view.dayAccommodations}
@@ -288,6 +294,7 @@ export function Itinerary() {
                   routeRestricted={view.isRouteRestricted}
                   highlightedIndex={view.trackedMapHighlight}
                   highlightedMealSlotKey={meals.highlightedMealSlotKey}
+                  mealMapFrameNonce={meals.mealMapFrameNonce}
                   preferLocalRoute={
                     edit.roteiroEditOpen || edit.likeReplace.open
                   }
@@ -304,6 +311,7 @@ export function Itinerary() {
                   onMealSlotFocus={meals.handleMealMapPinClick}
                   onMealGoToTimeline={meals.handleMealGoToTimeline}
                   onMealDismiss={meals.handleMealDismiss}
+                  onMealDismissIfSlot={meals.handleMealDismissIfSlot}
                 />
               ) : null}
             </section>

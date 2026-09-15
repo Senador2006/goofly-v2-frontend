@@ -30,6 +30,7 @@ export function ItineraryMobileMapDrawer({
   onOpenChange,
   tripId,
   day,
+  days = [],
   activities,
   timelineActivities = [],
   accommodations = [],
@@ -39,6 +40,7 @@ export function ItineraryMobileMapDrawer({
   routeRestricted = false,
   highlightedIndex = null,
   highlightedMealSlotKey = null,
+  mealMapFrameNonce = 0,
   preferLocalRoute = false,
   hideDuringRoteiroDrag = false,
   showAccommodationRoutes = true,
@@ -49,6 +51,7 @@ export function ItineraryMobileMapDrawer({
   onMealSlotFocus,
   onMealGoToTimeline,
   onMealDismiss,
+  onMealDismissIfSlot,
 }) {
   const dragRef = useRef({ active: false, startX: 0, startOpen: false })
   const prevOpenRef = useRef(open)
@@ -200,6 +203,7 @@ export function ItineraryMobileMapDrawer({
           <ItineraryDayMap
             tripId={tripId}
             day={day}
+            days={days}
             activities={activities}
             timelineActivities={timelineActivities}
             accommodations={accommodations}
@@ -209,6 +213,7 @@ export function ItineraryMobileMapDrawer({
             routeRestricted={routeRestricted}
             highlightedIndex={highlightedIndex}
             highlightedMealSlotKey={highlightedMealSlotKey}
+            mealMapFrameNonce={mealMapFrameNonce}
             preferLocalRoute={preferLocalRoute}
             className="absolute inset-0 h-full w-full"
             ariaLabel={`Mapa do roteiro — dia ${day}`}
@@ -221,6 +226,7 @@ export function ItineraryMobileMapDrawer({
             onMealSlotFocus={onMealSlotFocus}
             onMealGoToTimeline={onMealGoToTimeline}
             onMealDismiss={onMealDismiss}
+            onMealDismissIfSlot={onMealDismissIfSlot}
             isMobileMap
           />
         ) : null}

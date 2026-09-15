@@ -5,9 +5,33 @@ import { Icon } from '../common/Icon'
  *   checked: boolean,
  *   onChange: (next: boolean) => void,
  *   disabled?: boolean,
+ *   compact?: boolean,
  * }} props
  */
-export function MapAccommodationRoutesToggle({ checked, onChange, disabled = false }) {
+export function MapAccommodationRoutesToggle({ checked, onChange, disabled = false, compact = false }) {
+  if (compact) {
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label="Exibir rotas da hospedagem"
+        title="Rotas da hospedagem"
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={
+          'pointer-events-auto inline-flex size-9 items-center justify-center rounded-full border shadow-sm backdrop-blur transition-colors ' +
+          (checked
+            ? 'bg-green-600 text-white border-green-700/30'
+            : 'bg-white/90 dark:bg-card-dark/90 border-border-light dark:border-border-dark text-text-secondary') +
+          (disabled ? ' opacity-50 cursor-not-allowed' : '')
+        }
+      >
+        <Icon name="home" className="text-base" aria-hidden />
+      </button>
+    )
+  }
+
   return (
     <button
       type="button"

@@ -54,7 +54,22 @@ export function ItineraryGlobalOverlays({
       <RoteiroDragOverlay active={edit.dragReorder.isOverlayActive}>
         <ItineraryDragGhost
           activity={edit.dragReorder.ghostActivity}
-          index={edit.dragReorder.ghostActivity ? view.dayRouteActivities.findIndex((activity) => String(activity.id) === String(edit.dragReorder.ghostActivity.id)) : 0}
+          index={
+            edit.dragReorder.ghostActivity
+              ? Math.max(
+                  0,
+                  view.dayEditUnits?.findIndex(
+                    (unit) =>
+                      String(unit.type === 'mealSlot' ? unit.slotId : unit.id) ===
+                      String(edit.dragReorder.ghostActivity.id),
+                  ) ??
+                    view.dayRouteActivities.findIndex(
+                      (activity) =>
+                        String(activity.id) === String(edit.dragReorder.ghostActivity.id),
+                    ),
+                )
+              : 0
+          }
           style={edit.dragReorder.ghostStyle && (edit.dragReorder.phase === 'dragging' || edit.dragReorder.phase === 'landing' || edit.dragReorder.phase === 'reverting') ? {
             left: edit.dragReorder.ghostStyle.left,
             top: edit.dragReorder.ghostStyle.top,

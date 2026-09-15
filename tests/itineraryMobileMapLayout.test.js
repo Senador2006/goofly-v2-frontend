@@ -114,10 +114,11 @@ describe('ItineraryMobileMapDrawer contracts', () => {
 })
 
 describe('ItineraryDayMap pin source contract', () => {
-  it('prioriza apiMarkers Geoapify e ignora coordenadas locais do agente', () => {
+  it('prioriza apiMarkers e usa pins otimistas locais enquanto carrega', () => {
     assert.match(dayMapSource, /resolveMapMarkers/)
     assert.match(dayMapSource, /routeRestricted/)
-    assert.match(dayMapSource, /EMPTY_LOCAL_MARKERS/)
+    assert.match(dayMapSource, /buildOptimisticMarkersFromActivities/)
+    assert.match(dayMapSource, /prefetchItineraryDayRoutes/)
     assert.match(dayMapSource, /countNamedActivities/)
   })
 
@@ -129,5 +130,12 @@ describe('ItineraryDayMap pin source contract', () => {
     assert.match(dayMapSource, /preferLocalRoute/)
     assert.match(dayMapSource, /previewItineraryRoute/)
     assert.match(dayMapSource, /draftCacheKey/)
+  })
+
+  it('remonta Leaflet por trip (não por dia) e prefetcha dias vizinhos', () => {
+    assert.match(dayMapSource, /const mapInstanceKey = String\(tripId/)
+    assert.match(dayMapSource, /orderDaysForPrefetch/)
+    assert.match(dayMapSource, /dayRouteCacheKey/)
+    assert.match(dayMapSource, /prefetchItineraryDayRoutes/)
   })
 })

@@ -47,7 +47,6 @@ export function DateInput({
   onValidationError,
 }) {
   const focusedRef = useRef(false)
-  const pickerRef = useRef(null)
   const dayRef = useRef(null)
   const monthRef = useRef(null)
   const yearRef = useRef(null)
@@ -273,21 +272,6 @@ export function DateInput({
     }
   }
 
-  const openCalendar = () => {
-    if (disabled) return
-    const el = pickerRef.current
-    if (!el) return
-    try {
-      if (typeof el.showPicker === 'function') {
-        el.showPicker()
-        return
-      }
-    } catch {
-      /* fallback */
-    }
-    el.click()
-  }
-
   const handlePickerChange = (e) => {
     const iso = e.target.value || ''
     if (!iso) {
@@ -357,18 +341,15 @@ export function DateInput({
           </span>
         ))}
 
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={openCalendar}
-          className="absolute inset-y-0 right-0 z-[1] flex w-10 sm:w-11 items-center justify-center rounded-r-[10px] text-text-secondary dark:text-zinc-400 hover:text-[#1c1c0d] dark:hover:text-white disabled:opacity-40"
-          aria-label="Abrir calendário"
-          tabIndex={-1}
+        <span
+          className={`pointer-events-none absolute inset-y-0 right-0 z-0 flex w-10 sm:w-11 items-center justify-center rounded-r-[10px] text-text-secondary dark:text-zinc-400 ${
+            disabled ? 'opacity-40' : ''
+          }`}
+          aria-hidden
         >
           <Icon name="calendar_today" className="text-[1.15rem]" aria-hidden />
-        </button>
+        </span>
         <input
-          ref={pickerRef}
           type="date"
           value={value || ''}
           min={effectiveMin || undefined}
@@ -376,8 +357,8 @@ export function DateInput({
           disabled={disabled}
           onChange={handlePickerChange}
           tabIndex={-1}
-          aria-hidden
-          className="pointer-events-none absolute bottom-0 right-0 h-px w-px opacity-0"
+          aria-label="Abrir calendário"
+          className="date-input-picker absolute inset-y-0 right-0 z-[1] w-10 sm:w-11 cursor-pointer opacity-0 disabled:cursor-not-allowed"
         />
       </div>
       {shownError ? (

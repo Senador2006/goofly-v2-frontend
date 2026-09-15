@@ -65,12 +65,44 @@ export function filterRouteActivities(activities) {
   return (activities || []).filter((a) => !isMealRecommendationActivity(a))
 }
 
-/** @param {Record<string, unknown>} act */
-export function getMealSlotKey(act) {
+/**
+ * Chave de agrupamento consecutivo (independente de horário).
+ * @param {Record<string, unknown> | null | undefined} act
+ */
+export function getMealSlotGroupKey(act) {
+  if (!act || typeof act !== 'object') return 'meal'
   const mealType = String(
     act.mealType ?? act.meal_type ?? inferMealTypeFromFoodActivity(act) ?? 'meal',
   )
     .toLowerCase()
+    .trim()
+  return mealType || 'meal'
+}
+
+/**
+ * Identidade estável do slot (sobrevive a mudança de horário e de opções).
+ * Um tipo de refeição por dia (café / almoço / jantar).
+ * @param {number} dayNum
+ * @param {string} mealType
+ * @param {Array<string | number>} [_optionIds] ignorado — mantido por compat
+ */
+export function getMealSlotStableId(dayNum, mealType, _optionIds) {
+  const day = Math.max(1, Math.floor(Number(dayNum) || 1))
+  const type = String(mealType || 'meal')
+    .toLowerCase()
+    .trim() || 'meal'
+  return `${day}|${type}`
+}
+
+/** Máximo de restaurantes / opções por bloco de refeição. */
+export const MAX_MEAL_SLOT_OPTIONS = 3
+
+/**
+ * @deprecated Prefer getMealSlotStableId — mantido para compat de testes legados.
+ * @param {Record<string, unknown>} act
+ */
+export function getMealSlotKey(act) {
+  const mealType = getMealSlotGroupKey(act)
   const time = String(act.startTime ?? act.start_time ?? act.time ?? act.expectedTime ?? '')
     .trim()
     .slice(0, 5)
@@ -105,7 +137,8 @@ export function getMealTypeIcon(mealType) {
  * @param {boolean} [isHighlighted]
  */
 export function buildMealMapMarkerHtml(mealType, isHighlighted = false) {
-  const size = isHighlighted ? 30 : 26
+  // Tamanho constante: highlight só muda o anel — evita setIcon/popupAnchor shifting.
+  const size = 28
   const iconName = getMealTypeIcon(mealType)
   const iconSize = isHighlighted ? 16 : 15
   const ring = isHighlighted
@@ -139,19 +172,21 @@ export function formatMealTimeLabel(raw) {
 }
 
 /**
- * Agrupa atividades de refeição consecutivas (mesmo slot) e intercala com paradas normais,
+ * Agrupa atividades de refeição consecutivas (mesmo mealType) e intercala com paradas normais,
  * preservando a ordem de `sortDayActivities`.
  *
  * @param {any[]} sortedActivities
+ * @param {number} [dayNum=1]
  * @returns {Array<
  *   | { type: 'activity', act: any }
- *   | { type: 'mealSlot', slotKey: string, mealType: string, startTime: string, options: any[] }
+ *   | { type: 'mealSlot', slotKey: string, slotId: string, mealType: string, startTime: string, options: any[] }
  * >}
  */
-export function buildDayTimelineItems(sortedActivities) {
+export function buildDayTimelineItems(sortedActivities, dayNum = 1) {
   /** @type {ReturnType<typeof buildDayTimelineItems>} */
   const items = []
   const list = Array.isArray(sortedActivities) ? sortedActivities : []
+  const day = Math.max(1, Math.floor(Number(dayNum) || 1))
   let i = 0
 
   while (i < list.length) {
@@ -162,26 +197,32 @@ export function buildDayTimelineItems(sortedActivities) {
       continue
     }
 
-    const slotKey = getMealSlotKey(act)
+    const groupKey = getMealSlotGroupKey(act)
     const options = [act]
     i += 1
     while (
       i < list.length &&
       isMealRecommendationActivity(list[i]) &&
-      getMealSlotKey(list[i]) === slotKey
+      getMealSlotGroupKey(list[i]) === groupKey
     ) {
       options.push(list[i])
       i += 1
     }
 
+    const mealType =
+      act.mealType ||
+      act.meal_type ||
+      inferMealTypeFromFoodActivity(act) ||
+      groupKey ||
+      'lunch'
+    const ids = options.map((opt, idx) => resolveMealActivityId(opt, idx))
+    const slotId = getMealSlotStableId(day, mealType, ids)
+
     items.push({
       type: 'mealSlot',
-      slotKey,
-      mealType:
-        act.mealType ||
-        act.meal_type ||
-        inferMealTypeFromFoodActivity(act) ||
-        'lunch',
+      slotKey: slotId,
+      slotId,
+      mealType,
       startTime:
         act.startTime ||
         act.start_time ||
@@ -266,7 +307,7 @@ export function buildDefaultMealSelections(activities, dateToDayMap) {
     const dayActs = sortDayActivities(
       activities.filter((a) => getActivityDayNumber(a, dateToDayMap) === dayNum),
     )
-    const items = buildDayTimelineItems(dayActs)
+    const items = buildDayTimelineItems(dayActs, dayNum)
     for (const item of items) {
       if (item.type !== 'mealSlot') continue
       const primary = pickPrimaryMealOption(item.options)
@@ -297,7 +338,7 @@ export function isMealSelectionValid(slotKey, activityId, activities, dateToDayM
     const dayActs = sortDayActivities(
       activities.filter((a) => getActivityDayNumber(a, dateToDayMap) === dayNum),
     )
-    const items = buildDayTimelineItems(dayActs)
+    const items = buildDayTimelineItems(dayActs, dayNum)
     for (const item of items) {
       if (item.type !== 'mealSlot' || item.slotKey !== slotKey) continue
       return item.options.some((opt, idx) => resolveMealActivityId(opt, idx) === activityId)
@@ -346,26 +387,27 @@ export function buildSelectedMealActivities(mealSlots, selectedMealIds = {}) {
  */
 function findMealSlotBounds(sortedDayActivities, mealAct) {
   const list = Array.isArray(sortedDayActivities) ? sortedDayActivities : []
-  const slotKey = getMealSlotKey(mealAct)
-  let start = -1
-  let end = -1
+  const mealId = resolveMealActivityId(mealAct)
+  const pivot = list.findIndex((act) => resolveMealActivityId(act) === mealId)
+  if (pivot < 0) return { start: -1, end: -1 }
 
-  for (let i = 0; i < list.length; i += 1) {
-    const act = list[i]
-    if (isMealRecommendationActivity(act) && getMealSlotKey(act) === slotKey) {
-      if (start < 0) start = i
-      end = i
-    } else if (start >= 0) {
-      break
-    }
+  const groupKey = getMealSlotGroupKey(list[pivot])
+  let start = pivot
+  let end = pivot
+  while (
+    start > 0 &&
+    isMealRecommendationActivity(list[start - 1]) &&
+    getMealSlotGroupKey(list[start - 1]) === groupKey
+  ) {
+    start -= 1
   }
-
-  if (start < 0) {
-    const mealId = resolveMealActivityId(mealAct)
-    const idx = list.findIndex((act) => resolveMealActivityId(act) === mealId)
-    if (idx >= 0) return { start: idx, end: idx }
+  while (
+    end < list.length - 1 &&
+    isMealRecommendationActivity(list[end + 1]) &&
+    getMealSlotGroupKey(list[end + 1]) === groupKey
+  ) {
+    end += 1
   }
-
   return { start, end }
 }
 

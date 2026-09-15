@@ -1,7 +1,7 @@
 export const PRIMARY_NAV_ITEMS = [
   { to: '/dashboard', icon: 'dashboard', label: 'Início' },
   { to: '/trips', icon: 'luggage', label: 'Viagens' },
-  { to: '/discover', icon: 'explore', label: 'Tinder' },
+  { to: '/discover', icon: 'explore', label: 'Descobrir' },
   { to: '/memories', icon: 'photo_library', label: 'Memórias' },
 ]
 

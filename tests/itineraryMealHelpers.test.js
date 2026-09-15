@@ -7,6 +7,7 @@ import {
   filterRouteActivities,
   getMealPositionLabel,
   getMealSlotKey,
+  getMealSlotStableId,
   getMealTypeLabel,
   isMealRecommendationActivity,
   mergeMealSelections,
@@ -125,7 +126,8 @@ describe('itineraryMealHelpers', () => {
       { ...lunchB, day: 1 },
     ]
     const selections = buildDefaultMealSelections(acts, dayMap)
-    assert.equal(selections['lunch@12:30'], 'meal-2')
+    const slotId = getMealSlotStableId(1, 'lunch')
+    assert.equal(selections[slotId], 'meal-2')
   })
 
   it('mergeMealSelections preserva escolha salva sobre o default', () => {
@@ -135,8 +137,9 @@ describe('itineraryMealHelpers', () => {
       { ...lunchA, day: 1 },
       { ...lunchB, day: 1 },
     ]
-    const merged = mergeMealSelections({ 'lunch@12:30': 'meal-1' }, acts, dayMap)
-    assert.equal(merged['lunch@12:30'], 'meal-1')
+    const slotId = getMealSlotStableId(1, 'lunch')
+    const merged = mergeMealSelections({ [slotId]: 'meal-1' }, acts, dayMap)
+    assert.equal(merged[slotId], 'meal-1')
   })
 
   it('resolveVisibleMealMarkers retorna 1 marker por slot', () => {

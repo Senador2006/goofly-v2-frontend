@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import {
   COLLISION_PX,
+  buildAnimSafePinLayout,
   buildLayoutPins,
   computePinLayout,
   groupByProximity,
@@ -52,9 +53,55 @@ describe('itineraryMapPinLayout', () => {
     assert.equal(entries.get('stop:a').isOffset, false)
     assert.equal(entries.get('stop:b').isOffset, false)
     assert.equal(entries.get('stop:a').stackId, stacks[0].stackId)
+    // Id estável por membros ordenados (não groupId)
+    assert.equal(stacks[0].stackId, 'stack:stop:a+stop:b+stop:c')
     // Todos compartilha o mesmo display (centróide), sem fan
     assert.deepEqual(entries.get('stop:a').displayLatLng, entries.get('stop:b').displayLatLng)
     assert.deepEqual(entries.get('stop:a').trueLatLng, same)
+  })
+
+  it('buildAnimSafePinLayout preserva stacks e congela offsets laterais', () => {
+    const same = [41.9, 12.5]
+    const pins = [
+      { id: 'stop:a', kind: 'stop', latLng: same, order: 1 },
+      { id: 'stop:b', kind: 'stop', latLng: same, order: 2 },
+      { id: 'meal:1', kind: 'meal', latLng: same, order: 1 },
+    ]
+    const full = computePinLayout(pins, opts)
+    assert.equal(full.stacks.length, 1)
+    assert.equal(full.entries.get('meal:1').isOffset, true)
+    const offsetDisplay = full.entries.get('meal:1').displayLatLng
+
+    const anim = buildAnimSafePinLayout(pins, full)
+    assert.equal(anim.stacks.length, 1)
+    assert.equal(anim.stacks[0].stackId, full.stacks[0].stackId)
+    assert.equal(anim.entries.get('stop:a').stackId, full.stacks[0].stackId)
+    assert.deepEqual(
+      anim.entries.get('stop:a').displayLatLng,
+      full.entries.get('stop:a').displayLatLng,
+    )
+    // Offset congelado (mesmo true) — sem teleport
+    assert.equal(anim.entries.get('meal:1').isOffset, true)
+    assert.deepEqual(anim.entries.get('meal:1').displayLatLng, offsetDisplay)
+  })
+
+  it('buildAnimSafePinLayout colapsa offset só quando true coords mudam', () => {
+    const same = [41.9, 12.5]
+    const moved = [41.91, 12.51]
+    const pinsBefore = [
+      { id: 'stop:1', kind: 'stop', latLng: same, order: 1 },
+      { id: 'meal:1', kind: 'meal', latLng: same, order: 1 },
+    ]
+    const full = computePinLayout(pinsBefore, opts)
+    assert.equal(full.entries.get('meal:1').isOffset, true)
+
+    const pinsAfter = [
+      { id: 'stop:1', kind: 'stop', latLng: same, order: 1 },
+      { id: 'meal:1', kind: 'meal', latLng: moved, order: 1 },
+    ]
+    const anim = buildAnimSafePinLayout(pinsAfter, full)
+    assert.equal(anim.entries.get('meal:1').isOffset, false)
+    assert.deepEqual(anim.entries.get('meal:1').displayLatLng, moved)
   })
 
   it('1 stop + 1 meal: stop ancorado, meal só com offset lateral', () => {
@@ -167,9 +214,57 @@ describe('ItineraryDayMap pin overlap contract', () => {
     assert.match(dayMapSource, /ItineraryMapStopStackPopup/)
     assert.match(dayMapSource, /getStackedStopIcon/)
     assert.match(dayMapSource, /stackedStopIdSet/)
+    assert.match(dayMapSource, /buildAnimSafePinLayout/)
+    assert.match(dayMapSource, /DesktopTrackedStopMarker/)
     assert.doesNotMatch(dayMapSource, /fanAngles/)
+    assert.doesNotMatch(dayMapSource, /buildIdentityPinLayout/)
     assert.match(stackPopupSource, /paradas neste ponto/)
     assert.match(stackPopupSource, /ItineraryMapStopPopup/)
+  })
+
+  it('parada/stack desktop: autoPan false com fly único (zoom + framing)', () => {
+    assert.match(
+      dayMapSource,
+      /function getActivityPopupProps\(\) \{[\s\S]*?autoPan:\s*false/,
+    )
+    assert.match(dayMapSource, /flyMapToMarkerPopup|trackMapToMarkerPopup/)
+    assert.match(dayMapSource, /flyMapToPoint/)
+    assert.match(dayMapSource, /PIN_FOCUS_MIN_ZOOM/)
+    assert.match(dayMapSource, /popupopen/)
+    // Stacks: framing sem zoom-in
+    assert.match(dayMapSource, /lockZoom/)
+    // Meals: voam às coords verdadeiras (não ao offset lateral)
+    assert.match(dayMapSource, /focusLatLng:\s*marker\.coords/)
+  })
+
+  it('meal destacado não rouba popup de parada/stack no soft-track', () => {
+    // openPopup do meal não depende de position (offset de layout)
+    assert.match(
+      dayMapSource,
+      /NÃO incluir `position`[\s\S]*?\[isHighlighted, isMobileMap, marker\.activityId, marker\.coords\]/,
+    )
+    assert.match(dayMapSource, /onMealDismiss=\{onMealDismiss\}/)
+    assert.match(
+      dayMapSource,
+      /target\.closest\([\s\S]*?leaflet-marker-icon/,
+    )
+  })
+
+  it('transições de popup: dismiss por slot, key estável, FitBounds off no focus', () => {
+    assert.match(dayMapSource, /onMealDismissIfSlot/)
+    assert.match(dayMapSource, /key=\{String\(m\.slotKey/)
+    assert.match(dayMapSource, /suppressDayFit/)
+    assert.match(dayMapSource, /closeOnClick=\{false\}/)
+    assert.match(dayMapSource, /cachedDivIcon|markerIconCache/)
+    // Focus de stack não inclui selectedPinId (evita re-pan no chip)
+    assert.match(
+      dayMapSource,
+      /focusKey=\{`\$\{mobileStopFrameNonce\}:\$\{mobileStopSheetData\.kind\}:\$\{/,
+    )
+    assert.doesNotMatch(
+      dayMapSource,
+      /focusKey=\{`\$\{mobileStopFrameNonce\}:\$\{mobileStopSheetData\.kind\}:\$\{mobileStopSheetData\.selectedPinId\}`\}/,
+    )
   })
 
   it('meal legs continuam nas coords verdadeiras do marker', () => {

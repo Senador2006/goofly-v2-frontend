@@ -18,6 +18,8 @@ export function useItineraryMeals({
   const [mealSelections, setMealSelections] = useState({})
   const [highlightedMealSlotKey, setHighlightedMealSlotKey] = useState(null)
   const [expandedMealSlotKey, setExpandedMealSlotKey] = useState(null)
+  /** Incrementa só em seleção/“ver no mapa” vindos do roteiro — dispara zoom de enquadramento. */
+  const [mealMapFrameNonce, setMealMapFrameNonce] = useState(0)
   const mealSlotHeaderRefs = useRef(new Map())
 
   useEffect(() => {
@@ -66,15 +68,30 @@ export function useItineraryMeals({
 
   const handleMealMapPinClick = useCallback((slotKey) => {
     handleMealHighlight(slotKey)
-    if (isLgUp) scrollMealSlotHeaderIntoView(slotKey)
+    if (isLgUp) {
+      scrollMealSlotHeaderIntoView(slotKey)
+    } else {
+      // Mobile: reframes o sheet ao trocar de pin no mapa.
+      setMealMapFrameNonce((n) => n + 1)
+    }
   }, [handleMealHighlight, isLgUp, scrollMealSlotHeaderIntoView])
 
   const handleMealViewOnMap = useCallback((slotKey) => {
     handleMealHighlight(slotKey)
+    setMealMapFrameNonce((n) => n + 1)
     setMobileMapOpen(true)
   }, [handleMealHighlight, setMobileMapOpen])
 
   const handleMealDismiss = useCallback(() => setHighlightedMealSlotKey(null), [])
+
+  /** Limpa destaque só se ainda for este slot (evita meal A→B apagar o B). */
+  const handleMealDismissIfSlot = useCallback((slotKey) => {
+    const key = String(slotKey ?? '')
+    if (!key) return
+    setHighlightedMealSlotKey((prev) =>
+      prev != null && String(prev) === key ? null : prev,
+    )
+  }, [])
 
   const handleMealSelect = useCallback((slotKey, activityId) => {
     setMealSelections((previous) => {
@@ -83,12 +100,19 @@ export function useItineraryMeals({
       else next[slotKey] = activityId
       return next
     })
+    // Destaca no mapa; no mobile abre o drawer e pede zoom de enquadramento no pin
+    // (padrão master–detail: seleção na lista → foco imediato no mapa).
     setHighlightedMealSlotKey(String(slotKey))
-  }, [])
+    if (activityId && !isLgUp) {
+      setMealMapFrameNonce((n) => n + 1)
+      setMobileMapOpen(true)
+    }
+  }, [isLgUp, setMobileMapOpen])
 
   return {
     mealSelections,
     highlightedMealSlotKey,
+    mealMapFrameNonce,
     expandedMealSlotKey,
     setExpandedMealSlotKey,
     mealSlotHeaderRefs,
@@ -98,5 +122,6 @@ export function useItineraryMeals({
     handleMealGoToTimeline,
     handleMealViewOptions: handleMealGoToTimeline,
     handleMealDismiss,
+    handleMealDismissIfSlot,
   }
 }

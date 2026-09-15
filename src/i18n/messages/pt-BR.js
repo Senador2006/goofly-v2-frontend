@@ -18,7 +18,7 @@ export default {
   nav: {
     dashboard: 'Dashboard',
     trips: 'Minhas viagens',
-    discover: 'Tinder',
+    discover: 'Descobrir',
     memories: 'Memórias',
     settings: 'Configurações'
   },

@@ -43,11 +43,15 @@ export function ItineraryRoteiroMapColumn({
           <RoteiroModifyPanel layout="sidebar" {...edit.modifyPanelSharedProps} className="h-full min-h-0" />
         </div>
       ) : null}
-      {modes.mode === MODE_ROTEIRO && !edit.likeReplace.open ? (
+      {/* Só monta no desktop: no mobile o mapa vive no drawer. Manter o mapa
+          CSS-hidden (display:none) com tamanho 0 faz o Leaflet explodir ao
+          adicionar pins de hospedagem (LatLng NaN no layout/offset). */}
+      {modes.mode === MODE_ROTEIRO && !edit.likeReplace.open && mapUi.isLgUp ? (
         <div className="roteiro-map-surface relative flex-1 min-h-0 w-full h-full">
           <ItineraryDayMap
             tripId={tripId}
             day={view.effectiveSelectedDay}
+            days={view.days}
             activities={view.dayRouteActivities}
             timelineActivities={view.dayActivities}
             accommodations={view.dayAccommodations}
@@ -67,6 +71,8 @@ export function ItineraryRoteiroMapColumn({
             onMealViewOptions={meals.handleMealViewOptions}
             onMealSlotFocus={meals.handleMealGoToTimeline}
             onMealGoToTimeline={meals.handleMealGoToTimeline}
+            onMealDismiss={meals.handleMealDismiss}
+            onMealDismissIfSlot={meals.handleMealDismissIfSlot}
           />
         </div>
       ) : null}

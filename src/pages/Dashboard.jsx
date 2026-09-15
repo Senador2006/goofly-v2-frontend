@@ -88,7 +88,7 @@ export function Dashboard() {
           </Link>
           <Link to="/discover">
             <Button variant="hero-light">
-              Abrir Tinder de Viagens
+              Explorar Destinos
             </Button>
           </Link>
         </div>

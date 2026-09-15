@@ -5,9 +5,33 @@ import { Icon } from '../common/Icon'
  *   checked: boolean,
  *   onChange: (next: boolean) => void,
  *   disabled?: boolean,
+ *   compact?: boolean,
  * }} props
  */
-export function MapMealsToggle({ checked, onChange, disabled = false }) {
+export function MapMealsToggle({ checked, onChange, disabled = false, compact = false }) {
+  if (compact) {
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label="Exibir refeições no mapa"
+        title="Refeições"
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={
+          'pointer-events-auto inline-flex size-9 items-center justify-center rounded-full border shadow-sm backdrop-blur transition-colors ' +
+          (checked
+            ? 'bg-amber-500 text-[#1c1c0d] border-amber-600/40'
+            : 'bg-white/90 dark:bg-card-dark/90 border-border-light dark:border-border-dark text-text-secondary') +
+          (disabled ? ' opacity-50 cursor-not-allowed' : '')
+        }
+      >
+        <Icon name="restaurant" className="text-base" aria-hidden />
+      </button>
+    )
+  }
+
   return (
     <button
       type="button"

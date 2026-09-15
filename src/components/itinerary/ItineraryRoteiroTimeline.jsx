@@ -21,7 +21,7 @@ export function ItineraryRoteiroTimeline({
   page,
 }) {
   let activityCardIndex = 0
-  const regularActivityCount = view.dayRouteActivities.length
+  const unitCount = view.dayEditUnits?.length ?? view.dayRouteActivities.length
 
   return (
     <div
@@ -102,26 +102,67 @@ export function ItineraryRoteiroTimeline({
               {view.dayTimelineItems.map((item, timelineIndex) => {
                 const timelineIsLast = timelineIndex === view.dayTimelineItems.length - 1 && view.hiddenPremiumStopsSameDay === 0
                 if (item.type === 'mealSlot') {
+                  const slotId = String(item.slotId || item.slotKey)
+                  const unitIndex = view.unitIndexByDragId?.get(slotId) ?? timelineIndex
+                  const primaryOpt = item.options?.[0]
+                  const endTime =
+                    primaryOpt?.endTime ||
+                    primaryOpt?.end_time ||
+                    ''
                   return (
                     <ItineraryMealSlotCard
-                      key={`meal-${item.slotKey}`}
+                      key={`meal-${slotId}`}
                       mealType={item.mealType}
                       startTime={item.startTime}
+                      endTime={endTime}
                       options={item.options}
                       isLast={timelineIsLast}
-                      readOnly={edit.roteiroEditOpen || edit.likeReplace.open}
-                      selectedId={meals.mealSelections[item.slotKey] ?? null}
-                      onSelect={(activityId) => meals.handleMealSelect(item.slotKey, activityId)}
-                      highlighted={meals.highlightedMealSlotKey === item.slotKey}
+                      readOnly={edit.likeReplace.open}
+                      editing={edit.roteiroEditOpen}
+                      selectedId={meals.mealSelections[slotId] ?? null}
+                      onSelect={(activityId) => meals.handleMealSelect(slotId, activityId)}
+                      highlighted={meals.highlightedMealSlotKey === slotId}
                       showMealsOnMap={page.mapUi.showMealsOnMap}
-                      open={meals.expandedMealSlotKey === item.slotKey}
-                      onOpenChange={(next) => meals.setExpandedMealSlotKey(next ? item.slotKey : null)}
-                      onViewOnMap={() => meals.handleMealViewOnMap(item.slotKey)}
+                      open={meals.expandedMealSlotKey === slotId}
+                      onOpenChange={(next) => meals.setExpandedMealSlotKey(next ? slotId : null)}
+                      onViewOnMap={() => meals.handleMealViewOnMap(slotId)}
                       headerRef={(element) => {
-                        const key = String(item.slotKey)
+                        const key = String(slotId)
                         if (element) meals.mealSlotHeaderRefs.current.set(key, element)
                         else meals.mealSlotHeaderRefs.current.delete(key)
                       }}
+                      cardRef={(element) => {
+                        if (element) edit.stopCardRefs.current.set(slotId, element)
+                        else edit.stopCardRefs.current.delete(slotId)
+                      }}
+                      onTimePatch={(patch) =>
+                        edit.patchActivity({ id: slotId }, patch)
+                      }
+                      onMoveUp={() => edit.moveActivity(slotId, unitIndex, -1)}
+                      onMoveDown={() => edit.moveActivity(slotId, unitIndex, 1)}
+                      disableMoveUp={unitIndex === 0 || edit.dragReorder.isInteractionBlocked}
+                      disableMoveDown={unitIndex === unitCount - 1 || edit.dragReorder.isInteractionBlocked}
+                      canDragReorder={edit.dragReorder.canDrag && !edit.dragReorder.isInteractionBlocked}
+                      onDragHandlePointerDown={(event) =>
+                        edit.onActivityDragHandlePointerDown(slotId, event)
+                      }
+                      onRemoveOption={(optionId) =>
+                        edit.removeMealOption(slotId, optionId)
+                      }
+                      onAddOption={(placeFields) =>
+                        edit.addMealOption(slotId, placeFields)
+                      }
+                      compactMode={edit.dragReorder.isCardCompact(slotId)}
+                      isDragSource={
+                        edit.dragReorder.phase === 'dragging' &&
+                        slotId === String(edit.dragReorder.draggingId)
+                      }
+                      isDragHidden={
+                        (edit.dragReorder.phase === 'landing' ||
+                          edit.dragReorder.phase === 'reverting') &&
+                        slotId === String(edit.dragReorder.draggingId)
+                      }
+                      isDragPending={slotId === String(edit.dragReorder.pendingDragId)}
                     />
                   )
                 }
@@ -130,6 +171,7 @@ export function ItineraryRoteiroTimeline({
                 const activityIsLast = timelineIndex === view.dayTimelineItems.length - 1 && view.hiddenPremiumStopsSameDay === 0
                 const frozen = edit.reorderFrozenLayoutRef.current
                 const activityId = String(activity.id)
+                const unitIndex = view.unitIndexByDragId?.get(activityId) ?? index
                 const displayIndex = frozen?.indices && activityId in frozen.indices ? frozen.indices[activityId] : index
                 const displayIsLast = frozen?.isLast && activityId in frozen.isLast ? frozen.isLast[activityId] : activityIsLast
                 if (edit.likeReplace.open) {
@@ -168,10 +210,10 @@ export function ItineraryRoteiroTimeline({
                     }}
                     onDraftPatch={(patch) => edit.patchActivity(activity, patch)}
                     onRemove={() => edit.removeActivity(activity.id)}
-                    onMoveUp={() => edit.moveActivity(activity, index, -1)}
-                    onMoveDown={() => edit.moveActivity(activity, index, 1)}
-                    disableMoveUp={index === 0 || edit.dragReorder.isInteractionBlocked}
-                    disableMoveDown={index === regularActivityCount - 1 || edit.dragReorder.isInteractionBlocked}
+                    onMoveUp={() => edit.moveActivity(activity, unitIndex, -1)}
+                    onMoveDown={() => edit.moveActivity(activity, unitIndex, 1)}
+                    disableMoveUp={unitIndex === 0 || edit.dragReorder.isInteractionBlocked}
+                    disableMoveDown={unitIndex === unitCount - 1 || edit.dragReorder.isInteractionBlocked}
                     compactMode={edit.dragReorder.isCardCompact(activity.id)}
                     isDragSource={edit.dragReorder.phase === 'dragging' && activityId === String(edit.dragReorder.draggingId)}
                     isDragHidden={(edit.dragReorder.phase === 'landing' || edit.dragReorder.phase === 'reverting') && activityId === String(edit.dragReorder.draggingId)}

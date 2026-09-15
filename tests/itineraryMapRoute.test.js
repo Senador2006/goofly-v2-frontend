@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import {
   apiRouteMatchesVisibleActivities,
+  buildOptimisticMarkersFromActivities,
   buildVisibleActivityIdSet,
   filterMarkersByVisibleIds,
   mergeAccommodationsForMap,
+  orderDaysForPrefetch,
   resolveLegPolylinePositions,
   resolveMapMarkers,
   resolvePolylinePositions,
@@ -56,7 +58,7 @@ describe('itineraryMapRoute helpers', () => {
     assert.deepEqual(filtered.map((m) => m.activityId), ['a1'])
   })
 
-  it('resolveMapMarkers usa só apiMarkers (Geoapify) e filtra por visíveis', () => {
+  it('resolveMapMarkers prefere apiMarkers e cai para localMarkers', () => {
     const local = [{ activityId: 'a1', coords: [1, 2] }]
     const api = [{ activityId: 'a1', coords: [48.85, 2.35] }]
     const visible = buildVisibleActivityIdSet([{ id: 'a1' }])
@@ -80,7 +82,7 @@ describe('itineraryMapRoute helpers', () => {
     )
     assert.deepEqual(
       resolveMapMarkers({ localMarkers: local, apiMarkers: [], routeRestricted: false }),
-      [],
+      local,
     )
     assert.deepEqual(
       resolveMapMarkers({
@@ -101,6 +103,25 @@ describe('itineraryMapRoute helpers', () => {
       }),
       api,
     )
+  })
+
+  it('buildOptimisticMarkersFromActivities extrai coords plotáveis', () => {
+    const markers = buildOptimisticMarkersFromActivities([
+      { id: 'a1', name: 'Louvre', coordinates: { latitude: 48.86, longitude: 2.34 } },
+      { id: 'a2', name: 'Sem coords' },
+      { place_id: 'p3', title: 'Tower', lat: 51.5, lng: -0.12 },
+    ])
+    assert.equal(markers.length, 2)
+    assert.equal(markers[0].activityId, 'a1')
+    assert.deepEqual(markers[0].coords, [48.86, 2.34])
+    assert.equal(markers[1].activityId, 'p3')
+    assert.deepEqual(markers[1].coords, [51.5, -0.12])
+  })
+
+  it('orderDaysForPrefetch prioriza vizinhos do dia atual', () => {
+    assert.deepEqual(orderDaysForPrefetch([1, 2, 3, 4, 5], 3), [2, 4, 1, 5])
+    assert.deepEqual(orderDaysForPrefetch([5, 1, 3], 1), [3, 5])
+    assert.deepEqual(orderDaysForPrefetch([3, 1, 2], null), [1, 2, 3])
   })
 
   it('resolvePolylinePositions ignores unsafe API geometry when restricted', () => {
