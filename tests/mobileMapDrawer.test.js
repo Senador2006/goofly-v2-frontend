@@ -10,6 +10,7 @@ import {
   MOBILE_MAP_HANDLE_PX,
   MOBILE_MAP_HANDLE_COMPACT_PX,
   MOBILE_MAP_DRAWER_MS,
+  MOBILE_MAP_CLICK_GUARD_MS,
 } from '../src/utils/mobileMapDrawer.js'
 
 const THRESHOLD = 100
@@ -82,6 +83,13 @@ describe('mobileMapDrawerTransitionStyle', () => {
     assert.match(style, new RegExp(`transform ${MOBILE_MAP_DRAWER_MS}ms`))
     assert.match(style, /clip-path/)
     assert.match(style, /cubic-bezier\(0\.32, 1\.05, 0\.55, 1\)/)
+  })
+})
+
+describe('MOBILE_MAP_CLICK_GUARD_MS', () => {
+  it('cobre a animação de fechamento para bloquear click fantasma', () => {
+    assert.equal(MOBILE_MAP_CLICK_GUARD_MS, MOBILE_MAP_DRAWER_MS)
+    assert.ok(MOBILE_MAP_CLICK_GUARD_MS >= 300)
   })
 })
 

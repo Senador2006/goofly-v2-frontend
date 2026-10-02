@@ -5,8 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import {
   apiRouteMatchesVisibleActivities,
+  buildOptimisticMarkersFromActivities,
   buildVisibleActivityIdSet,
+  filterMarkersByVisibleIds,
   mergeAccommodationsForMap,
+  orderDaysForPrefetch,
   resolveLegPolylinePositions,
   resolveMapMarkers,
   resolvePolylinePositions,
@@ -46,16 +49,40 @@ describe('itineraryMapRoute helpers', () => {
     )
   })
 
-  it('resolveMapMarkers usa só apiMarkers (Geoapify) e ignora coords locais do agente', () => {
+  it('filterMarkersByVisibleIds remove markers fora do conjunto visível', () => {
+    const visible = buildVisibleActivityIdSet([{ id: 'a1' }])
+    const filtered = filterMarkersByVisibleIds(
+      [{ activityId: 'a1' }, { activityId: 'meal-1' }],
+      visible,
+    )
+    assert.deepEqual(filtered.map((m) => m.activityId), ['a1'])
+  })
+
+  it('resolveMapMarkers prefere apiMarkers e cai para localMarkers', () => {
     const local = [{ activityId: 'a1', coords: [1, 2] }]
     const api = [{ activityId: 'a1', coords: [48.85, 2.35] }]
+    const visible = buildVisibleActivityIdSet([{ id: 'a1' }])
     assert.deepEqual(
-      resolveMapMarkers({ localMarkers: local, apiMarkers: api, routeRestricted: false }),
+      resolveMapMarkers({
+        localMarkers: local,
+        apiMarkers: api,
+        routeRestricted: false,
+        visibleActivityIds: visible,
+      }),
       api,
     )
     assert.deepEqual(
+      resolveMapMarkers({
+        localMarkers: local,
+        apiMarkers: [{ activityId: 'a1' }, { activityId: 'meal-1' }],
+        routeRestricted: false,
+        visibleActivityIds: visible,
+      }),
+      [{ activityId: 'a1' }],
+    )
+    assert.deepEqual(
       resolveMapMarkers({ localMarkers: local, apiMarkers: [], routeRestricted: false }),
-      [],
+      local,
     )
     assert.deepEqual(
       resolveMapMarkers({
@@ -72,9 +99,29 @@ describe('itineraryMapRoute helpers', () => {
         apiMarkers: api,
         routeRestricted: true,
         apiRouteSafeForPreview: true,
+        visibleActivityIds: visible,
       }),
       api,
     )
+  })
+
+  it('buildOptimisticMarkersFromActivities extrai coords plotáveis', () => {
+    const markers = buildOptimisticMarkersFromActivities([
+      { id: 'a1', name: 'Louvre', coordinates: { latitude: 48.86, longitude: 2.34 } },
+      { id: 'a2', name: 'Sem coords' },
+      { place_id: 'p3', title: 'Tower', lat: 51.5, lng: -0.12 },
+    ])
+    assert.equal(markers.length, 2)
+    assert.equal(markers[0].activityId, 'a1')
+    assert.deepEqual(markers[0].coords, [48.86, 2.34])
+    assert.equal(markers[1].activityId, 'p3')
+    assert.deepEqual(markers[1].coords, [51.5, -0.12])
+  })
+
+  it('orderDaysForPrefetch prioriza vizinhos do dia atual', () => {
+    assert.deepEqual(orderDaysForPrefetch([1, 2, 3, 4, 5], 3), [2, 4, 1, 5])
+    assert.deepEqual(orderDaysForPrefetch([5, 1, 3], 1), [3, 5])
+    assert.deepEqual(orderDaysForPrefetch([3, 1, 2], null), [1, 2, 3])
   })
 
   it('resolvePolylinePositions ignores unsafe API geometry when restricted', () => {
@@ -166,6 +213,15 @@ describe('ItineraryDayMap premium route contract', () => {
     assert.match(dayMapSource, /routeRestricted/)
     assert.match(dayMapSource, /resolveMapMarkers/)
     assert.match(dayMapSource, /apiRouteMatchesVisibleActivities/)
+  })
+
+  it('preview de rota usa slimActivitiesForRoutePreview', () => {
+    assert.match(dayMapSource, /slimActivitiesForRoutePreview/)
+    assert.match(dayMapSource, /activities:\s*slimActivitiesForRoutePreview\(activities\)/)
+    assert.match(
+      dayMapSource,
+      /mealActivities:\s*slimActivitiesForRoutePreview\(allMealActivities\)/,
+    )
   })
 
   it('supports accommodation pin and leg polylines', () => {

@@ -1,4 +1,7 @@
 import { Component } from 'react'
+import { useLocation } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { reportClientError } from '../../utils/errorReporting'
 import { Icon } from './Icon'
 import { Button } from './Button'
 
@@ -13,8 +16,21 @@ export class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    if (import.meta.env.DEV) {
-      console.error('[ErrorBoundary]', error, info)
+    reportClientError(error, {
+      boundary: this.props.name || 'root',
+      componentStack: info?.componentStack,
+      userId: this.props.userId,
+      routePath: this.props.routePath,
+    })
+  }
+
+  componentDidUpdate(prevProps) {
+    if (
+      this.state.hasError &&
+      prevProps.routePath !== this.props.routePath &&
+      this.props.routePath != null
+    ) {
+      this.setState({ hasError: false })
     }
   }
 
@@ -42,4 +58,19 @@ export class ErrorBoundary extends Component {
     }
     return this.props.children
   }
+}
+
+/**
+ * Boundary por superfície (auth vs app): isola falhas de rota e anexa user.id + pathname.
+ */
+export function RouteErrorBoundary({ name, children }) {
+  const location = useLocation()
+  const { user } = useAuth()
+  const userId = user?.id != null && user.id !== '' ? String(user.id) : undefined
+
+  return (
+    <ErrorBoundary name={name} userId={userId} routePath={location.pathname}>
+      {children}
+    </ErrorBoundary>
+  )
 }

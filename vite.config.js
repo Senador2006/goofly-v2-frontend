@@ -35,5 +35,24 @@ export default defineConfig(({ mode }) => {
       allowedHosts: FRONTEND_ALLOWED_HOSTS,
       // Sem proxy em preview/produção — API usa URL absoluta do gateway.
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Vite 8 / Rolldown: manualChunks deve ser Function (objeto não é suportado).
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('react-dom') || id.includes('react-router') || id.includes('/react/') || id.endsWith('/react')) {
+              return 'vendor'
+            }
+            if (id.includes('axios')) {
+              return 'axios'
+            }
+            if (id.includes('@sentry')) {
+              return 'sentry'
+            }
+          },
+        },
+      },
+    },
   }
 })

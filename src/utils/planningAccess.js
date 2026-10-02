@@ -1,3 +1,5 @@
+import { buildDateToDayMap } from './itineraryDayHelpers.js'
+
 const FULL_PLANNING_TYPES = ['planejamento_completo', 'premium']
 
 /** Pagamento desbloqueia o planejamento desta viagem (não todas as viagens do usuário). */
@@ -14,8 +16,9 @@ export function hasActivePlanningAccess(user) {
 }
 
 /**
- * UI do roteiro — fonte de verdade é a resposta da API desta viagem.
- * Não usa subscription global do usuário (pode existir de outro pagamento).
+ * UI do roteiro — fonte de verdade é a resposta da API desta viagem
+ * (`_access.fullAccess` / `_premiumRestriction` / `planning_unlocked_at`).
+ * Não usa subscription global do usuário (pagamento é por trip).
  */
 export function hasItineraryFullAccess(itinerary, trip) {
   if (itinerary?._premiumRestriction) return false
@@ -26,15 +29,6 @@ export function hasItineraryFullAccess(itinerary, trip) {
 }
 
 export function getTripDayCount(trip) {
-  if (!trip?.destinations?.length) return 1
-  let total = 0
-  for (const dest of trip.destinations) {
-    if (!dest.arrivalDate || !dest.departureDate) continue
-    const start = new Date(dest.arrivalDate)
-    const end = new Date(dest.departureDate)
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue
-    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1
-    total += Math.max(1, days)
-  }
-  return total > 0 ? total : 1
+  const n = buildDateToDayMap(trip).size
+  return n > 0 ? n : 1
 }

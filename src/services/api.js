@@ -12,6 +12,8 @@ import axios from 'axios'
  * 2. **VITE_USE_SERVICES_DIRECT**: pular o gateway é exclusivo de
  *    desenvolvimento. Em produção (`import.meta.env.PROD`) a flag é
  *    ignorada — preserva rate limit, CORS e circuit breaker do gateway.
+ *    Auth (login/register/refresh) **exige** o gateway: o services responde
+ *    `GATEWAY_REQUIRED` sem o header interno e não emite JWT no JSON ao browser.
  * 3. **Contrato {data, meta, error, message}**: a backend ainda devolve
  *    shapes mistos (`{ data, currentDay }`, `{ data, count }`, etc.). Em vez
  *    de um refactor destrutivo na backend (M5), normalizamos no cliente e
@@ -23,12 +25,30 @@ import axios from 'axios'
  *    O interceptor tenta refresh **uma vez** (com dedup) chamando
  *    `POST /auth/refresh` sem body — o refresh-token vai no cookie — e refaz
  *    o request original (que carrega o novo cookie automaticamente).
- * 5. **Timeouts** (A15): default 30s; chamadas de IA usam `AI_TIMEOUT_MS`
- *    via override por request.
+ * 5. **Timeouts** (A15): default 30s; GET do itinerário usa
+ *    `ITINERARY_TIMEOUT_MS`; chamadas de IA usam `AI_TIMEOUT_MS`.
  */
 
 const DEFAULT_TIMEOUT_MS = 30_000
-export const AI_TIMEOUT_MS = 180_000
+/** Chamadas ao otimizador/TDV/documentos — alinhado a AGENT_TIMEOUT_MS / PROXY_TIMEOUT_MS (200s). */
+export const AI_TIMEOUT_MS = 200_000
+/** GET /itinerary pode ser payload grande em 4G — acima do default, abaixo da IA. */
+export const ITINERARY_TIMEOUT_MS = 60_000
+
+export function isRequestAbort(err) {
+  if (!err) return false
+  return (
+    err.code === 'ERR_CANCELED' ||
+    err.name === 'CanceledError' ||
+    err.name === 'AbortError'
+  )
+}
+
+export function isItineraryMissingError(err) {
+  const status = err?.response?.status
+  const code = err?.response?.data?.error?.code
+  return status === 404 || code === 'ITINERARY_NOT_FOUND'
+}
 
 const TOKEN_KEY = 'token'
 const REFRESH_TOKEN_KEY = 'refreshToken'

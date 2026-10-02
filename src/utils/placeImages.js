@@ -25,14 +25,21 @@ export function getRealPlaceImageUrls(place) {
 
 /**
  * Galeria compacta no roteiro: só na versão completa (paga) e para paradas
- * curtidas no TDV com imagens reais.
+ * com imagens reais (`tdv_like` do TDV ou `ai_suggested` via Serper).
  *
  * @param {Record<string, unknown> | null | undefined} act
  * @param {boolean} [hasFullAccess=false]
  */
-export function shouldShowTdvRoteiroGallery(act, hasFullAccess = false) {
+export function shouldShowRoteiroGallery(act, hasFullAccess = false) {
   if (!hasFullAccess) return false
-  return String(act?.source || '').trim() === 'tdv_like' && getRealPlaceImageUrls(act).length > 0
+  const source = String(act?.source || '').trim()
+  if (source !== 'tdv_like' && source !== 'ai_suggested') return false
+  return getRealPlaceImageUrls(act).length > 0
+}
+
+/** @deprecated Use shouldShowRoteiroGallery — alias mantido para imports existentes. */
+export function shouldShowTdvRoteiroGallery(act, hasFullAccess = false) {
+  return shouldShowRoteiroGallery(act, hasFullAccess)
 }
 
 /**

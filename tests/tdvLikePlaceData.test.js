@@ -45,7 +45,7 @@ test('F2b — buildTdvLikePlaceData omite imagens quando só há placeholder imp
   assert.equal('image_urls' in payload, false)
 })
 
-test('F3 — shouldShowTdvRoteiroGallery só para tdv_like com URLs e acesso completo', () => {
+test('F3 — shouldShowRoteiroGallery para tdv_like/ai_suggested com URLs e acesso completo', () => {
   const tdvAct = {
     source: 'tdv_like',
     image_urls: ['https://cdn.example.com/a.jpg'],
@@ -61,9 +61,29 @@ test('F3 — shouldShowTdvRoteiroGallery só para tdv_like com URLs e acesso com
       },
       true
     ),
+    true
+  )
+  assert.equal(
+    shouldShowTdvRoteiroGallery(
+      {
+        source: 'ai_suggested',
+        image_url: 'https://cdn.example.com/a.jpg',
+      },
+      false
+    ),
     false
   )
   assert.equal(shouldShowTdvRoteiroGallery({ source: 'tdv_like' }, true), false)
+  assert.equal(
+    shouldShowTdvRoteiroGallery(
+      {
+        source: 'user_edit',
+        image_url: 'https://cdn.example.com/a.jpg',
+      },
+      true
+    ),
+    false
+  )
 })
 
 test('F4 — hero topo omitido para tdv_like; galeria só com acesso completo', () => {

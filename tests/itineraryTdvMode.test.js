@@ -8,25 +8,56 @@ const itinerarySource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../src/pages/Itinerary.jsx'),
   'utf8'
 )
+const planningModesSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../src/hooks/usePlanningModes.js'),
+  'utf8'
+)
 const indexCssSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../src/index.css'),
   'utf8'
 )
+const mapColumnSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../src/components/itinerary/ItineraryRoteiroMapColumn.jsx'),
+  'utf8'
+)
+const overlaysSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../src/components/itinerary/ItineraryGlobalOverlays.jsx'),
+  'utf8'
+)
+
+test('Itinerary: TDV permanece montado na planning (hidden fora da aba)', () => {
+  assert.match(mapColumnSource, /\{modes\.isPlanning \? \(/)
+  assert.match(mapColumnSource, /modes\.mode === MODE_TDV \? '' : 'hidden'/)
+  assert.match(mapColumnSource, /aria-hidden=\{modes\.mode !== MODE_TDV\}/)
+  assert.doesNotMatch(mapColumnSource, /modes\.isPlanning && modes\.mode === MODE_TDV \?/)
+})
 
 test('Itinerary: planejamento com TDV e confirmação de apagar fora do header', () => {
-  assert.match(itinerarySource, /MODE_TDV/)
-  assert.match(itinerarySource, /<DeletePlanningOverlay/)
+  const headerSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../src/components/itinerary/ItineraryHeader.jsx'),
+    'utf8',
+  )
+  assert.match(mapColumnSource, /MODE_TDV/)
+  assert.match(overlaysSource, /<DeletePlanningOverlay/)
   assert.doesNotMatch(
-    itinerarySource.slice(itinerarySource.indexOf('<header'), itinerarySource.indexOf('</header>') + '</header>'.length),
-    /\{showDeleteConfirm &&/
+    headerSource.slice(
+      headerSource.indexOf('<header'),
+      headerSource.indexOf('</header>') + '</header>'.length,
+    ),
+    /\{showDeleteConfirm &&/,
   )
 })
 
 test('Itinerary: TDV mobile trava scroll do Layout e reserva MobileNav', () => {
-  assert.match(itinerarySource, /tdv-mobile-lock/)
-  // Altura real da MobileNav (ResizeObserver) — encosta sem folga morta nem corte
-  assert.match(itinerarySource, /max-lg:pb-\[var\(--goofly-mobile-nav-height,0px\)\]/)
+  // C12: lock vive em usePlanningModes; altura da MobileNav vem do Layout (pb = var)
+  assert.match(planningModesSource, /tdv-mobile-lock/)
+  assert.match(layoutSource, /pb-\[var\(--goofly-mobile-nav-height/)
   assert.match(indexCssSource, /main\.tdv-mobile-lock/)
+  // Lock zera padding lateral/topo, mas deve manter pb da nav — senão action bar some
+  assert.match(
+    indexCssSource,
+    /main\.tdv-mobile-lock\s*\{[^}]*padding:\s*0\s+0\s+var\(--goofly-mobile-nav-height/s,
+  )
 })
 
 const mobileNavSource = readFileSync(
@@ -45,7 +76,7 @@ const tinderSource = readFileSync(
 test('MobileNav: publica altura real em --goofly-mobile-nav-height', () => {
   assert.match(mobileNavSource, /--goofly-mobile-nav-height/)
   assert.match(mobileNavSource, /ResizeObserver/)
-  assert.match(mobileNavSource, /visualViewport/)
+  assert.match(mobileNavSource, /orientationchange/)
 })
 
 test('TDV mobile: padrão de proporção até lg (não muda em sm)', () => {

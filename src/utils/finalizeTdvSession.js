@@ -1,7 +1,8 @@
 import { AI_TIMEOUT_MS } from '../services/api'
+import { OPTIMIZER_ASYNC_MAX_WAIT_MS } from './optimizerPollHelpers.js'
 
 const STORAGE_KEY = 'goofly:finalize-tdv'
-/** Margem além do timeout do POST para o poll pós-refresh ainda pegar o fim no servidor. */
+/** Margem além do timeout do POST para o poll pós-refresh (callback assíncrono n8n). */
 const GRACE_MS = 30_000
 
 /**
@@ -52,7 +53,7 @@ export function readFinalizeTdvSession(tripId) {
   const parsed = readFinalizeTdvSessionRaw()
   if (!parsed) return null
   if (tripId != null && String(parsed.tripId) !== String(tripId)) return null
-  const maxAge = AI_TIMEOUT_MS + GRACE_MS
+  const maxAge = Math.max(AI_TIMEOUT_MS, OPTIMIZER_ASYNC_MAX_WAIT_MS) + GRACE_MS
   if (Date.now() - parsed.startedAt > maxAge) {
     try {
       sessionStorage.removeItem(STORAGE_KEY)
@@ -66,7 +67,7 @@ export function readFinalizeTdvSession(tripId) {
 
 export function finalizeTdvSessionDeadline(session) {
   if (!session?.startedAt) return Date.now()
-  return session.startedAt + AI_TIMEOUT_MS + GRACE_MS
+  return session.startedAt + Math.max(AI_TIMEOUT_MS, OPTIMIZER_ASYNC_MAX_WAIT_MS) + GRACE_MS
 }
 
 export function isFinalizeRequestAbort(err) {

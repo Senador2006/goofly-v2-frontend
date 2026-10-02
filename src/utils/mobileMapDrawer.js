@@ -11,6 +11,11 @@ export const MOBILE_MAP_SNAP_RATIO = 0.35
 export const MOBILE_MAP_DRAWER_MS = 580
 /** Fade do painel ao abrir/fechar (ms). */
 export const MOBILE_MAP_DRAWER_OPACITY_MS = 460
+/**
+ * Bloqueia cliques “fantasma” no roteiro após fechar o mapa (toque no handle →
+ * click sintético cai no CTA de compra por baixo). Cobre a animação de saída.
+ */
+export const MOBILE_MAP_CLICK_GUARD_MS = MOBILE_MAP_DRAWER_MS
 /** Easing tipo carrossel/cortina — leve overshoot no fim. */
 export const MOBILE_MAP_DRAWER_EASE = 'cubic-bezier(0.32, 1.05, 0.55, 1)'
 

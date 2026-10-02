@@ -1,851 +1,124 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Header } from '../components/layout/Header'
-import { Icon } from '../components/common/Icon'
-import { Button } from '../components/common/Button'
-import { GooglePlaceAutocompleteField } from '../components/planning/GooglePlaceAutocompleteField'
-import { tripService } from '../services/tripService'
-import { hasGoogleMapsApiKey } from '../services/googleMapsPlacesLoader'
-import { readLatLng } from '../utils/coordinates'
+import { AccommodationReplaceConfirmDialog } from '../components/itinerary/AccommodationReplaceConfirmDialog'
+import { NewTripFormAlerts } from '../components/planning/newTrip/NewTripFormAlerts'
+import { NewTripStepDestinations } from '../components/planning/newTrip/NewTripStepDestinations'
+import { NewTripStepInterests } from '../components/planning/newTrip/NewTripStepInterests'
+import { NewTripStepPreferences } from '../components/planning/newTrip/NewTripStepPreferences'
+import { NewTripStepStay } from '../components/planning/newTrip/NewTripStepStay'
+import { NewTripStepTabs } from '../components/planning/newTrip/NewTripStepTabs'
+import { NewTripWizardNav } from '../components/planning/newTrip/NewTripWizardNav'
+import { useCreateTrip } from '../hooks/useCreateTrip'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { trackMetaEvent } from '../utils/metaPixel'
-
-// Constantes do PRE_TRIP_FORM.md
-const INTERESTS = [
-  { slug: 'historia', label: 'História' },
-  { slug: 'arte-e-cultura', label: 'Arte e Cultura' },
-  { slug: 'aventura', label: 'Aventura' },
-  { slug: 'vida-noturna', label: 'Vida Noturna' },
-  { slug: 'restaurantes-e-gastronomia', label: 'Gastronomia' },
-  { slug: 'natureza-paisagens', label: 'Natureza' },
-  { slug: 'compras', label: 'Compras' },
-  { slug: 'fotografia', label: 'Fotografia' },
-  { slug: 'espiritualidade', label: 'Espiritualidade' },
-  { slug: 'esportes', label: 'Esportes' },
-  { slug: 'musica-shows', label: 'Música e Shows' },
-  { slug: 'arquitetura', label: 'Arquitetura' },
-  { slug: 'familia', label: 'Família' },
-  { slug: 'romantico', label: 'Romântico' },
-  { slug: 'tecnologia-inovacao', label: 'Tecnologia' },
-]
-
-const ITINERARY_STYLES = [
-  { value: 'relaxante', label: 'Relaxante', desc: 'Mais tempo livre' },
-  { value: 'equilibrado', label: 'Equilibrado', desc: 'Balanceia atividades e tempo livre' },
-  { value: 'ativo', label: 'Ativo', desc: 'Muitas atividades por dia' },
-]
-
-const ACCOMMODATION_TYPES = [
-  { value: 'hotel', label: 'Hotel' },
-  { value: 'airbnb', label: 'Airbnb' },
-  { value: 'hostel', label: 'Hostel' },
-  { value: 'apartment', label: 'Residência' },
-  { value: 'other', label: 'Outro' },
-]
-
-const AVOID_OPTIONS = [
-  { slug: 'multidoes', label: 'Multidões' },
-  { slug: 'gastos-altos', label: 'Gastos Altos' },
-  { slug: 'atividades-noturnas', label: 'Atividades Noturnas' },
-  { slug: 'esportes-radicais', label: 'Esportes Radicais' },
-  { slug: 'lugares-turisticos', label: 'Lugares Turísticos' },
-  { slug: 'comida-picante', label: 'Comida Picante' },
-  { slug: 'transporte-publico-lotado', label: 'Transporte Lotado' },
-  { slug: 'lugares-barulhentos', label: 'Lugares Barulhentos' },
-  { slug: 'atividades-ao-ar-livre', label: 'Atividades ao Ar Livre' },
-]
-
-const PRIORITIZE_OPTIONS = [
-  { slug: 'lugares-famosos', label: 'Lugares Famosos' },
-  { slug: 'landmarks', label: 'Landmarks' },
-  { slug: 'lugares-escondidos', label: 'Lugares Escondidos' },
-  { slug: 'cultura-local', label: 'Cultura Local' },
-  { slug: 'gastronomia-local', label: 'Gastronomia Local' },
-  { slug: 'vistas-panoramicas', label: 'Vistas Panorâmicas' },
-  { slug: 'arquitetura-historica', label: 'Arquitetura Histórica' },
-  { slug: 'mercados-locais', label: 'Mercados Locais' },
-  { slug: 'parques-natureza', label: 'Parques e Natureza' },
-  { slug: 'arte-de-rua', label: 'Arte de Rua' },
-  { slug: 'vida-noturna-local', label: 'Vida Noturna Local' },
-]
-
-const CURRENCIES = ['USD', 'EUR', 'BRL', 'GBP']
-
-const STEPS = [
-  { id: 1, label: 'Destinos' },
-  { id: 2, label: 'Estadia' },
-  { id: 3, label: 'Interesses' },
-  { id: 4, label: 'Preferências' },
-]
-
-function generateId() {
-  return 'dest-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9)
-}
-
-function generateAccommodationId() {
-  return 'acc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9)
-}
-
-/** Indica se o usuário preencheu algum dado de hospedagem (nome ou endereço). */
-function accommodationHasContent(acc) {
-  return Boolean(String(acc?.name || acc?.address || '').trim())
-}
-
-function createEmptyAccommodation(dest) {
-  return {
-    id: generateAccommodationId(),
-    destinationId: dest?.id,
-    type: 'hotel',
-    name: '',
-    address: '',
-    checkIn: dest?.arrivalDate || '',
-    checkOut: dest?.departureDate || '',
-    nights: 0,
-  }
-}
-
-function getAccommodationsForDestination(accommodations, destinationId) {
-  return (accommodations || []).filter((a) => a.destinationId === destinationId)
-}
-
-function toIsoDate(raw) {
-  if (!raw) return null
-  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(raw).trim())
-  return m ? m[1] : null
-}
-
-function validateAccommodationOverlaps(destinations, accommodations) {
-  for (const dest of destinations || []) {
-    const destAccs = (accommodations || []).filter(
-      (a) => accommodationHasContent(a) && a.destinationId === dest.id,
-    )
-    for (let i = 0; i < destAccs.length; i += 1) {
-      for (let j = i + 1; j < destAccs.length; j += 1) {
-        const aStart = toIsoDate(destAccs[i].checkIn)
-        const aEnd = toIsoDate(destAccs[i].checkOut)
-        const bStart = toIsoDate(destAccs[j].checkIn)
-        const bEnd = toIsoDate(destAccs[j].checkOut)
-        if (aStart && aEnd && bStart && bEnd && aStart <= bEnd && bStart <= aEnd) {
-          return `As datas das hospedagens em ${dest.city || 'um destino'} não podem se sobrepor`
-        }
-      }
-    }
-  }
-  return null
-}
+import { useGoogleMapsProbe } from '../hooks/useGoogleMapsProbe'
+import { useNewTripWizard } from '../hooks/useNewTripWizard'
 
 export function NewTrip() {
   useDocumentTitle('Nova viagem')
-  const navigate = useNavigate()
-  const [step, setStep] = useState(1)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [formData, setFormData] = useState({
-    destinations: [{ id: generateId(), city: '', country: '', arrivalDate: '', departureDate: '', order: 1 }],
-    accommodations: [],
-    interests: [],
-    tripDescription: '',
-    itineraryStyle: 'equilibrado',
-    avoidPreferences: [],
-    prioritizePreferences: [],
-    avoidCustom: '',
-    prioritizeCustom: '',
-    budget: '',
-    currency: 'USD',
-    travelers: { adults: 1, children: 0 },
+  const maps = useGoogleMapsProbe()
+  const wizard = useNewTripWizard(maps)
+  const createTrip = useCreateTrip({
+    step: wizard.step,
+    setStep: wizard.setStep,
+    formDataRef: wizard.formDataRef,
+    collectForStep: wizard.collectForStep,
+    showStepErrors: wizard.showStepErrors,
+    clearFormErrors: wizard.clearFormErrors,
+    setApiError: wizard.setApiError,
+    errorBannerRef: wizard.errorBannerRef,
   })
-
-  const updateField = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    setError(null)
-  }
-
-  const updateDestination = (index, updates) => {
-    setFormData((prev) => {
-      const dests = [...prev.destinations]
-      dests[index] = { ...dests[index], ...updates }
-      return { ...prev, destinations: dests }
-    })
-  }
-
-  const addDestination = () => {
-    const last = formData.destinations[formData.destinations.length - 1]
-    const dep = last?.departureDate || ''
-    setFormData((prev) => ({
-      ...prev,
-      destinations: [
-        ...prev.destinations,
-        { id: generateId(), city: '', country: '', arrivalDate: dep, departureDate: '', order: prev.destinations.length + 1 },
-      ],
-    }))
-  }
-
-  const removeDestination = (index) => {
-    if (formData.destinations.length <= 1) return
-    const removedId = formData.destinations[index]?.id
-    setFormData((prev) => ({
-      ...prev,
-      destinations: prev.destinations.filter((_, i) => i !== index).map((d, i) => ({ ...d, order: i + 1 })),
-      accommodations: (prev.accommodations || []).filter((a) => a.destinationId !== removedId),
-    }))
-  }
-
-  const updateAccommodation = (accId, updates) => {
-    setFormData((prev) => ({
-      ...prev,
-      accommodations: (prev.accommodations || []).map((a) =>
-        a.id === accId ? { ...a, ...updates } : a,
-      ),
-    }))
-  }
-
-  const addAccommodation = (destinationId) => {
-    const dest = formData.destinations.find((d) => d.id === destinationId)
-    setFormData((prev) => ({
-      ...prev,
-      accommodations: [...(prev.accommodations || []), createEmptyAccommodation(dest)],
-    }))
-  }
-
-  const removeAccommodation = (accId) => {
-    setFormData((prev) => ({
-      ...prev,
-      accommodations: (prev.accommodations || []).filter((a) => a.id !== accId),
-    }))
-  }
-
-  const toggleMulti = (field, value) => {
-    setFormData((prev) => {
-      const arr = prev[field] || []
-      const next = arr.includes(value) ? arr.filter((x) => x !== value) : [...arr, value]
-      return { ...prev, [field]: next }
-    })
-  }
-
-  const validateStep = (s) => {
-    if (s === 1) {
-      const dests = formData.destinations
-      for (const d of dests) {
-        if (!d.city?.trim() || !d.country?.trim()) return 'Preencha cidade e país de cada destino'
-        if (!readLatLng({ coordinates: d.coordinates })) {
-          return `Selecione "${d.city.trim()}" nas sugestões do autocomplete para localizar o destino no mapa`
-        }
-        if (!d.arrivalDate || !d.departureDate) return 'Preencha as datas de cada destino'
-        const arr = new Date(d.arrivalDate)
-        const dep = new Date(d.departureDate)
-        if (arr >= dep) return `Data de chegada deve ser anterior à saída em ${d.city}`
-      }
-      for (let i = 1; i < dests.length; i++) {
-        const prevDep = new Date(dests[i - 1].departureDate)
-        const currArr = new Date(dests[i].arrivalDate)
-        if (currArr < prevDep) return 'Datas dos destinos devem ser sequenciais'
-      }
-      return null
-    }
-    if (s === 2) {
-      const dests = formData.destinations
-      const accs = formData.accommodations || []
-      for (const a of accs) {
-        if (!accommodationHasContent(a)) continue
-        const dest = dests.find((d) => d.id === a.destinationId)
-        if (!dest) return 'Hospedagem sem destino associado'
-        if (!a.type || !a.checkIn || !a.checkOut) {
-          return `Preencha check-in e check-out da hospedagem em ${dest.city || 'um destino'}`
-        }
-        const checkIn = new Date(a.checkIn)
-        const checkOut = new Date(a.checkOut)
-        const arr = new Date(dest.arrivalDate)
-        const dep = new Date(dest.departureDate)
-        if (checkIn < arr) return `Check-in deve ser após a chegada em ${dest.city}`
-        if (checkOut > dep) return `Check-out deve ser antes da saída de ${dest.city}`
-      }
-      return validateAccommodationOverlaps(dests, accs)
-    }
-    if (s === 3) {
-      if (!formData.interests?.length) return 'Selecione pelo menos 1 interesse'
-      const adults = Number(formData.travelers?.adults)
-      if (!Number.isFinite(adults) || adults < 1) return 'Informe o número de adultos'
-      return null
-    }
-    return null
-  }
-
-  const advanceStepAfterValidation = (fromStep) => {
-    const err = validateStep(fromStep)
-    if (err) {
-      setError(err)
-      return
-    }
-    setError(null)
-    if (fromStep < 4) setStep(fromStep + 1)
-  }
-
-  const handleNextClick = () => {
-    advanceStepAfterValidation(step)
-  }
-
-  const handleBack = () => {
-    setError(null)
-    if (step > 1) setStep(step - 1)
-  }
-
-  const buildPayload = () => {
-    const dests = formData.destinations.map((d, i) => ({
-      id: d.id,
-      city: d.city.trim(),
-      country: d.country.trim(),
-      ...(d.coordinates ? { coordinates: d.coordinates } : {}),
-      arrivalDate: d.arrivalDate,
-      departureDate: d.departureDate,
-      order: i + 1,
-    }))
-    const accs = (formData.accommodations || [])
-      .filter(accommodationHasContent)
-      .map((a) => ({
-        id: a.id || generateAccommodationId(),
-        destinationId: a.destinationId,
-        type: a.type || 'hotel',
-        name: a.name?.trim() || a.address?.trim() || '',
-        address: a.address?.trim() || a.name?.trim() || '',
-        ...(a.coordinates ? { coordinates: a.coordinates } : {}),
-        checkIn: a.checkIn,
-        checkOut: a.checkOut,
-        nights: a.nights || 0,
-      }))
-    const avoid = [...(formData.avoidPreferences || [])]
-    if (formData.avoidCustom?.trim()) avoid.push('custom: ' + formData.avoidCustom.trim())
-    const prior = [...(formData.prioritizePreferences || [])]
-    if (formData.prioritizeCustom?.trim()) prior.push('custom: ' + formData.prioritizeCustom.trim())
-    return {
-      destinations: dests,
-      accommodations: accs,
-      interests: formData.interests,
-      tripDescription: formData.tripDescription?.trim() || undefined,
-      itineraryStyle: formData.itineraryStyle || 'equilibrado',
-      avoidPreferences: avoid,
-      prioritizePreferences: prior,
-      budget: formData.budget ? Number(formData.budget) : undefined,
-      currency: formData.currency || 'USD',
-      travelers: {
-        adults: Math.max(1, Number(formData.travelers.adults) || 1),
-        children: Math.max(0, Number(formData.travelers.children) || 0),
-      },
-    }
-  }
-
-  const runCreateTrip = async () => {
-    for (let s = 1; s <= 4; s++) {
-      const err = validateStep(s)
-      if (err) {
-        setError(err)
-        setStep(s)
-        return
-      }
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const payload = buildPayload()
-      const trip = await tripService.createTrip(payload)
-      const dest = payload.destinations?.[0]
-      const destLabel = dest
-        ? [dest.city, dest.country].filter(Boolean).join(', ')
-        : undefined
-      trackMetaEvent('Lead', {
-        content_name: destLabel || 'nova_viagem',
-        content_ids: trip?.id ? [String(trip.id)] : undefined,
-        content_category: 'trip_planning',
-      })
-      navigate(`/trips/${trip.id}/itinerary?tab=tdv`)
-    } catch (err) {
-      setError(err.response?.data?.error?.message || err.message || 'Erro ao criar viagem')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  /**
-   * Enter implicitamente só avança etapas 1→3 (Próximo). No passo 4 não faz requisição.
-   * POST /trips apenas no clique do botão "Criar viagem".
-   */
-  const handleFormSubmit = (e) => {
-    e.preventDefault()
-    if (step < 4) advanceStepAfterValidation(step)
-  }
-
-  const handleCreateTripClick = () => {
-    void runCreateTrip()
+  const navProps = {
+    step: wizard.step,
+    skipStay: wizard.skipStay,
+    loading: createTrip.loading,
+    handleBack: wizard.handleBack,
+    handleNextClick: wizard.handleNextClick,
+    handleCreateTripClick: createTrip.handleCreateTripClick,
   }
 
   return (
-    <div>
-      <Header
-        title="Nova Viagem"
-        subtitle="Preencha o formulário para criar sua próxima aventura"
-      />
-      <div className="max-w-2xl mx-auto">
-        <div className="flex gap-2 mb-8">
-          {STEPS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setStep(s.id)}
-              className={`px-4 py-2 rounded-full text-sm font-bold ${
-                step === s.id ? 'bg-primary text-foreground' : 'bg-surface-light dark:bg-surface-dark'
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={handleFormSubmit} className="bg-white dark:bg-card-dark rounded-xl p-6 md:p-8 border border-border-light dark:border-border-dark">
-          {error && (
-            <div className="mb-6 p-4 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-sm">
-              <p>{error}</p>
-              {(error.includes('temporariamente') || error.includes('comunicar')) && (
-                <p className="mt-2 text-xs opacity-90">Tente novamente em alguns segundos ou reinicie o servidor.</p>
-              )}
-            </div>
-          )}
-
-          {step === 1 && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-bold">Destinos e Datas</h3>
-              {formData.destinations.map((dest, i) => (
-                <div key={dest.id} className="p-4 rounded-xl border border-border-light dark:border-border-dark space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-bold text-text-secondary">Destino {i + 1}</span>
-                    {formData.destinations.length > 1 && (
-                      <button type="button" onClick={() => removeDestination(i)} className="text-red-500 text-sm">
-                        Remover
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <label className="block">
-                      <span className="block text-sm font-semibold mb-2 text-[#1c1c0d] dark:text-white">
-                        Cidade *
-                      </span>
-                      {hasGoogleMapsApiKey() ? (
-                        <>
-                          <GooglePlaceAutocompleteField
-                            key={`ac-${dest.id}`}
-                            id={`planning-city-ac-${dest.id}`}
-                            value={dest.city}
-                            placeholder="Ex.: Paris, Tóquio, Porto…"
-                            disabled={loading}
-                            onDraftChange={(text) => updateDestination(i, { city: text })}
-                            onResolved={(patch) =>
-                              updateDestination(i, {
-                                ...(patch.city != null ? { city: patch.city } : {}),
-                                ...(patch.country != null ? { country: patch.country } : {}),
-                                ...(patch.coordinates ? { coordinates: patch.coordinates } : {}),
-                              })
-                            }
-                          />
-                        </>
-                      ) : (
-                        <input
-                          type="text"
-                          id={`planning-city-${dest.id}`}
-                          value={dest.city}
-                          onChange={(e) => updateDestination(i, { city: e.target.value })}
-                          placeholder="Ex: Paris"
-                          className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                        />
-                      )}
-                    </label>
-                    <div>
-                      <label className="block text-sm font-semibold mb-2">País *</label>
-                      <input
-                        type="text"
-                        value={dest.country}
-                        onChange={(e) => updateDestination(i, { country: e.target.value })}
-                        placeholder="Ex: França"
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-semibold mb-2">Chegada *</label>
-                      <input
-                        type="date"
-                        value={dest.arrivalDate}
-                        onChange={(e) => updateDestination(i, { arrivalDate: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-2">Saída *</label>
-                      <input
-                        type="date"
-                        value={dest.departureDate}
-                        onChange={(e) => updateDestination(i, { departureDate: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-              <Button type="button" variant="secondary" onClick={addDestination}>
-                <Icon name="add" />
-                Adicionar destino
-              </Button>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-bold">Locais de Estadia</h3>
-              <p className="text-sm text-text-secondary">
-                Opcional. Adicione quantas hospedagens quiser por destino — cada uma com datas
-                próprias aparecerá no mapa do roteiro (com endereço válido).
-              </p>
-              {formData.destinations.map((dest) => {
-                const destAccs = getAccommodationsForDestination(formData.accommodations, dest.id)
-                return (
-                  <div
-                    key={dest.id}
-                    className="p-4 rounded-xl border border-border-light dark:border-border-dark space-y-4"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-bold text-text-secondary">
-                        {dest.city || 'Destino'} — hospedagens
-                      </span>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="!py-2 !px-3 text-xs"
-                        onClick={() => addAccommodation(dest.id)}
-                      >
-                        <Icon name="add" />
-                        Adicionar hospedagem
-                      </Button>
-                    </div>
-                    {destAccs.length === 0 ? (
-                      <p className="text-xs text-text-secondary m-0">
-                        Nenhuma hospedagem neste destino. Use o botão acima se quiser informar uma.
-                      </p>
-                    ) : null}
-                    {destAccs.map((acc, accIndex) => (
-                      <div
-                        key={acc.id}
-                        className="p-4 rounded-xl border border-dashed border-border-light dark:border-border-dark space-y-4 bg-background-light/40 dark:bg-background-dark/40"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">
-                            Hospedagem {accIndex + 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeAccommodation(acc.id)}
-                            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline"
-                          >
-                            Remover
-                          </button>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold mb-2">Tipo</label>
-                          <select
-                            value={acc.type || 'hotel'}
-                            onChange={(e) => updateAccommodation(acc.id, { type: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                          >
-                            {ACCOMMODATION_TYPES.map((t) => (
-                              <option key={t.value} value={t.value}>
-                                {t.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold mb-2">Nome / Endereço</label>
-                          {hasGoogleMapsApiKey() ? (
-                            <>
-                              <GooglePlaceAutocompleteField
-                                key={`acc-ac-${acc.id}`}
-                                id={`planning-acc-ac-${acc.id}`}
-                                resultKind="place"
-                                value={acc.name || acc.address || ''}
-                                placeholder="Ex.: Hotel Plaza Athénée"
-                                disabled={loading}
-                                onDraftChange={(text) =>
-                                  updateAccommodation(acc.id, {
-                                    name: text,
-                                    address: text,
-                                    coordinates: null,
-                                  })
-                                }
-                                onResolved={(patch) =>
-                                  updateAccommodation(acc.id, {
-                                    ...(patch.name != null ? { name: patch.name } : {}),
-                                    ...(patch.formattedAddress != null
-                                      ? { address: patch.formattedAddress }
-                                      : {}),
-                                    ...(patch.coordinates ? { coordinates: patch.coordinates } : {}),
-                                  })
-                                }
-                              />
-                              <p className="mt-2 text-[11px] text-text-secondary/90 leading-snug">
-                                Opcional. Escolha uma sugestão do Google para fixar a hospedagem no
-                                mapa do roteiro.
-                              </p>
-                            </>
-                          ) : (
-                            <input
-                              type="text"
-                              value={acc.name || ''}
-                              onChange={(e) =>
-                                updateAccommodation(acc.id, {
-                                  name: e.target.value,
-                                  address: e.target.value,
-                                })
-                              }
-                              placeholder="Ex: Hotel Plaza Athénée"
-                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                            />
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-semibold mb-2">Check-in</label>
-                            <input
-                              type="date"
-                              value={acc.checkIn || ''}
-                              onChange={(e) =>
-                                updateAccommodation(acc.id, { checkIn: e.target.value })
-                              }
-                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-semibold mb-2">Check-out</label>
-                            <input
-                              type="date"
-                              value={acc.checkOut || ''}
-                              onChange={(e) =>
-                                updateAccommodation(acc.id, { checkOut: e.target.value })
-                              }
-                              className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-bold">Interesses e Preferências</h3>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Interesses * (mín. 1)</label>
-                <div className="flex flex-wrap gap-2">
-                  {INTERESTS.map(({ slug, label }) => (
-                    <button
-                      key={slug}
-                      type="button"
-                      onClick={() => toggleMulti('interests', slug)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                        formData.interests.includes(slug)
-                          ? 'bg-primary text-foreground'
-                          : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Descrição da viagem (opcional)</label>
-                <textarea
-                  value={formData.tripDescription}
-                  onChange={(e) => updateField('tripDescription', e.target.value.slice(0, 2000))}
-                  placeholder="Descreva como você imagina sua viagem ideal..."
-                  rows={3}
-                  maxLength={2000}
-                  className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark resize-none"
-                />
-                <span className="text-xs text-text-secondary">{formData.tripDescription.length}/2000</span>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Estilo do roteiro</label>
-                <div className="flex flex-wrap gap-2">
-                  {ITINERARY_STYLES.map(({ value, label }) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => updateField('itineraryStyle', value)}
-                      className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
-                        formData.itineraryStyle === value
-                          ? 'bg-primary text-foreground'
-                          : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Viajantes *</label>
-                <div className="flex items-start gap-6">
-                  <div className="flex flex-col items-center gap-1.5">
-                    <span className="text-xs leading-none text-text-secondary">Adultos</span>
-                    <input
-                      type="number"
-                      min={1}
-                      aria-label="Adultos"
-                      value={formData.travelers.adults}
-                      onChange={(e) => {
-                        const raw = e.target.value
-                        updateField('travelers', {
-                          ...formData.travelers,
-                          adults: raw === '' ? '' : Math.max(1, parseInt(raw, 10) || 1),
-                        })
-                      }}
-                      onBlur={() => {
-                        if (formData.travelers.adults === '' || Number(formData.travelers.adults) < 1) {
-                          updateField('travelers', { ...formData.travelers, adults: 1 })
-                        }
-                      }}
-                      className="box-border h-10 w-20 rounded-xl border border-border-light bg-background-light px-2 text-center tabular-nums dark:border-border-dark dark:bg-background-dark [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    />
-                  </div>
-                  <div className="flex flex-col items-center gap-1.5">
-                    <span className="text-xs leading-none text-text-secondary">Crianças</span>
-                    <input
-                      type="number"
-                      min={0}
-                      aria-label="Crianças"
-                      value={formData.travelers.children}
-                      onChange={(e) => {
-                        const raw = e.target.value
-                        updateField('travelers', {
-                          ...formData.travelers,
-                          children: raw === '' ? '' : Math.max(0, parseInt(raw, 10) || 0),
-                        })
-                      }}
-                      onBlur={() => {
-                        if (formData.travelers.children === '' || Number(formData.travelers.children) < 0) {
-                          updateField('travelers', { ...formData.travelers, children: 0 })
-                        }
-                      }}
-                      className="box-border h-10 w-20 rounded-xl border border-border-light bg-background-light px-2 text-center tabular-nums dark:border-border-dark dark:bg-background-dark [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-bold">Preferências Detalhadas</h3>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Coisas a evitar (opcional)</label>
-                <div className="flex flex-wrap gap-2">
-                  {AVOID_OPTIONS.map(({ slug, label }) => (
-                    <button
-                      key={slug}
-                      type="button"
-                      onClick={() => toggleMulti('avoidPreferences', slug)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                        formData.avoidPreferences.includes(slug)
-                          ? 'bg-red-500/20 text-red-600 dark:text-red-400'
-                          : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={formData.avoidCustom}
-                  onChange={(e) => updateField('avoidCustom', e.target.value)}
-                  placeholder="Outro (custom)"
-                  className="mt-2 w-full px-4 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-2">Coisas a priorizar (opcional)</label>
-                <div className="flex flex-wrap gap-2">
-                  {PRIORITIZE_OPTIONS.map(({ slug, label }) => (
-                    <button
-                      key={slug}
-                      type="button"
-                      onClick={() => toggleMulti('prioritizePreferences', slug)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                        formData.prioritizePreferences.includes(slug)
-                          ? 'bg-primary text-foreground'
-                          : 'bg-surface-light dark:bg-surface-dark hover:bg-primary/20'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={formData.prioritizeCustom}
-                  onChange={(e) => updateField('prioritizeCustom', e.target.value)}
-                  placeholder="Outro (custom)"
-                  className="mt-2 w-full px-4 py-2 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Orçamento (opcional)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.budget}
-                    onChange={(e) => updateField('budget', e.target.value)}
-                    placeholder="0"
-                    className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Moeda</label>
-                  <select
-                    value={formData.currency}
-                    onChange={(e) => updateField('currency', e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
-                  >
-                    {CURRENCIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-border-light dark:border-border-dark">
-            <Button type="button" variant="secondary" onClick={handleBack} disabled={step === 1}>
-              Voltar
-            </Button>
-            {step < 4 ? (
-              <Button type="button" onClick={handleNextClick}>
-                {step === 2 && !(formData.accommodations || []).some(accommodationHasContent)
-                  ? 'Pular'
-                  : 'Próximo'}
-              </Button>
-            ) : (
-              <Button type="button" disabled={loading} onClick={handleCreateTripClick}>
-                {loading ? 'Criando...' : 'Criar Viagem'}
-              </Button>
-            )}
-          </div>
-        </form>
+    <div className="mobile-task-shell max-w-2xl mx-auto">
+      <div className="hidden md:block">
+        <Header
+          title="Nova Viagem"
+          subtitle="Preencha o formulário para criar sua próxima aventura"
+        />
       </div>
+      <NewTripStepTabs
+        step={wizard.step}
+        unlockedStep={wizard.unlockedStep}
+        tryGoToStep={wizard.tryGoToStep}
+        setStayNotice={wizard.setStayNotice}
+      />
+      <form
+        onSubmit={wizard.handleFormSubmit}
+        className="bg-white dark:bg-card-dark rounded-xl p-4 md:p-8 border border-border-light dark:border-border-dark min-w-0 max-w-full overflow-x-clip md:overflow-visible"
+      >
+        <NewTripFormAlerts
+          bannerMessages={wizard.bannerMessages}
+          apiError={wizard.apiError}
+          stayNotice={wizard.stayNotice}
+          mapsUnavailable={maps.mapsUnavailable}
+          mapsStatus={maps.mapsStatus}
+          step={wizard.step}
+          errorBannerRef={wizard.errorBannerRef}
+        />
+        {wizard.step === 1 && (
+          <NewTripStepDestinations
+            formData={wizard.formData}
+            errors={wizard.errors}
+            mapsReady={maps.mapsReady}
+            mapsUnavailable={maps.mapsUnavailable}
+            mapsStatus={maps.mapsStatus}
+            loading={createTrip.loading}
+            todayIso={wizard.todayIso}
+            tripMaxDeparture={wizard.tripMaxDeparture}
+            addCalendarDaysIso={wizard.addCalendarDaysIso}
+            updateDestination={wizard.updateDestination}
+            addDestination={wizard.addDestination}
+            removeDestination={wizard.removeDestination}
+          />
+        )}
+        {wizard.step === 2 && (
+          <NewTripStepStay
+            formData={wizard.formData}
+            loading={createTrip.loading}
+            mapsReady={maps.mapsReady}
+            addAccommodation={wizard.addAccommodation}
+            updateAccommodation={wizard.updateAccommodation}
+            removeAccommodation={wizard.removeAccommodation}
+          />
+        )}
+        {wizard.step === 3 && (
+          <NewTripStepInterests
+            formData={wizard.formData}
+            errors={wizard.errors}
+            toggleMulti={wizard.toggleMulti}
+            updateField={wizard.updateField}
+          />
+        )}
+        {wizard.step === 4 && (
+          <NewTripStepPreferences
+            formData={wizard.formData}
+            toggleMulti={wizard.toggleMulti}
+            updateField={wizard.updateField}
+          />
+        )}
+        <NewTripWizardNav {...navProps} />
+      </form>
+      <NewTripWizardNav {...navProps} mobile />
+      <AccommodationReplaceConfirmDialog
+        open={Boolean(wizard.pendingStayAdvance)}
+        messages={wizard.pendingStayAdvance?.warningMessages || []}
+        confirmLabel="Confirmar e continuar"
+        onCancel={() => wizard.setPendingStayAdvance(null)}
+        onConfirm={() => {
+          if (!wizard.pendingStayAdvance) return
+          wizard.applyStayStepAndAdvance(
+            wizard.pendingStayAdvance.resolved,
+            wizard.pendingStayAdvance.warningMessages.map((message) => ({ message })),
+          )
+        }}
+      />
     </div>
   )
 }

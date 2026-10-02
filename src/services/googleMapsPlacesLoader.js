@@ -34,3 +34,25 @@ export function ensurePlacesLibrary() {
   placesPromise ??= importLibrary('places')
   return placesPromise
 }
+
+/**
+ * Status inicial antes do probe async (B15).
+ * @returns {'checking'|'missing_key'}
+ */
+export function getGoogleMapsKeyStatus() {
+  return hasGoogleMapsApiKey() ? 'checking' : 'missing_key'
+}
+
+/**
+ * Health check: carrega Places e devolve estado usável no formulário.
+ * @returns {Promise<'ready'|'missing_key'|'load_failed'>}
+ */
+export async function probeGoogleMapsPlaces() {
+  if (!hasGoogleMapsApiKey()) return 'missing_key'
+  try {
+    await ensurePlacesLibrary()
+    return 'ready'
+  } catch {
+    return 'load_failed'
+  }
+}

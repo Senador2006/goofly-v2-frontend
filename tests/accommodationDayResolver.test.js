@@ -97,4 +97,58 @@ describe('accommodationDayResolver', () => {
     assert.equal(isAccommodationPlottable({ coordinates: { latitude: 1, longitude: 2 } }), false)
     assert.equal(accommodationDisplayLabel({ name: 'Hotel' }), 'Hotel')
   })
+
+  it('plottableOnly false inclui estadia sem coordenadas', () => {
+    const trip = {
+      ...TRIP,
+      accommodations: [
+        {
+          id: 'acc-no-pin',
+          destinationId: 'paris',
+          name: 'Reserva sem pin',
+          checkIn: '2026-06-01',
+          checkOut: '2026-06-06',
+        },
+      ],
+    }
+    const map = buildDateToDayMap(trip)
+    assert.equal(resolveAccommodationsForDay(trip, 1, map).length, 0)
+    assert.equal(resolveAccommodationsForDay(trip, 1, map, { plottableOnly: false }).length, 1)
+  })
+
+  it('não esconde estadia válida quando o destino tem outra hospedagem fora do dia', () => {
+    const trip = {
+      destinations: [
+        {
+          id: 'paris',
+          city: 'Paris',
+          arrivalDate: '2026-06-01',
+          departureDate: '2026-06-10',
+        },
+      ],
+      accommodations: [
+        {
+          id: 'acc-early',
+          destinationId: 'paris',
+          name: 'Hotel Early',
+          coordinates: { latitude: 48.86, longitude: 2.34 },
+          checkIn: '2026-06-01',
+          checkOut: '2026-06-03',
+        },
+        {
+          // destinationId ausente / errado — ainda deve resolver pela data
+          id: 'acc-late',
+          destinationId: 'outro',
+          name: 'Hotel Late',
+          coordinates: { latitude: 48.87, longitude: 2.35 },
+          checkIn: '2026-06-04',
+          checkOut: '2026-06-06',
+        },
+      ],
+    }
+    const map = buildDateToDayMap(trip)
+    const day5 = resolveAccommodationsForDay(trip, 5, map)
+    assert.equal(day5.length, 1)
+    assert.equal(day5[0].id, 'acc-late')
+  })
 })

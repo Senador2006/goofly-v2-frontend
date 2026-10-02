@@ -4,8 +4,8 @@ import { ItineraryStopMarker } from './ItineraryStopMarker'
 import { ItineraryActivityCardCompact } from './ItineraryActivityCardCompact'
 import { PlaceCardGallery } from './PlaceCardGallery'
 import {
-  googleMapsPlaceUrl,
   resolveActivityCoordinates,
+  resolveActivityGoogleMapsUrl,
 } from '../../utils/activityCoordinates'
 import { GooglePlaceAutocompleteField } from '../planning/GooglePlaceAutocompleteField'
 import { hasGoogleMapsApiKey } from '../../services/googleMapsPlacesLoader'
@@ -15,7 +15,7 @@ import {
   resolveActivityTitle,
   resolveActivityTitleForEdit,
 } from '../../utils/itineraryPrintFormat'
-import { shouldShowTdvRoteiroGallery } from '../../utils/placeImages'
+import { shouldShowRoteiroGallery } from '../../utils/placeImages'
 import { formatActivityDuration } from '../../utils/formatActivityDuration'
 
 /** @param {Record<string, unknown> | null | undefined} act */
@@ -32,6 +32,7 @@ function activityNeedsTicket(act) {
 function sourceBadgeLabel(act) {
   const s = String(act.source || '').trim()
   if (s === 'tdv_like') return 'TDV'
+  if (s === 'ai_suggested') return 'IA'
   return null
 }
 
@@ -219,11 +220,13 @@ export function ItineraryActivityCard({
   const badge = sourceBadgeLabel(effective)
   const ticket = resolveTicketInfo(effective || act)
   const sourceKey = String((effective || act)?.source || '').trim()
-  const showTdvGallery = shouldShowTdvRoteiroGallery(effective || act, hasFullAccess)
-  // Imagens TDV só na versão completa (galeria). Na prévia gratuita não vazar via hero.
+  const showTdvGallery = shouldShowRoteiroGallery(effective || act, hasFullAccess)
+  // TDV / ai_suggested: só galeria compacta na versão completa (sem hero).
   const showTopHero =
     !compactMode &&
+    !showTdvGallery &&
     sourceKey !== 'tdv_like' &&
+    sourceKey !== 'ai_suggested' &&
     !!(effective?.image_url || act?.image_url)
 
   const toggle = useCallback(() => {
@@ -498,6 +501,7 @@ function CardEditFields({
               disabled={false}
               placeholder="Busque um lugar (ex.: Torre Eiffel)…"
               className="goofly-google-place-ac-frame goofly-google-place-ac-frame--compact relative z-[30] w-full overflow-visible rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark"
+              inputClassName="w-full rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark px-3 py-2.5 text-sm font-bold text-[#1c1c0d] dark:text-white"
               onDraftChange={(text) =>
                 onDraftPatch({ title: text, name: text, placeName: text })
               }
@@ -595,7 +599,10 @@ function CardEditFields({
         </button>
         <button
           type="button"
-          onClick={onRemove}
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove?.()
+          }}
           className="inline-flex items-center gap-1 rounded-xl border border-red-500/35 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-700 dark:text-red-400 min-h-[2.25rem] ml-auto"
         >
           <Icon name="delete" className="text-sm" aria-hidden />
@@ -630,6 +637,7 @@ function CardBody({
 }) {
   const hasTicketBox = ticket.required || !!ticket.hint || ticket.links.length > 0
   const mapCoords = resolveActivityCoordinates(act)
+  const mapsHref = resolveActivityGoogleMapsUrl(act)
   return (
     <>
       <button
@@ -703,10 +711,10 @@ function CardBody({
                 <PlaceCardGallery place={act} variant="compact" />
               </div>
             ) : null}
-            {mapCoords ? (
+            {mapsHref ? (
               <div className="mt-4">
                 <a
-                  href={googleMapsPlaceUrl(mapCoords)}
+                  href={mapsHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline group"
@@ -719,9 +727,11 @@ function CardBody({
                   />
                   Ver no Google Maps
                 </a>
-                <p className="mt-1 font-mono text-[10px] text-text-secondary/85">
-                  {mapCoords.latitude.toFixed(6)}, {mapCoords.longitude.toFixed(6)}
-                </p>
+                {mapCoords ? (
+                  <p className="mt-1 font-mono text-[10px] text-text-secondary/85">
+                    {mapCoords.latitude.toFixed(6)}, {mapCoords.longitude.toFixed(6)}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {hasTicketBox ? (

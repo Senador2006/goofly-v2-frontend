@@ -2,7 +2,7 @@ import api from './api'
 
 export const paymentService = {
   pay: (formData) =>
-    api.post('/payment/pay', formData).then((res) => res.body.data),
+    api.post('/payment/pay', formData).then((res) => res.body?.data ?? res.data?.data ?? res.data),
 
   getStatus: (tripId) =>
     api

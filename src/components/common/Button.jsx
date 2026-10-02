@@ -1,4 +1,9 @@
-export function Button({ children, variant = 'primary', size = 'md', className = '', type = 'button', ...props }) {
+import { forwardRef } from 'react'
+
+export const Button = forwardRef(function Button(
+  { children, variant = 'primary', size = 'md', className = '', type = 'button', ...props },
+  ref,
+) {
   const base =
     'rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-45 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none disabled:hover:opacity-45'
   const variants = {
@@ -24,10 +29,11 @@ export function Button({ children, variant = 'primary', size = 'md', className =
   return (
     <button
       {...props}
+      ref={ref}
       type={type}
       className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}
     >
       {children}
     </button>
   )
-}
+})

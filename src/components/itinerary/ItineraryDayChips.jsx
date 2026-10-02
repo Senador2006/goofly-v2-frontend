@@ -31,13 +31,13 @@ function inactiveShellClass({ dayLockedPremium, dayPartialPremium }) {
   return shell
 }
 
-function inactiveLabelClass({ dayLockedPremium, dayPartialPremium, swapEnabled }) {
+function inactiveLabelClass({ dayLockedPremium, dayPartialPremium, swapTouchLocked }) {
   let label =
     'relative z-[3] inline-flex items-center gap-1.5 rounded-full font-bold whitespace-nowrap bg-transparent ' +
     INACTIVE_PAD +
     ' transition-[color,box-shadow,transform,opacity] duration-300 ease-out '
 
-  if (swapEnabled) {
+  if (swapTouchLocked) {
     label += 'touch-none select-none cursor-grab active:cursor-grabbing '
   }
 
@@ -52,13 +52,13 @@ function inactiveLabelClass({ dayLockedPremium, dayPartialPremium, swapEnabled }
   return label
 }
 
-function activeLabelClass({ dayLockedPremium, swapEnabled }) {
+function activeLabelClass({ dayLockedPremium, swapTouchLocked }) {
   let label =
     'relative z-[3] inline-flex items-center gap-1.5 rounded-full font-extrabold whitespace-nowrap bg-transparent ' +
     ACTIVE_PAD +
     ' transition-[color,box-shadow,transform,opacity] duration-300 ease-out '
 
-  if (swapEnabled) {
+  if (swapTouchLocked) {
     label += 'touch-none select-none cursor-grab active:cursor-grabbing '
   }
 
@@ -278,8 +278,16 @@ export function ItineraryDayChips({
 
   useLayoutEffect(() => {
     placeIndicator(true)
+    let cancelled = false
+    const fontsReady = globalThis.document?.fonts?.ready
+    if (fontsReady && typeof fontsReady.then === 'function') {
+      fontsReady.then(() => {
+        if (!cancelled) placeIndicator(false)
+      })
+    }
 
     return () => {
+      cancelled = true
       if (slideTimerRef.current) {
         clearTimeout(slideTimerRef.current)
         slideTimerRef.current = null
@@ -320,8 +328,14 @@ export function ItineraryDayChips({
 
   useLayoutEffect(() => {
     if (isDragging) return
+    const container = containerRef.current
     const activeEl = chipRefs.current.get(selectedDay)
-    activeEl?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
+    if (!container || !activeEl) return
+    const cRect = container.getBoundingClientRect()
+    const aRect = activeEl.getBoundingClientRect()
+    if (aRect.left >= cRect.left && aRect.right <= cRect.right) return
+    const delta = aRect.left - cRect.left - (cRect.width - aRect.width) / 2
+    container.scrollTo({ left: Math.max(0, container.scrollLeft + delta), behavior: 'smooth' })
   }, [selectedDay, chipRefs, isDragging])
 
   useLayoutEffect(() => {
@@ -335,7 +349,7 @@ export function ItineraryDayChips({
       <div
         ref={containerRef}
         className={
-          'relative isolate flex items-center gap-2 overflow-x-auto no-scrollbar [-webkit-overflow-scrolling:touch] w-full ' +
+          'relative isolate flex min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain touch-pan-x no-scrollbar [-webkit-overflow-scrolling:touch] w-full ' +
           'py-1 px-1.5 sm:py-2.5 sm:px-2 ' +
           (isSwapMode ? 'roteiro-day-chips--swap-mode ' : '') +
           (isDragging ? 'roteiro-day-chips--dragging ' : '')
@@ -347,6 +361,7 @@ export function ItineraryDayChips({
           const isDragSource = isDragging && daySwap?.draggingDay === day
           const isSwapTarget = showSwapChrome && daySwap?.targetDay === day
           const isSwapPending = daySwap?.pendingDay === day && daySwap?.phase === 'pending'
+          const swapTouchLocked = Boolean(swapEnabled && (isDragSource || isSwapPending))
           // Não expandir o chip de origem até focusReady (ghost já na mão).
           const useActiveSize = isActive && !(isDragSource && !focusReady)
 
@@ -395,8 +410,8 @@ export function ItineraryDayChips({
                 }}
                 className={
                   (useActiveSize
-                    ? activeLabelClass({ ...state, swapEnabled })
-                    : inactiveLabelClass({ ...state, swapEnabled })) +
+                    ? activeLabelClass({ ...state, swapTouchLocked })
+                    : inactiveLabelClass({ ...state, swapTouchLocked })) +
                   (isDragSource
                     ? ' !text-primary dark:!text-primary '
                     : '') +

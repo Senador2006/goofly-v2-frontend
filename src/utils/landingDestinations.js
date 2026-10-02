@@ -4,19 +4,21 @@ const u = (id, w = 800) =>
 export const heroDestinations = [
   {
     city: 'Maldivas',
-    price: '\n',
     tag: 'Em destaque',
+    desc: 'Águas cristalinas, resorts exclusivos e experiências inesquecíveis.',
     img: u('photo-1514282401047-d79a71a590e8', 1200),
     span: true,
   },
   {
     city: 'Paris',
-    price: '\n',
+    tag: 'Europa',
+    desc: 'Cultura, história e charme que encantam sempre.',
     img: u('photo-1502602898657-3e91760cbb34'),
   },
   {
     city: 'Bali',
-    price: '\n',
+    tag: 'Ásia',
+    desc: 'Beleza natural, espiritualidade e momentos únicos.',
     img: u('photo-1537996194471-e657df975ab4'),
   },
 ]

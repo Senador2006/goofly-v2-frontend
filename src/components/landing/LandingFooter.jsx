@@ -5,14 +5,14 @@ import { LandingSocialIcon } from './LandingSocialIcon'
 
 export function LandingFooter() {
   return (
-    <footer id="contato" className="bg-foreground text-white/60 pt-16 pb-8">
+    <footer id="contato" className="bg-[#0A0A0A] text-white/60 pt-16 pb-8">
       <div className="max-w-[1200px] mx-auto px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 gap-10 mb-12">
         <div className="col-span-2 md:col-span-1">
           <Link to="/" className="font-display text-2xl font-black tracking-tight text-white inline-flex mb-3">
             Goo<span className="text-primary">Fly</span>
           </Link>
           <p className="text-sm leading-relaxed max-w-[260px] mb-5">
-            Planejamento de viagens personalizadas, feito para quem quer mais experiência pelo menor preço possível.
+            Planejamento de viagens personalizadas, feito para quem quer experiências inesquecíveis.
           </p>
           <div className="flex gap-2">
             {LANDING_SOCIAL_LINKS.map((social) => {

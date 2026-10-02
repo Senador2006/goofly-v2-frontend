@@ -1,1718 +1,355 @@
-import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Icon } from '../components/common/Icon'
-import { Button } from '../components/common/Button'
-import { LoadingSpinner } from '../components/common/LoadingSpinner'
-import { TinderView } from '../components/itinerary/TinderView'
-import { DocumentosView } from '../components/itinerary/DocumentosView'
-import { ItineraryActivityCard } from '../components/itinerary/ItineraryActivityCard'
-import { ItineraryPremiumNextPeek } from '../components/itinerary/ItineraryPremiumNextPeek'
-import { ItineraryPremiumBanner } from '../components/itinerary/ItineraryPremiumBanner'
-import { DeletePlanningOverlay } from '../components/itinerary/DeletePlanningOverlay'
-import { FinalizeItineraryOverlay } from '../components/itinerary/FinalizeItineraryOverlay'
-import {
-  ItineraryDayMap,
-  clearItineraryRouteCache,
-} from '../components/itinerary/ItineraryDayMap'
+import { useCallback, useRef, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { RoteiroModifyPanel } from '../components/itinerary/RoteiroModifyPanel'
 import { ItineraryMobileMapDrawer } from '../components/itinerary/ItineraryMobileMapDrawer'
-import {
-  readShowAccommodationRoutesPreference,
-  writeShowAccommodationRoutesPreference,
-} from '../utils/mapAccommodationRoutesPreference'
-import { ItineraryDayChips } from '../components/itinerary/ItineraryDayChips'
-import { ItineraryPrintView } from '../components/itinerary/ItineraryPrintView'
-import { ItineraryDragInsertLine } from '../components/itinerary/ItineraryDragInsertLine'
-import { ItineraryDragGhost } from '../components/itinerary/ItineraryDragGhost'
-import { RoteiroDragOverlay } from '../components/itinerary/RoteiroDragOverlay'
-import { tripService } from '../services/tripService'
-import { userService } from '../services/userService'
+import { ItineraryPageStates } from '../components/itinerary/ItineraryPageStates'
+import { ItineraryHeader } from '../components/itinerary/ItineraryHeader'
+import { ItineraryStatusBanners } from '../components/itinerary/ItineraryStatusBanners'
+import { ItineraryRoteiroTimeline } from '../components/itinerary/ItineraryRoteiroTimeline'
+import { ItineraryRoteiroEditFooter } from '../components/itinerary/ItineraryRoteiroEditFooter'
+import { ItineraryRoteiroMapColumn } from '../components/itinerary/ItineraryRoteiroMapColumn'
+import { ItineraryTdvOverlayShell } from '../components/itinerary/ItineraryTdvOverlayShell'
+import { ItineraryGlobalOverlays } from '../components/itinerary/ItineraryGlobalOverlays'
 import { useAuth } from '../context/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { useRoteiroDragReorder } from '../hooks/useRoteiroDragReorder'
-import { useRoteiroDaySwap } from '../hooks/useRoteiroDaySwap'
+import { useItineraryData } from '../hooks/useItineraryData'
+import { useFinalizeTdv } from '../hooks/useFinalizeTdv'
 import {
-  assignActivityToDay,
-  buildDateToDayMap,
-  getActivityDayNumber,
-  getIsoDateForDay,
-  reorderActivityInSameDay,
-  sortDayActivities,
-  swapActivitiesBetweenDays,
-} from '../utils/itineraryDayHelpers'
-import { resolveAccommodationsForDay } from '../utils/accommodationDayResolver'
-import { getTripDayCount, hasItineraryFullAccess } from '../utils/planningAccess'
-import {
-  captureReorderSnapshot,
-  playReorderSwapAnimation,
-  prefersReducedFlipMotion,
-} from '../utils/flipListAnimation'
-import {
-  clearFinalizeTdvSession,
-  finalizeTdvSessionDeadline,
-  isFinalizeRequestAbort,
-  markFinalizeTdvSession,
-  readFinalizeTdvSession,
-} from '../utils/finalizeTdvSession'
-
-const MODE_ROTEIRO = 'roteiro'
-
-/** Congela índice e isLast dos cards durante animação de reorder. */
-function captureDayFrozenLayout(dayActs, premiumHiddenCount) {
-  /** @type {Record<string, number>} */
-  const indices = {}
-  /** @type {Record<string, boolean>} */
-  const isLast = {}
-  dayActs.forEach((a, i) => {
-    const id = String(a.id)
-    indices[id] = i
-    isLast[id] = i === dayActs.length - 1 && premiumHiddenCount === 0
-  })
-  return { indices, isLast }
-}
-const MODE_TDV = 'tdv'
-const MODE_DOCUMENTOS = 'documentos'
-
-function activityStableId(act) {
-  const id = act?.id ?? act?.placeId ?? act?.place_id
-  return id != null && String(id).trim() !== '' ? String(id) : null
-}
-
-function ensureActivitiesHaveStableIds(activityList) {
-  return activityList.map((a, idx) => {
-    const sid = activityStableId(a)
-    const nid =
-      sid ||
-      globalThis.crypto?.randomUUID?.() ||
-      `act-${Date.now()}-${idx}-${Math.random().toString(16).slice(2)}`
-    return { ...a, id: nid }
-  })
-}
-
-/** Normaliza flags de ingresso para o contrato persistido (camelCase + snake_case ou ausência). */
-function normalizeActivityTicketForPersist(act) {
-  const required =
-    act.ticketRequired === true ||
-    act.requiresTicket === true ||
-    act.ticket_required === true ||
-    act.needs_ticket === true
-  const out = { ...act }
-  delete out.requiresTicket
-  delete out.needs_ticket
-  if (required) {
-    out.ticketRequired = true
-    out.ticket_required = true
-  } else {
-    delete out.ticketRequired
-    delete out.ticket_required
-  }
-  return out
-}
-
-/** Reagrupa todos os dias, ordena dentro de cada dia e normaliza day/dayNumber/order/datas para persistência. */
-function normalizeActivitiesForPersist(activities, dateToDayMap, fallbackDay = 1) {
-  const fb = Math.max(1, Math.floor(Number(fallbackDay) || 1))
-  const withDay = activities.map((a) => {
-    const fromMap = getActivityDayNumber(a, dateToDayMap)
-    let dayNum = fromMap
-    if (dayNum == null || !Number.isFinite(dayNum)) {
-      const raw = Number(a.day ?? a.dayNumber ?? a.day_number)
-      dayNum =
-        Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : fb
-    } else {
-      dayNum = Math.floor(dayNum)
-    }
-    dayNum = Math.max(1, dayNum)
-    const assigned = assignActivityToDay(
-      { ...a, day: dayNum, dayNumber: dayNum, day_number: dayNum },
-      dayNum,
-      dateToDayMap,
-    )
-    const iso = getIsoDateForDay(dateToDayMap, dayNum)
-    return iso ? assigned : { ...a, day: dayNum, dayNumber: dayNum, day_number: dayNum }
-  })
-  /** @type {Map<number, any[]>} */
-  const map = new Map()
-  for (const a of withDay) {
-    const d = Math.floor(Number(a.day) || 1)
-    if (!map.has(d)) map.set(d, [])
-    map.get(d).push(a)
-  }
-  const sortedDays = [...map.keys()].sort((x, y) => x - y)
-  const out = []
-  for (const d of sortedDays) {
-    const list = sortDayActivities(map.get(d))
-    list.forEach((a, i) => out.push(normalizeActivityTicketForPersist({ ...a, order: i })))
-  }
-  return out
-}
-
-/** Parada recém-criada no draft que ainda não foi nomeada pelo usuário. */
-function isPendingNewStop(act) {
-  return act?.source === 'user_edit' && String(act?.title || '').trim() === 'Nova parada'
-}
-
-function computeDaysList(activities, dateToDayMap, trip) {
-  const tripDayCount = getTripDayCount(trip)
-  const chronologicalDays = Array.from({ length: tripDayCount }, (_, i) => i + 1)
-  const numericDaysFromActs = [
-    ...new Set(
-      (activities || [])
-        .map((a) => getActivityDayNumber(a, dateToDayMap))
-        .filter((d) => d != null),
-    ),
-  ]
-  return numericDaysFromActs.length > 0
-    ? [...new Set([...chronologicalDays, ...numericDaysFromActs])].sort((a, b) => a - b)
-    : chronologicalDays
-}
-
-function resolveEffectiveSelectedDay(selectedDay, days) {
-  return days.includes(selectedDay) ? selectedDay : (days[0] ?? 1)
-}
-
-function focusStopTitleField(stopId, cardRoot) {
-  const tryFocus = () => {
-    const byId = document.getElementById(`activity-title-ac-${stopId}`)
-    if (byId && typeof byId.focus === 'function') {
-      byId.focus()
-      return true
-    }
-    const scoped =
-      cardRoot?.querySelector?.('input, textarea, gmp-place-autocomplete, [role="combobox"]') ??
-      null
-    if (scoped && typeof scoped.focus === 'function') {
-      scoped.focus()
-      return true
-    }
-    return false
-  }
-  requestAnimationFrame(() => {
-    tryFocus()
-    setTimeout(tryFocus, 80)
-  })
-}
-
-/** Contagens por dia vindas da API ({ "1": 4 }); aceita também snake_case (`total_by_day`). */
-function getPremiumDayTotals(restriction, dayNum) {
-  if (
-    restriction == null ||
-    dayNum == null ||
-    !Number.isFinite(Number(dayNum))
-  ) {
-    return null
-  }
-  const tb = restriction.totalByDay ?? restriction.total_by_day ?? null
-  const vb = restriction.visibleByDay ?? restriction.visible_by_day ?? null
-
-  if (tb == null || vb == null) return null
-  if (typeof tb !== 'object' || typeof vb !== 'object') return null
-
-  const dk = String(Math.floor(Number(dayNum)))
-  const rawT =
-    tb[dk] ?? tb[String(dk)] ?? tb[Number(dk)] ?? tb[`${Number(dk)}`]
-  const rawV =
-    vb[dk] ?? vb[String(dk)] ?? vb[Number(dk)] ?? vb[`${Number(dk)}`] ?? 0
-  const totalOnDay =
-    typeof rawT === 'number' && Number.isFinite(rawT) ? Math.floor(rawT) : Number(rawT) >= 1 ? Number(rawT) : 0
-  const visibleOnDay =
-    typeof rawV === 'number' && Number.isFinite(rawV)
-      ? Math.floor(rawV)
-      : typeof rawV === 'string'
-        ? Number(rawV) || 0
-        : 0
-  return { totalOnDay, visibleOnDay }
-}
-
-/** Unifica camelCase/snake_case do `_premiumRestriction` da API */
-function normalizedPremiumRestriction(r) {
-  if (!r) return null
-  return {
-    ...r,
-    totalByDay: r.totalByDay ?? r.total_by_day ?? null,
-    visibleByDay: r.visibleByDay ?? r.visible_by_day ?? null,
-  }
-}
+  MODE_ROTEIRO,
+  usePlanningModes,
+} from '../hooks/usePlanningModes'
+import { useItineraryMapUi } from '../hooks/useItineraryMapUi'
+import { useItineraryMeals } from '../hooks/useItineraryMeals'
+import { useItineraryStay } from '../hooks/useItineraryStay'
+import { useItineraryPageActions } from '../hooks/useItineraryPageActions'
+import { useItineraryDayView } from '../hooks/useItineraryDayView'
+import { useRoteiroEditSession } from '../hooks/useRoteiroEditSession'
+import { useT } from '../i18n'
+import { hasItineraryFullAccess } from '../utils/planningAccess'
 
 export function Itinerary() {
   const { tripId } = useParams()
   const navigate = useNavigate()
-  const { refreshUser } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { isAdmin } = useAuth()
-  const [trip, setTrip] = useState(null)
-  const [itinerary, setItinerary] = useState(null)
+  const { refreshUser, isAdmin } = useAuth()
+  const t = useT()
   const [selectedDay, setSelectedDay] = useState(1)
-  const [mode, setMode] = useState(MODE_ROTEIRO)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [deleting, setDeleting] = useState(false)
+  const [exportSheetOpen, setExportSheetOpen] = useState(false)
+  const setModeRef = useRef(() => {})
+  const closeTdvOverlayRef = useRef(() => {})
+  const discardRoteiroEditRef = useRef(() => {})
 
-  const tripDestCity = trip?.destinations?.[0]?.city
-  useDocumentTitle(tripDestCity ? `Roteiro · ${tripDestCity}` : 'Roteiro')
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [finalizingTdv, setFinalizingTdv] = useState(() => Boolean(readFinalizeTdvSession(tripId)))
-  const [finalizeError, setFinalizeError] = useState(null)
-  /** Incrementado para (re)disparar o poll quando o POST cai por rede sem response. */
-  const [finalizeResumeKey, setFinalizeResumeKey] = useState(0)
-  const [roteiroEditOpen, setRoteiroEditOpen] = useState(false)
-  const [draftActivities, setDraftActivities] = useState(null)
-  const [savingRoteiro, setSavingRoteiro] = useState(false)
-  const [mobileMapOpen, setMobileMapOpen] = useState(false)
-  const [showAccommodationRoutes, setShowAccommodationRoutes] = useState(
-    () => readShowAccommodationRoutesPreference(),
-  )
-  const [trackedStopId, setTrackedStopId] = useState(null)
-  const deleteInFlightRef = useRef(false)
-  const finalizeInFlightRef = useRef(false)
-  const stopCardRefs = useRef(new Map())
-  const dayChipRefs = useRef(new Map())
-  const dayChipsScrollRef = useRef(null)
-  const roteiroListScrollRef = useRef(null)
-  const roteiroCardsListRef = useRef(null)
-  const flipBeforeReorderRef = useRef(null)
-  const reorderFrozenLayoutRef = useRef(null)
-  const [, setReorderLayoutEpoch] = useState(0)
-  const trackedFollowRef = useRef({ id: null, reason: null })
-
-  const handleShowAccommodationRoutesChange = useCallback((next) => {
-    setShowAccommodationRoutes(next)
-    writeShowAccommodationRoutesPreference(next)
-  }, [])
-
-  const isPlanning = trip?.status === 'planejando'
-  const hasFullAccess = hasItineraryFullAccess(itinerary, trip)
-
-  const handleDeletePlanning = async () => {
-    if (deleteInFlightRef.current) return
-    deleteInFlightRef.current = true
-    try {
-      setDeleting(true)
-      await tripService.deleteTrip(tripId)
-      navigate('/trips', { replace: true })
-    } catch (err) {
-      setError(err.response?.data?.error?.message || 'Erro ao apagar planejamento')
-    } finally {
-      deleteInFlightRef.current = false
-      setDeleting(false)
-      setShowDeleteConfirm(false)
-    }
-  }
-
-  const refetchTimeoutRef = useRef(null)
-  const refetchItineraryImmediate = useCallback(async () => {
-    if (!tripId) return null
-    if (refetchTimeoutRef.current) {
-      clearTimeout(refetchTimeoutRef.current)
-      refetchTimeoutRef.current = null
-    }
-    try {
-      const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
-      clearItineraryRouteCache(tripId)
-      setItinerary(itineraryData)
-      return itineraryData
-    } catch {
-      return null
-    }
-  }, [tripId])
-  const refetchItinerary = useCallback(() => {
-    if (!tripId) return
-    if (refetchTimeoutRef.current) clearTimeout(refetchTimeoutRef.current)
-    refetchTimeoutRef.current = setTimeout(refetchItineraryImmediate, 400)
-  }, [tripId, refetchItineraryImmediate])
-
-  useEffect(() => {
-    if (!tripId) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        setError(null)
-        setLoading(true)
-        const tripData = await tripService.getTrip(tripId)
-        if (cancelled) return
-        setTrip(tripData)
-        await refetchItineraryImmediate()
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.response?.data?.error?.message || 'Erro ao carregar roteiro')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [tripId, refetchItineraryImmediate])
-
-  useEffect(() => {
-    if (!isPlanning && mode === MODE_TDV) {
-      setMode(MODE_ROTEIRO)
-    }
-  }, [isPlanning, mode])
-
-  // Mobile TDV: trava scroll do Layout e remove padding — card fica entre abas e MobileNav
-  useEffect(() => {
-    const main = document.querySelector('main')
-    if (!main) return undefined
-
-    const mq = window.matchMedia('(max-width: 1023px)')
-    const sync = () => {
-      if (mode === MODE_TDV && mq.matches) main.classList.add('tdv-mobile-lock')
-      else main.classList.remove('tdv-mobile-lock')
-    }
-    sync()
-    mq.addEventListener('change', sync)
-    return () => {
-      mq.removeEventListener('change', sync)
-      main.classList.remove('tdv-mobile-lock')
-    }
-  }, [mode])
-
-  useEffect(() => {
-    if (searchParams.get('unlocked') !== '1' || !tripId) return
-    let cancelled = false
-    ;(async () => {
-      await refreshUser().catch(() => null)
-      const tripData = await tripService.getTrip(tripId).catch(() => null)
-      if (cancelled) return
-      if (tripData) setTrip(tripData)
-      await refetchItineraryImmediate()
-      if (cancelled) return
-      const next = new URLSearchParams(searchParams)
-      next.delete('unlocked')
-      setSearchParams(next, { replace: true })
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [searchParams, setSearchParams, tripId, refetchItineraryImmediate, refreshUser])
-
-  /** Deep link da criação de viagem (/trips/new): abrir direto na aba TDV quando ainda está em planejamento. */
-  useEffect(() => {
-    if (searchParams.get('tab') !== 'tdv' || !trip) return
-    if (trip.status === 'planejando') {
-      setMode(MODE_TDV)
-    }
-    const next = new URLSearchParams(searchParams)
-    next.delete('tab')
-    setSearchParams(next, { replace: true })
-  }, [trip, searchParams, setSearchParams])
-
-  const handleAdminUnlock = async () => {
-    if (!tripId) return
-    try {
-      const activated = await userService.activatePlanningAdmin(tripId)
-      if (activated?.trip) {
-        setTrip((prev) => (prev ? { ...prev, ...activated.trip } : activated.trip))
-      }
-      const data = await refetchItineraryImmediate()
-      if (data?.activities?.[0]?.day != null) {
-        const d = Number(data.activities[0].day)
-        setSelectedDay(Number.isFinite(d) && d >= 1 ? d : data.activities[0].day)
-      }
-    } catch (err) {
-      setError(err.response?.data?.error?.message || 'Não foi possível ativar o planejamento.')
-    }
-  }
-
-  const applyFinalizeSuccess = useCallback(
-    (tripData, itineraryData) => {
-      clearFinalizeTdvSession(tripId)
-      if (tripData) setTrip(tripData)
-      if (itineraryData) {
-        clearItineraryRouteCache(tripId)
-        setItinerary(itineraryData)
-        const firstDay = itineraryData?.activities?.[0]?.day
-        if (firstDay != null && firstDay !== '') {
-          const asNum = Number(firstDay)
-          setSelectedDay(Number.isFinite(asNum) && asNum >= 1 ? asNum : firstDay)
-        }
-      }
-      setMode(MODE_ROTEIRO)
-      setFinalizeError(null)
-      finalizeInFlightRef.current = false
-      setFinalizingTdv(false)
-    },
-    [tripId],
-  )
-
-  const handleFinalizeTdv = useCallback(async () => {
-    if (!tripId || finalizeInFlightRef.current) return
-    finalizeInFlightRef.current = true
-    setShowDeleteConfirm(false)
-    markFinalizeTdvSession(tripId)
-    setFinalizingTdv(true)
-    setFinalizeError(null)
-    try {
-      const result = await tripService.finalizeTdvPlanning(tripId)
-      const itineraryData = result?.itinerary || (await tripService.getItinerary(tripId))
-      applyFinalizeSuccess(result?.trip, itineraryData)
-    } catch (err) {
-      // Abort/rede sem response (ex.: refresh): mantém session para retomar overlay + poll.
-      if (isFinalizeRequestAbort(err) || !err.response) {
-        finalizeInFlightRef.current = false
-        setFinalizeResumeKey((k) => k + 1)
-        return
-      }
-      clearFinalizeTdvSession(tripId)
-      setFinalizeError(
-        err.response?.data?.error?.message || 'Não foi possível finalizar o TDV',
-      )
-      finalizeInFlightRef.current = false
-      setFinalizingTdv(false)
-    }
-  }, [tripId, applyFinalizeSuccess])
-
-  /**
-   * Pós-refresh: o POST original não existe mais no browser, mas o backend pode
-   * ainda estar gerando. Observa até status `ativa` ou deadline da session.
-   */
-  useEffect(() => {
-    if (!tripId || loading || !trip) return
-    const session = readFinalizeTdvSession(tripId)
-    if (!session) return
-
-    if (trip.status === 'ativa') {
-      let cancelled = false
-      ;(async () => {
-        try {
-          const itineraryData =
-            itinerary || (await tripService.getItinerary(tripId, { refresh: true }))
-          if (cancelled) return
-          applyFinalizeSuccess(trip, itineraryData)
-        } catch {
-          if (!cancelled) {
-            clearFinalizeTdvSession(tripId)
-            setFinalizingTdv(false)
-          }
-        }
-      })()
-      return () => {
-        cancelled = true
-      }
-    }
-
-    // POST ainda em voo nesta montagem — não duplicar com poll.
-    if (finalizeInFlightRef.current) return
-
-    let cancelled = false
-    setFinalizingTdv(true)
-
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-    ;(async () => {
-      while (!cancelled) {
-        const deadline = finalizeTdvSessionDeadline(session)
-        const remaining = deadline - Date.now()
-        if (remaining <= 0) {
-          clearFinalizeTdvSession(tripId)
-          setFinalizingTdv(false)
-          setFinalizeError(
-            'A geração está demorando mais do que o esperado. Atualize a página ou tente gerar novamente.',
-          )
-          return
-        }
-        try {
-          const tripData = await tripService.getTrip(tripId)
-          if (cancelled) return
-          if (tripData?.status === 'ativa') {
-            const itineraryData = await tripService.getItinerary(tripId, { refresh: true })
-            if (cancelled) return
-            applyFinalizeSuccess(tripData, itineraryData)
-            return
-          }
-        } catch {
-          /* mantém poll */
-        }
-        await sleep(Math.min(2500, Math.max(500, remaining)))
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-    // itinerary só como cache no atalho `ativa`; poll é guiado por session + status.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripId, trip, loading, applyFinalizeSuccess, finalizeResumeKey])
-
-  const dateToDayMap = useMemo(() => buildDateToDayMap(trip), [trip])
-
-  const dragListContext = useMemo(() => {
-    const acts =
-      roteiroEditOpen && Array.isArray(draftActivities)
-        ? draftActivities
-        : itinerary?.activities || []
-    const tripDayCount = getTripDayCount(trip)
-    const chronologicalDays = Array.from({ length: tripDayCount }, (_, i) => i + 1)
-    const numericDaysFromActs = [
-      ...new Set(
-        acts.map((a) => getActivityDayNumber(a, dateToDayMap)).filter((d) => d != null),
-      ),
-    ]
-    const days =
-      numericDaysFromActs.length > 0
-        ? [...new Set([...chronologicalDays, ...numericDaysFromActs])].sort((a, b) => a - b)
-        : chronologicalDays
-    const effectiveDay = days.includes(selectedDay) ? selectedDay : (days[0] ?? 1)
-    const dayActs = sortDayActivities(
-      acts.filter((a) => getActivityDayNumber(a, dateToDayMap) === effectiveDay),
-    )
-    return { dayNum: effectiveDay, dayActivities: dayActs }
-  }, [roteiroEditOpen, draftActivities, itinerary, trip, selectedDay, dateToDayMap])
-
-  const dragReorder = useRoteiroDragReorder({
-    enabled: roteiroEditOpen && !loading && Boolean(trip),
-    dayActivities: dragListContext.dayActivities,
-    dateToDayMap,
-    dayNum: dragListContext.dayNum,
-    setDraftActivities,
-    scrollRef: roteiroListScrollRef,
-    listRef: roteiroCardsListRef,
-    itemRefs: stopCardRefs,
-  })
-
-  const dragReorderCancelRef = useRef(dragReorder.cancelDrag)
-  dragReorderCancelRef.current = dragReorder.cancelDrag
-  const dragInteractionBlockedRef = useRef(dragReorder.isInteractionBlocked)
-  dragInteractionBlockedRef.current = dragReorder.isInteractionBlocked
-  const daySwapCancelRef = useRef(null)
-
-  const handleSelectDay = useCallback((day) => {
-    dragReorderCancelRef.current?.()
-    daySwapCancelRef.current?.()
-    trackedFollowRef.current = { id: null, reason: null }
-    setSelectedDay(day)
-  }, [])
-
-  const handleDaySwap = useCallback(
-    (fromDay, toDay) => {
-      setDraftActivities((prev) => {
-        if (!prev) return prev
-        return swapActivitiesBetweenDays(prev, dateToDayMap, fromDay, toDay)
-      })
-      setSelectedDay(toDay)
-    },
-    [dateToDayMap],
-  )
-
-  const daysForSwap = useMemo(() => {
-    const acts =
-      roteiroEditOpen && Array.isArray(draftActivities)
-        ? draftActivities
-        : itinerary?.activities || []
-    return computeDaysList(acts, dateToDayMap, trip)
-  }, [roteiroEditOpen, draftActivities, itinerary, trip, dateToDayMap])
-
-  const daySwap = useRoteiroDaySwap({
-    enabled: roteiroEditOpen && !loading && Boolean(trip) && hasFullAccess,
-    days: daysForSwap,
-    selectedDay,
-    chipRefs: dayChipRefs,
-    scrollRef: dayChipsScrollRef,
-    onSwap: handleDaySwap,
-    onSelectDay: handleSelectDay,
-    onFocusSwapDay: (day) => {
-      trackedFollowRef.current = { id: null, reason: null }
-      setSelectedDay(day)
-    },
-    onSwapGestureStart: () => {
-      dragReorderCancelRef.current?.()
-    },
-  })
-  daySwapCancelRef.current = daySwap.cancelSwap
-
-  const onActivityDragHandlePointerDown = useCallback(
-    (activityId, event) => {
-      daySwapCancelRef.current?.()
-      dragReorder.onDragHandlePointerDown(activityId, event)
-    },
-    [dragReorder],
-  )
-
-  const onDayChipPointerDown = useCallback(
-    (day, event) => {
-      if (dragReorder.phase !== 'idle') {
-        dragReorderCancelRef.current?.()
-      }
-      daySwap.onChipPointerDown(day, event)
-    },
-    [dragReorder.phase, daySwap],
-  )
-
-  useEffect(() => {
-    setRoteiroEditOpen(false)
-    setDraftActivities(null)
-    setTrackedStopId(null)
-    stopCardRefs.current.clear()
-    dayChipRefs.current.clear()
-    trackedFollowRef.current = { id: null, reason: null }
-  }, [tripId])
-
-  const blockNewRoteiroStop = useMemo(() => {
-    if (!trackedStopId || !Array.isArray(draftActivities)) return false
-    const act = draftActivities.find((a) => String(a.id) === String(trackedStopId))
-    return act != null && isPendingNewStop(act)
-  }, [trackedStopId, draftActivities])
-
-  useLayoutEffect(() => {
-    if (loading || !trip || !roteiroEditOpen || !trackedStopId || !Array.isArray(draftActivities)) return
-    if (dragInteractionBlockedRef.current) return
-    if (dragReorder.phase !== 'idle') return
-
-    const act = draftActivities.find((a) => String(a.id) === String(trackedStopId))
-    if (!act) {
-      setTrackedStopId(null)
-      trackedFollowRef.current = { id: null, reason: null }
-      return
-    }
-
-    const follow = trackedFollowRef.current
-    const followActive = String(follow.id) === String(trackedStopId)
-    if (!followActive) return
-
-    const stopDay = getActivityDayNumber(act, dateToDayMap) ?? selectedDay
-    const days = computeDaysList(draftActivities, dateToDayMap, trip)
-    const effectiveDay = resolveEffectiveSelectedDay(selectedDay, days)
-
-    if (stopDay !== effectiveDay) {
-      setSelectedDay(stopDay)
-      return
-    }
-
-    const cardEl = stopCardRefs.current.get(String(trackedStopId))
-    cardEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-
-    if (follow.reason === 'create') {
-      focusStopTitleField(trackedStopId, cardEl)
-    }
-
-    trackedFollowRef.current = { id: null, reason: null }
-  }, [
-    loading,
+  const data = useItineraryData(tripId)
+  const {
     trip,
-    roteiroEditOpen,
-    trackedStopId,
-    draftActivities,
-    selectedDay,
+    setTrip,
+    itinerary,
+    setItinerary,
+    loading,
+    itineraryLoading,
+    error,
+    setError,
+    itineraryError,
     dateToDayMap,
-    dragReorder.phase,
-  ])
+    refetchItinerary,
+    refetchItineraryImmediate,
+    retryItineraryLoad,
+    reorganizingStay,
+    handleReorganizeStay: runReorganizeStay,
+    handleRebuildFromTdvLikes: runRebuildFromTdvLikes,
+    handleAdminUnlock: runAdminUnlock,
+  } = data
 
-  useLayoutEffect(() => {
-    const payload = flipBeforeReorderRef.current
-    if (!payload) return
-    flipBeforeReorderRef.current = null
-
-    playReorderSwapAnimation(
-      stopCardRefs.current,
-      payload.snapshot,
-      {
-        movedId: payload.movedId,
-        neighborId: payload.neighborId,
-        direction: payload.direction,
-      },
-      {
-        scrollContainer: roteiroListScrollRef.current,
-        moveMs: roteiroEditOpen ? 380 : 320,
-        onComplete: () => {
-          reorderFrozenLayoutRef.current = null
-          setReorderLayoutEpoch((n) => n + 1)
-        },
-      },
-    )
-  }, [draftActivities, roteiroEditOpen])
-
-  useEffect(() => {
-    const acts = itinerary?.activities || []
-    if (!acts.length) return
-
-    const prem = itinerary?._premiumRestriction
-      ? normalizedPremiumRestriction(itinerary._premiumRestriction)
-      : null
-    if (
-      prem?.totalByDay &&
-      prem?.visibleByDay &&
-      typeof selectedDay !== 'undefined' &&
-      Number.isFinite(Number(selectedDay))
-    ) {
-      const d = getPremiumDayTotals(prem, selectedDay)
-      if (d && d.totalOnDay > 0 && d.visibleOnDay === 0) return
-    }
-
-    const matches = acts.filter((a) => getActivityDayNumber(a, dateToDayMap) === selectedDay)
-    if (matches.length > 0) return
-    const first = acts
-      .map((a) => getActivityDayNumber(a, dateToDayMap))
-      .find((d2) => d2 != null)
-    if (first == null) return
-    setSelectedDay(first)
-  }, [itinerary, selectedDay, dateToDayMap])
-
-  useEffect(() => {
-    setMobileMapOpen(false)
-  }, [mode])
-
-  if (loading) {
-    return (
-      <>
-        {finalizingTdv ? null : <LoadingSpinner />}
-        <FinalizeItineraryOverlay open={finalizingTdv} />
-      </>
-    )
-  }
-  if (error || !trip) {
-    return (
-      <>
-        <div className="p-4">
-          <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl">
-            {error || 'Viagem não encontrada'}
-          </div>
-          <Link to="/trips">
-            <Button variant="secondary" className="mt-4">
-              Voltar
-            </Button>
-          </Link>
-        </div>
-        <FinalizeItineraryOverlay open={finalizingTdv} />
-      </>
-    )
-  }
-
-  const firstDest = trip.destinations?.[0]
-  const destLabel = firstDest ? `${firstDest.city}, ${firstDest.country}` : 'Viagem'
-  const persistedActivities = itinerary?.activities || []
-  const activities =
-    roteiroEditOpen && Array.isArray(draftActivities) ? draftActivities : persistedActivities
-  const premiumRestriction = itinerary?._premiumRestriction
-    ? normalizedPremiumRestriction(itinerary._premiumRestriction)
-    : null
-  const tripDayCount = getTripDayCount(trip)
-  const chronologicalDays = Array.from({ length: tripDayCount }, (_, i) => i + 1)
-  const numericDaysFromActs = [
-    ...new Set(
-      activities
-        .map((a) => getActivityDayNumber(a, dateToDayMap))
-        .filter((d) => d != null)
-    )
-  ]
-  const days =
-    numericDaysFromActs.length > 0
-      ? [...new Set([...chronologicalDays, ...numericDaysFromActs])].sort((a, b) => a - b)
-      : chronologicalDays
-  const effectiveSelectedDay = days.includes(selectedDay) ? selectedDay : (days[0] ?? 1)
-  const dayActivities = sortDayActivities(
-    activities.filter((a) => getActivityDayNumber(a, dateToDayMap) === effectiveSelectedDay)
+  useDocumentTitle(
+    trip?.destinations?.[0]?.city
+      ? `Roteiro · ${trip.destinations[0].city}`
+      : 'Roteiro',
   )
-  const dayAccommodations = resolveAccommodationsForDay(trip, effectiveSelectedDay, dateToDayMap)
-  const trackedMapIndex = trackedStopId
-    ? dayActivities.findIndex((a) => String(a.id) === String(trackedStopId))
-    : -1
-  const trackedMapHighlight = trackedMapIndex >= 0 ? trackedMapIndex : null
 
-  const previewDayMapsReady = (() => {
-    if (!premiumRestriction) return false
-    const tb = premiumRestriction.totalByDay
-    const vb = premiumRestriction.visibleByDay
-    if (tb == null || vb == null) return false
-    if (typeof tb !== 'object' || typeof vb !== 'object') return false
-    return Object.keys(tb).length > 0 || Object.keys(vb).length > 0
-  })()
+  const actions = useItineraryPageActions({
+    tripId,
+    navigate,
+    setError,
+    setSelectedDay,
+    runRebuildFromTdvLikes,
+    runAdminUnlock,
+  })
+  const onFinalizeSuccess = useCallback(() => {
+    setModeRef.current(MODE_ROTEIRO)
+  }, [])
+  const finalize = useFinalizeTdv({
+    tripId,
+    trip,
+    loading,
+    itinerary,
+    hasFullAccess: hasItineraryFullAccess(itinerary, trip),
+    setTrip,
+    setItinerary,
+    setSelectedDay,
+    onSuccess: onFinalizeSuccess,
+    lockWarnBody: t('tdv.lock_warn_body'),
+    onBeforeFinalize: () => actions.setShowDeleteConfirm(false),
+  })
 
-  const selectedDayPremium =
-    previewDayMapsReady && premiumRestriction ? getPremiumDayTotals(premiumRestriction, effectiveSelectedDay) : null
+  const edit = useRoteiroEditSession({
+    tripId,
+    trip,
+    itinerary,
+    dateToDayMap,
+    selectedDay,
+    setSelectedDay,
+    loading,
+    hasFullAccess: hasItineraryFullAccess(itinerary, trip),
+    setError,
+    setItinerary,
+    closeTdvOverlay: (...args) => closeTdvOverlayRef.current(...args),
+    setMode: (...args) => setModeRef.current(...args),
+    modeRoteiro: MODE_ROTEIRO,
+    discardRoteiroEditRef,
+    onStartEdit: () => setExportSheetOpen(false),
+  })
 
-  const isSelectedDayPremiumLockedUi =
-    !hasFullAccess &&
-    Boolean(premiumRestriction) &&
-    selectedDayPremium != null &&
-    selectedDayPremium.totalOnDay > 0 &&
-    selectedDayPremium.visibleOnDay === 0 &&
-    !isPlanning
+  const modes = usePlanningModes({
+    tripId,
+    trip,
+    itinerary,
+    setTrip,
+    finalizingTdv: finalize.finalizingTdv,
+    refetchItineraryImmediate,
+    refreshUser,
+    searchParams,
+    setSearchParams,
+    roteiroEditOpen: edit.roteiroEditOpen,
+    likeReplaceOpen: edit.likeReplace.open,
+    onDiscardRoteiroEdit: () => discardRoteiroEditRef.current(),
+    tdvLockTabHint: t('tdv.lock_tab_hint'),
+  })
+  setModeRef.current = modes.setMode
+  closeTdvOverlayRef.current = modes.closeTdvOverlay
 
-  const hiddenPremiumStopsSameDay =
-    selectedDayPremium &&
-    selectedDayPremium.visibleOnDay > 0 &&
-    selectedDayPremium.totalOnDay > selectedDayPremium.visibleOnDay
-      ? selectedDayPremium.totalOnDay - selectedDayPremium.visibleOnDay
-      : 0
+  const view = useItineraryDayView({
+    trip,
+    itinerary,
+    dateToDayMap,
+    selectedDay,
+    setSelectedDay,
+    roteiroEditOpen: edit.roteiroEditOpen,
+    draftActivities: edit.draftActivities,
+    likeReplace: edit.likeReplace,
+    trackedStopId: edit.trackedStopId,
+    mode: modes.mode,
+    isPlanning: modes.isPlanning,
+    hasFullAccess: modes.hasFullAccess,
+    modeRoteiro: MODE_ROTEIRO,
+  })
+  const mapUi = useItineraryMapUi(modes.mode)
+  const meals = useItineraryMeals({
+    tripId,
+    activities:
+      edit.roteiroEditOpen && Array.isArray(edit.draftActivities)
+        ? edit.draftActivities
+        : itinerary?.activities,
+    dateToDayMap,
+    selectedDay,
+    isLgUp: mapUi.isLgUp,
+    setMobileMapOpen: mapUi.setMobileMapOpen,
+    roteiroListScrollRef: edit.roteiroListScrollRef,
+  })
+  const stay = useItineraryStay({
+    tripId,
+    setTrip,
+    primaryStay: view.primaryStay,
+    runReorganizeStay,
+    handleShowAccommodationRoutesChange:
+      mapUi.handleShowAccommodationRoutesChange,
+  })
 
-  const isRouteRestricted =
-    !hasFullAccess && Boolean(premiumRestriction) && !isPlanning
-
-  const showRoteiroSidebar = mode === MODE_ROTEIRO
-
-  const roteiroEditAllowed =
-    showRoteiroSidebar && !isPlanning && hasFullAccess && persistedActivities.length > 0
-
-  const canPrintItinerary =
-    showRoteiroSidebar && !isPlanning && !roteiroEditOpen && persistedActivities.length > 0
+  const firstDestination = trip?.destinations?.[0]
+  const destLabel = firstDestination
+    ? `${firstDestination.city}, ${firstDestination.country}`
+    : 'Viagem'
+  const pageState = (
+    <ItineraryPageStates
+      loading={loading}
+      trip={trip}
+      error={error}
+      finalizingTdv={finalize.finalizingTdv}
+    />
+  )
+  if ((loading && !trip) || error || !trip) return pageState
 
   const handlePrintItinerary = () => {
-    if (roteiroEditOpen) return
+    if (
+      !modes.hasFullAccess ||
+      edit.roteiroEditOpen ||
+      edit.likeReplace.open
+    ) return
+    setExportSheetOpen(false)
     globalThis.print?.()
   }
-
-  const handleCancelRoteiroEdit = () => {
-    dragReorderCancelRef.current?.()
-    daySwapCancelRef.current?.()
-    setRoteiroEditOpen(false)
-    setDraftActivities(null)
-    setSavingRoteiro(false)
-    setTrackedStopId(null)
-    stopCardRefs.current.clear()
-    reorderFrozenLayoutRef.current = null
-    trackedFollowRef.current = { id: null, reason: null }
+  const page = {
+    tripId,
+    itinerary,
+    dateToDayMap,
+    loading,
+    itineraryLoading,
+    itineraryError,
+    finalizingTdv: finalize.finalizingTdv,
+    finalizeError: finalize.finalizeError,
+    reorganizingStay,
+    isAdmin,
+    t,
+    destLabel,
+    requestFinalizeTdv: finalize.requestFinalizeTdv,
+    handleAdminUnlock: actions.handleAdminUnlock,
+    exportSheetOpen,
+    openExport: () => setExportSheetOpen(true),
+    closeExport: () => setExportSheetOpen(false),
+    handlePrintItinerary,
+    mapUi,
   }
-
-  const handleStartRoteiroEdit = () => {
-    setDraftActivities(ensureActivitiesHaveStableIds([...persistedActivities]))
-    setRoteiroEditOpen(true)
-    setError(null)
-  }
-
-  const handleSaveRoteiroDraft = async () => {
-    if (!tripId || !draftActivities) return
-    setSavingRoteiro(true)
-    setError(null)
-    try {
-      const normalized = normalizeActivitiesForPersist(
-        draftActivities,
-        dateToDayMap,
-        effectiveSelectedDay
-      )
-      const nextIt = await tripService.updateItinerary(tripId, { activities: normalized })
-      clearItineraryRouteCache(tripId)
-      setItinerary(nextIt)
-      handleCancelRoteiroEdit()
-    } catch (err) {
-      setError(err.response?.body?.error?.message || err.response?.data?.error?.message || 'Não foi possível salvar o roteiro.')
-    } finally {
-      setSavingRoteiro(false)
-    }
-  }
-
-  const handleAddRoteiroStop = () => {
-    if (blockNewRoteiroStop) return
-    const nid = globalThis.crypto?.randomUUID?.() || `nv-${Date.now()}`
-    const nextDay = Math.max(1, Math.floor(Number(effectiveSelectedDay) || 1))
-    setDraftActivities((prev) => {
-      const base = prev ?? ensureActivitiesHaveStableIds([...persistedActivities])
-      return [
-        ...base,
-        {
-          id: nid,
-          title: 'Nova parada',
-          description: '',
-          day: nextDay,
-          dayNumber: nextDay,
-          order: 999,
-          startTime: '10:00',
-          ticketRequired: false,
-          source: 'user_edit',
-        },
-      ]
-    })
-    setTrackedStopId(nid)
-    trackedFollowRef.current = { id: nid, reason: 'create' }
-    setRoteiroEditOpen(true)
-    setError(null)
-  }
-
-  const guardedSwitchModeFromRoteiro = (nextMode) => {
-    if (finalizingTdv) return
-    if (!roteiroEditOpen) {
-      setMode(nextMode)
-      return
-    }
-    if (
-      typeof globalThis.confirm === 'function' &&
-      globalThis.confirm('Tem alterações não salvas neste roteiro. Mudar mesmo assim e descartá-las?')
-    ) {
-      handleCancelRoteiroEdit()
-      setMode(nextMode)
-      return
-    }
-  }
-
-  const modeTabs = (
-    <div
-      className={`flex w-fit max-w-full flex-nowrap items-center gap-1.5 rounded-2xl border border-zinc-200/80 bg-zinc-100/90 p-1 dark:border-white/[0.08] dark:bg-white/[0.06] sm:gap-2 ${
-        finalizingTdv ? 'pointer-events-none opacity-60' : ''
-      }`}
-      aria-disabled={finalizingTdv || undefined}
-    >
-      {isPlanning ? (
-        <>
-          <button
-            type="button"
-            disabled={finalizingTdv}
-            onClick={() => setMode(MODE_ROTEIRO)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all disabled:cursor-not-allowed ${
-              mode === MODE_ROTEIRO
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            Roteiro
-          </button>
-          <button
-            type="button"
-            disabled={finalizingTdv}
-            onClick={() => guardedSwitchModeFromRoteiro(MODE_TDV)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all disabled:cursor-not-allowed ${
-              mode === MODE_TDV
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            TDV
-          </button>
-          <button
-            type="button"
-            disabled={finalizingTdv}
-            onClick={() => guardedSwitchModeFromRoteiro(MODE_DOCUMENTOS)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all disabled:cursor-not-allowed ${
-              mode === MODE_DOCUMENTOS
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            <Icon name="folder_shared" className="text-sm" />
-            <span className="hidden sm:inline">Documentos</span>
-            <span className="sm:hidden">Docs</span>
-            {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
-          </button>
-          {/* Mobile: lixeira na mesma fileira das abas — libera a faixa abaixo para o card TDV */}
-          <button
-            type="button"
-            disabled={finalizingTdv}
-            onClick={() => setShowDeleteConfirm(true)}
-            aria-label="Apagar planejamento"
-            title="Apagar planejamento"
-            className="flex items-center justify-center rounded-xl px-2.5 py-2 text-red-600 transition-all hover:bg-red-500/10 disabled:cursor-not-allowed dark:text-red-400 lg:hidden"
-          >
-            <Icon name="delete" className="text-base" />
-          </button>
-        </>
-      ) : (
-        <>
-          <button
-            type="button"
-            onClick={() => {
-              setMode(MODE_ROTEIRO)
-              refetchItineraryImmediate()
-            }}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-              mode === MODE_ROTEIRO
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            Roteiro
-          </button>
-          <button
-            type="button"
-            onClick={() => guardedSwitchModeFromRoteiro(MODE_DOCUMENTOS)}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all ${
-              mode === MODE_DOCUMENTOS
-                ? 'bg-primary text-black shadow-md'
-                : 'text-text-secondary hover:text-[#1c1c0d] dark:hover:text-white'
-            }`}
-          >
-            <Icon name="folder_shared" className="text-sm" />
-            Docs
-            {!hasFullAccess && <Icon name="lock" className="text-xs opacity-70" />}
-          </button>
-        </>
-      )}
-    </div>
-  )
-
-  const planCompleteBadge = hasFullAccess && !isPlanning ? (
-    <span
-      className={`inline-flex items-center shrink-0 text-green-700 dark:text-green-400 bg-green-500/15 rounded-full ${
-        roteiroEditOpen
-          ? 'justify-center w-8 h-8 sm:w-auto sm:h-auto sm:gap-1 sm:px-2 sm:py-0.5'
-          : 'gap-1 px-2 py-0.5'
-      }`}
-      title="Plano completo"
-    >
-      <Icon name="verified" className="text-sm" aria-hidden />
-      <span
-        className={`text-[10px] font-bold uppercase tracking-wide ${
-          roteiroEditOpen ? 'hidden sm:inline' : ''
-        }`}
-      >
-        Plano completo
-      </span>
-    </span>
-  ) : null
 
   return (
     <>
-    <div
-      className={`print:hidden flex flex-col min-h-0 bg-background-light/50 dark:bg-background-dark/30 ${
-        mode === MODE_TDV
-          ? // Mobile: preenche o main travado; pb reserva a MobileNav. Desktop: full-bleed habitual.
-            'flex h-full min-h-0 flex-1 flex-col overflow-hidden max-lg:pb-[var(--goofly-mobile-nav-height,0px)] lg:h-[100dvh] lg:-mx-12 lg:-my-8'
-          : 'h-[calc(100vh-4rem)] lg:h-[calc(100vh-2rem)] -m-4 lg:-m-8'
-      }`}
-    >
-      {/* Cabeçalho único — evita três colunas competindo por atenção */}
-      <header
-        className={`flex-shrink-0 z-30 border-b border-border-light dark:border-border-dark bg-white/90 dark:bg-card-dark/95 backdrop-blur-md px-4 sm:px-6 ${
-          mode === MODE_TDV ? 'py-2 pb-1.5 lg:py-4 lg:pb-4' : 'py-3 sm:py-4'
-        }`}
-      >
-        <div
-          className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary overflow-x-auto no-scrollbar ${
-            mode === MODE_TDV ? 'mb-1 lg:mb-3' : 'mb-2 sm:mb-3'
-          }`}
-        >
-          <span>Início</span>
-          <Icon name="chevron_right" className="text-[10px] shrink-0" />
-          <span>Roteiros</span>
-          <Icon name="chevron_right" className="text-[10px] shrink-0" />
-          <span className="text-[#1c1c0d] dark:text-white truncate">{destLabel}</span>
-        </div>
-        <div
-          className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${
-            mode === MODE_TDV ? 'gap-1.5 lg:gap-3' : 'gap-3'
-          }`}
-        >
-          <div className="min-w-0">
-            <h1
-              className={`font-black tracking-tight text-[#1c1c0d] dark:text-white leading-tight ${
-                mode === MODE_TDV ? 'text-xl lg:text-3xl' : 'text-xl sm:text-2xl lg:text-3xl'
-              }`}
-            >
-              Criador de Roteiros
-            </h1>
-            <p className="text-xs sm:text-sm text-text-secondary mt-0.5">
-              Rota otimizada · {destLabel}
-              {!isPlanning && activities.length > 0 ? (
-                <span className="text-text-secondary/80">
-                  {' '}
-                  · {activities.length} {activities.length === 1 ? 'parada' : 'paradas'}
-                  {premiumRestriction?.total ? ` (${premiumRestriction.visible}/${premiumRestriction.total} visíveis)` : ''}
-                </span>
-              ) : null}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <div className="flex min-w-0 items-center gap-2">
-              {modeTabs}
-              {roteiroEditOpen ? planCompleteBadge : null}
-            </div>
-            {canPrintItinerary ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="rounded-xl shrink-0 font-bold"
-                onClick={handlePrintItinerary}
-                type="button"
-                title="Abrir diálogo de impressão — escolha «Salvar como PDF» para exportar"
-              >
-                <Icon name="picture_as_pdf" />
-                <span className="hidden sm:inline">Exportar PDF</span>
-                <span className="sm:hidden">PDF</span>
-              </Button>
-            ) : null}
-            {roteiroEditAllowed ? (
-              !roteiroEditOpen ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl shrink-0 font-bold"
-                  onClick={handleStartRoteiroEdit}
-                  type="button"
-                >
-                  <Icon name="edit" />
-                  <span className="hidden sm:inline">Editar roteiro</span>
-                  <span className="sm:hidden">Editar</span>
-                </Button>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 max-w-[min(18rem,100%)] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-primary/20 text-[#45340a] dark:text-primary border border-primary/40 leading-tight text-center shrink-0">
-                  <Icon name="edit_note" aria-hidden />
-                  Editando — guarde ou cancele antes de mudar de aba
-                </span>
-              )
-            ) : null}
-            {hasFullAccess && !isPlanning && !roteiroEditOpen ? planCompleteBadge : null}
-            {!isPlanning && !hasFullAccess && activities.length > 0 ? (
-              <Link to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}>
-                <Button size="sm" className="rounded-xl shrink-0">
-                  <Icon name="workspace_premium" />
-                  <span className="hidden sm:inline">Roteiro completo</span>
-                </Button>
-              </Link>
-            ) : null}
-            {isPlanning && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={finalizingTdv}
-                aria-label="Apagar planejamento"
-                title="Apagar planejamento"
-                className="hidden shrink-0 rounded-xl border border-red-200 bg-red-50 font-bold text-red-700 shadow-none hover:bg-red-100 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/15 lg:inline-flex"
-              >
-                <Icon name="delete" />
-                <span>Apagar</span>
-              </Button>
-            )}
-          </div>
-        </div>
-        {showRoteiroSidebar && (
-          <div className="mt-2 pt-1 pb-1 sm:mt-3 sm:pt-3 sm:pb-3.5 border-t border-border-light dark:border-white/10">
-            <ItineraryDayChips
-              days={days}
-              selectedDay={effectiveSelectedDay}
-              onSelectDay={handleSelectDay}
-              swapEnabled={roteiroEditOpen && hasFullAccess && !loading}
-              daySwap={{
-                phase: daySwap.phase,
-                isSwapMode: daySwap.isSwapMode,
-                isDragging: daySwap.isDragging,
-                draggingDay: daySwap.draggingDay,
-                pendingDay: daySwap.pendingDay,
-                targetDay: daySwap.targetDay,
-                ghostStyle: daySwap.ghostStyle,
-                focusReady: daySwap.focusReady,
-                onChipPointerDown: onDayChipPointerDown,
-                chipRefs: dayChipRefs,
-                scrollRef: dayChipsScrollRef,
-              }}
-              getDayState={(day) => {
-                const peek =
-                  previewDayMapsReady && premiumRestriction && !hasFullAccess && !isPlanning
-                    ? getPremiumDayTotals(premiumRestriction, day)
-                    : null
-                const dayLockedPremium =
-                  previewDayMapsReady && peek?.totalOnDay > 0 && peek.visibleOnDay === 0
-                const dayPartialPremium =
-                  previewDayMapsReady &&
-                  peek != null &&
-                  peek.totalOnDay > 0 &&
-                  peek.visibleOnDay > 0 &&
-                  peek.totalOnDay > peek.visibleOnDay
-                return {
-                  dayLockedPremium,
-                  dayPartialPremium,
-                  isActive: effectiveSelectedDay === day,
-                }
-              }}
-            />
-          </div>
-        )}
-      </header>
-
-      {finalizeError ? (
-        <div
-          className="flex-shrink-0 px-4 sm:px-6 py-2.5 bg-red-500/10 border-b border-red-500/25 text-red-700 dark:text-red-400 text-sm flex items-start gap-2"
-          role="alert"
-        >
-          <Icon name="error" className="text-base shrink-0 mt-0.5" aria-hidden />
-          <p className="min-w-0 flex-1 leading-snug">{finalizeError}</p>
-          <button
-            type="button"
-            onClick={() => setFinalizeError(null)}
-            className="shrink-0 p-0.5 rounded-md hover:bg-red-500/15 text-red-600 dark:text-red-400"
-            aria-label="Fechar aviso"
-          >
-            <Icon name="close" className="text-base" />
-          </button>
-        </div>
-      ) : null}
-
       <div
-        className={`flex-1 flex min-w-0 min-h-0 overflow-hidden ${
-          mode === MODE_ROTEIRO ? 'flex-col lg:flex-row' : ''
+        className={`print:hidden flex flex-col min-h-0 bg-background-light/50 dark:bg-background-dark/30 ${
+          modes.tdvUiActive
+            ? 'flex h-full min-h-0 flex-1 flex-col overflow-hidden lg:h-[100dvh] lg:-mx-12 lg:-my-8'
+            : // Mobile: h-full até a MobileNav (padding do Layout = altura real da nav).
+              // Só cancela p-4 laterais/topo — sem -mb, senão abre faixa sob o mapa.
+              'flex h-full min-h-0 flex-1 flex-col overflow-hidden max-lg:-mx-4 max-lg:-mt-4 lg:h-[100dvh] lg:-mx-12 lg:-my-8'
         }`}
       >
-        {showRoteiroSidebar ? (
-          <section
-            className={
-              'roteiro-mobile-map-stage relative flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark ' +
-              (dragReorder.isOverlayActive ? 'roteiro-list-drag-active z-40 ' : '') +
-              (mobileMapOpen ? 'roteiro-mobile-map-open ' : '') +
-              (mode === MODE_ROTEIRO
-                ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-10 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
-                : 'w-full max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5')
-            }
-            aria-label="Paradas do dia"
-          >
-            <div
-              ref={roteiroListScrollRef}
+        <ItineraryHeader
+          view={view}
+          modes={modes}
+          edit={edit}
+          actions={actions}
+          page={page}
+        />
+        <ItineraryStatusBanners
+          tdvLockHint={modes.tdvLockHint}
+          setTdvLockHint={modes.setTdvLockHint}
+          itineraryError={itineraryError}
+          retryItineraryLoad={retryItineraryLoad}
+          itineraryLoading={itineraryLoading}
+          finalizeError={finalize.finalizeError}
+          setFinalizeError={finalize.setFinalizeError}
+        />
+        <div
+          className={`flex-1 flex min-w-0 min-h-0 overflow-hidden relative ${
+            modes.mode === MODE_ROTEIRO ? 'flex-col lg:flex-row' : ''
+          }`}
+        >
+          {view.showRoteiroSidebar ? (
+            <section
               className={
-                'roteiro-list-scroll flex-1 min-h-0 overflow-y-auto p-4 sm:p-6' +
-                (dragReorder.isOverlayActive ? ' relative z-50 roteiro-list-scroll--drag-active' : '')
+                'roteiro-mobile-map-stage relative flex flex-col min-h-0 border-r border-border-light dark:border-border-dark bg-white dark:bg-card-dark ' +
+                (edit.dragReorder.isOverlayActive
+                  ? 'roteiro-list-drag-active z-40 '
+                  : '') +
+                (mapUi.mobileMapOpen ? 'roteiro-mobile-map-open ' : '') +
+                (modes.mode === MODE_ROTEIRO
+                  ? edit.likeReplace.open
+                    ? 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
+                    : 'w-full max-lg:flex-1 max-lg:max-h-none max-lg:min-h-0 max-lg:pr-10 lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5'
+                  : 'w-full max-h-[48vh] lg:max-h-none lg:flex-none lg:w-1/2 xl:w-2/5')
               }
+              aria-label="Paradas do dia"
             >
-              {isPlanning ? (
-                <div className="mb-5 rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/[0.08] to-transparent dark:from-primary/15 p-4 sm:p-5">
-                  <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Concluir planejamento</p>
-                  <p className="text-xs sm:text-sm text-text-secondary mt-1.5 leading-relaxed">
-                    Gere o roteiro com a IA a partir do formulário da viagem. O TDV (aba ao lado) é opcional para
-                    indicar lugares que prefere.
-                  </p>
-                  <Button
-                    className="mt-4 w-full sm:w-auto rounded-full font-bold"
-                    onClick={handleFinalizeTdv}
-                    disabled={finalizingTdv}
-                  >
-                    <Icon name="auto_awesome" />
-                    {finalizingTdv ? 'Gerando roteiro…' : 'Gerar roteiro e ativar viagem'}
-                  </Button>
-                  {finalizeError ? (
-                    <p className="mt-2 text-xs text-red-600 dark:text-red-400 leading-relaxed" role="alert">
-                      {finalizeError}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-              {!hasFullAccess && premiumRestriction ? (
-                <ItineraryPremiumBanner
-                  tripId={tripId}
-                  restriction={premiumRestriction}
-                  showAdminUnlock={isAdmin}
-                  onAdminUnlock={handleAdminUnlock}
+              <ItineraryRoteiroTimeline
+                view={view}
+                modes={modes}
+                edit={edit}
+                meals={meals}
+                stay={stay}
+                page={page}
+              />
+              <ItineraryRoteiroEditFooter
+                edit={edit}
+                tripId={tripId}
+                locked={view.isSelectedDayPremiumLockedUi}
+              />
+              {modes.mode === MODE_ROTEIRO &&
+              edit.likeReplace.open &&
+              !mapUi.isLgUp ? (
+                <RoteiroModifyPanel
+                  layout="dock"
+                  {...edit.modifyPanelSharedProps}
                 />
               ) : null}
-              {isSelectedDayPremiumLockedUi ? (
-                <div className="rounded-2xl border-2 border-dashed border-amber-500/40 bg-gradient-to-br from-amber-500/12 dark:from-amber-500/[0.12] via-background-light dark:via-[#23220f] to-primary/[0.08] px-5 py-10 text-center mb-4">
-                  <Icon
-                    name="lock"
-                    className="text-[2.85rem] sm:text-[3.25rem] mb-4 mx-auto opacity-95 text-amber-800 dark:text-amber-400"
-                  />
-                  <p className="text-sm font-bold text-[#1c1c0d] dark:text-white">Dia bloqueado na prévia</p>
-                  <p className="text-xs sm:text-sm text-text-secondary mt-2 max-w-[18.5rem] mx-auto leading-relaxed">
-                    {selectedDayPremium?.totalOnDay === 1 ? (
-                      <>Há <span className="font-semibold">1 parada</span> planejada neste dia dentro do plano completo.</>
-                    ) : (
-                      <>
-                        Há <span className="font-semibold">{selectedDayPremium?.totalOnDay} paradas</span> neste dia no plano completo —
-                        todas estão fora da prévia gratuita de 25&nbsp;%.
-                      </>
-                    )}
-                  </p>
-                  {!isPlanning ? (
-                    <Link to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}>
-                      <Button className="mt-5 rounded-full font-bold w-full max-w-[16rem]" size="sm">
-                        <Icon name="workspace_premium" />
-                        Desbloquear roteiro
-                      </Button>
-                    </Link>
-                  ) : null}
-                </div>
+              {modes.mode === MODE_ROTEIRO && !edit.likeReplace.open ? (
+                <ItineraryMobileMapDrawer
+                  open={mapUi.mobileMapOpen}
+                  onOpenChange={mapUi.setMobileMapOpen}
+                  tripId={tripId}
+                  day={view.effectiveSelectedDay}
+                  days={view.days}
+                  activities={view.dayRouteActivities}
+                  timelineActivities={view.dayActivities}
+                  accommodations={view.dayAccommodations}
+                  mealSlots={view.dayMealSlots}
+                  selectedMealIds={meals.mealSelections}
+                  disabled={view.isSelectedDayPremiumLockedUi}
+                  routeRestricted={view.isRouteRestricted}
+                  highlightedIndex={view.trackedMapHighlight}
+                  highlightedMealSlotKey={meals.highlightedMealSlotKey}
+                  mealMapFrameNonce={meals.mealMapFrameNonce}
+                  preferLocalRoute={
+                    edit.roteiroEditOpen || edit.likeReplace.open
+                  }
+                  hideDuringRoteiroDrag={edit.dragReorder.isOverlayActive}
+                  showAccommodationRoutes={mapUi.showAccommodationRoutes}
+                  onShowAccommodationRoutesChange={
+                    mapUi.handleShowAccommodationRoutesChange
+                  }
+                  showMealsOnMap={mapUi.showMealsOnMap}
+                  onShowMealsOnMapChange={
+                    mapUi.handleShowMealsOnMapChange
+                  }
+                  onMealViewOptions={meals.handleMealViewOptions}
+                  onMealSlotFocus={meals.handleMealMapPinClick}
+                  onMealGoToTimeline={meals.handleMealGoToTimeline}
+                  onMealDismiss={meals.handleMealDismiss}
+                  onMealDismissIfSlot={meals.handleMealDismissIfSlot}
+                />
               ) : null}
-              {!isSelectedDayPremiumLockedUi && (roteiroEditOpen || dayActivities.length > 0) ? (
-                <div className="relative isolate pb-2">
-                  {roteiroEditOpen && draftActivities ? (
-                    <div className="mb-4 flex flex-col gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="rounded-xl font-bold"
-                          onClick={handleAddRoteiroStop}
-                          disabled={blockNewRoteiroStop}
-                          aria-describedby={blockNewRoteiroStop ? 'roteiro-new-stop-hint' : undefined}
-                          title={
-                            blockNewRoteiroStop
-                              ? 'Termine ou remova a parada em edição antes de adicionar outra.'
-                              : undefined
-                          }
-                        >
-                          <Icon name="add" aria-hidden />
-                          Nova parada (dia&nbsp;{effectiveSelectedDay})
-                        </Button>
-                      </div>
-                      {blockNewRoteiroStop ? (
-                        <p
-                          id="roteiro-new-stop-hint"
-                          className="inline-flex items-start gap-1.5 max-w-md rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-amber-200 leading-snug"
-                        >
-                          <Icon name="info" className="text-sm shrink-0 mt-0.5" aria-hidden />
-                          Nomeie ou remova a parada em edição antes de adicionar outra.
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {roteiroEditOpen && dayActivities.length === 0 ? (
-                    <div className="mb-6 rounded-xl border border-dashed border-primary/35 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
-                      <p className="font-semibold text-[#1c1c0d] dark:text-white">Neste dia ainda não há paradas</p>
-                      <p className="text-xs mt-1">
-                        Clique em «Nova parada» ou mova outra para cá pelo seletor de dia em cada cartão.
-                      </p>
-                    </div>
-                  ) : null}
-                  <div ref={roteiroCardsListRef} className="relative space-y-0">
-                    <ItineraryDragInsertLine
-                      top={dragReorder.ghostStyle?.lineTop}
-                      visible={dragReorder.phase === 'dragging' && dragReorder.showInsertLine}
-                    />
-                    {dayActivities.map((act, idx) => {
-                      const frozen = reorderFrozenLayoutRef.current
-                      const actId = String(act.id)
-                      const displayIndex =
-                        frozen?.indices && actId in frozen.indices ? frozen.indices[actId] : idx
-                      const displayIsLast =
-                        frozen?.isLast && actId in frozen.isLast
-                          ? frozen.isLast[actId]
-                          : idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0
-
-                      return (
-                      <ItineraryActivityCard
-                        key={String(act.id || `${effectiveSelectedDay}-${idx}`)}
-                        act={act}
-                        index={idx}
-                        isLast={idx === dayActivities.length - 1 && hiddenPremiumStopsSameDay === 0}
-                        displayIndex={displayIndex}
-                        displayIsLast={displayIsLast}
-                        editing={roteiroEditOpen}
-                        draft={act}
-                        hasFullAccess={hasFullAccess}
-                        isTracked={String(act.id) === String(trackedStopId)}
-                        cardRef={(el) => {
-                          const key = String(act.id)
-                          if (el) stopCardRefs.current.set(key, el)
-                          else stopCardRefs.current.delete(key)
-                        }}
-                        onDraftPatch={(patch) => {
-                          setDraftActivities((prev) =>
-                            (prev ?? []).map((item) =>
-                              String(item.id) === String(act.id) ? { ...item, ...patch } : item,
-                            ),
-                          )
-                        }}
-                        onRemove={() => {
-                          if (String(act.id) === String(trackedStopId)) {
-                            setTrackedStopId(null)
-                            trackedFollowRef.current = { id: null, reason: null }
-                          }
-                          setDraftActivities((prev) =>
-                            (prev ?? []).filter((item) => String(item.id) !== String(act.id)),
-                          )
-                        }}
-                        onMoveUp={() => {
-                          if (dragReorder.isInteractionBlocked) return
-                          if (!prefersReducedFlipMotion()) {
-                            reorderFrozenLayoutRef.current = captureDayFrozenLayout(
-                              dayActivities,
-                              hiddenPremiumStopsSameDay,
-                            )
-                            flipBeforeReorderRef.current = {
-                              snapshot: captureReorderSnapshot(
-                                stopCardRefs.current,
-                                roteiroListScrollRef.current,
-                              ),
-                              movedId: String(act.id),
-                              neighborId:
-                                idx > 0 ? String(dayActivities[idx - 1].id) : null,
-                              direction: -1,
-                            }
-                          }
-                          setDraftActivities((prev) =>
-                            prev
-                              ? reorderActivityInSameDay(
-                                  prev,
-                                  dateToDayMap,
-                                  effectiveSelectedDay,
-                                  act.id,
-                                  -1,
-                                )
-                              : prev,
-                          )
-                        }}
-                        onMoveDown={() => {
-                          if (dragReorder.isInteractionBlocked) return
-                          if (!prefersReducedFlipMotion()) {
-                            reorderFrozenLayoutRef.current = captureDayFrozenLayout(
-                              dayActivities,
-                              hiddenPremiumStopsSameDay,
-                            )
-                            flipBeforeReorderRef.current = {
-                              snapshot: captureReorderSnapshot(
-                                stopCardRefs.current,
-                                roteiroListScrollRef.current,
-                              ),
-                              movedId: String(act.id),
-                              neighborId:
-                                idx < dayActivities.length - 1
-                                  ? String(dayActivities[idx + 1].id)
-                                  : null,
-                              direction: 1,
-                            }
-                          }
-                          setDraftActivities((prev) =>
-                            prev
-                              ? reorderActivityInSameDay(
-                                  prev,
-                                  dateToDayMap,
-                                  effectiveSelectedDay,
-                                  act.id,
-                                  1,
-                                )
-                              : prev,
-                          )
-                        }}
-                        disableMoveUp={idx === 0 || dragReorder.isInteractionBlocked}
-                        disableMoveDown={
-                          idx === dayActivities.length - 1 || dragReorder.isInteractionBlocked
-                        }
-                        compactMode={dragReorder.isCardCompact(act.id)}
-                        isDragSource={
-                          dragReorder.phase === 'dragging' &&
-                          String(act.id) === String(dragReorder.draggingId)
-                        }
-                        isDragHidden={
-                          (dragReorder.phase === 'landing' ||
-                            dragReorder.phase === 'reverting') &&
-                          String(act.id) === String(dragReorder.draggingId)
-                        }
-                        isExpandingCard={
-                          dragReorder.phase === 'expanding' &&
-                          dragReorder.expandRevealed &&
-                          String(act.id) === String(dragReorder.droppedId)
-                        }
-                        isDragPending={String(act.id) === String(dragReorder.pendingDragId)}
-                        canDragReorder={
-                          dragReorder.canDrag && !dragReorder.isInteractionBlocked
-                        }
-                        onDragHandlePointerDown={(event) =>
-                          onActivityDragHandlePointerDown(act.id, event)
-                        }
-                        dayPickerValue={getActivityDayNumber(act, dateToDayMap) ?? effectiveSelectedDay}
-                        dayPickerOptions={days}
-                        onDayChange={(dn) => {
-                          setDraftActivities((prev) =>
-                            (prev ?? []).map((item) =>
-                              String(item.id) === String(act.id)
-                                ? assignActivityToDay(item, dn, dateToDayMap)
-                                : item,
-                            ),
-                          )
-                          if (String(act.id) === String(trackedStopId)) {
-                            trackedFollowRef.current = { id: act.id, reason: 'day-change' }
-                            setSelectedDay(dn)
-                          }
-                        }}
-                      />
-                      )
-                    })}
-                    {hiddenPremiumStopsSameDay >= 1 ? (
-                      <ItineraryPremiumNextPeek hiddenCount={hiddenPremiumStopsSameDay} />
-                    ) : null}
-                  </div>
-                  {hiddenPremiumStopsSameDay >= 1 ? (
-                    <>
-                      <div className="pointer-events-none absolute inset-x-[-0.5rem] bottom-0 z-[5] h-[min(13.5rem,40vh)] sm:h-[min(15rem,38vh)] bg-gradient-to-b from-transparent via-white/25 via-[28%] to-white dark:via-[#23220f]/20 dark:to-[#23220f]" />
-                      <div
-                        aria-hidden
-                        className="pointer-events-none absolute inset-x-[-0.5rem] bottom-0 z-[6] h-[min(11rem,34vh)] sm:h-[min(12rem,32vh)] rounded-b-[1.75rem] bg-gradient-to-b from-transparent via-white/75 via-[52%] to-white/98 dark:from-transparent dark:via-[#23220f]/80 dark:to-[#23220f]/99 [mask-image:linear-gradient(to_bottom,transparent_0%,black_18%,black_100%)]"
-                      />
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[10] flex justify-center px-4 pb-5 pt-10 sm:pt-14 bg-gradient-to-t from-white dark:from-[#23220f] from-[10%] to-transparent">
-                        {!isPlanning ? (
-                          <div className="pointer-events-auto inline-flex flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-[999px] border border-border-light/90 dark:border-white/14 bg-white/95 dark:bg-card-dark/95 px-5 py-2.5 shadow-[0_10px_40px_-24px_rgba(0,0,0,0.35)] backdrop-blur-sm">
-                            <span className="inline-flex items-center gap-2 text-[12px] sm:text-sm font-bold text-[#3d3310] dark:text-amber-100/95">
-                              <Icon name="lock" className="text-amber-700 dark:text-amber-300 shrink-0" aria-hidden />
-                              {hiddenPremiumStopsSameDay === 1
-                                ? 'Mais uma parada neste dia'
-                                : `Mais ${hiddenPremiumStopsSameDay} neste dia`}
-                            </span>
-                            <Link
-                              to={`/pagamento?tripId=${encodeURIComponent(tripId)}`}
-                              className="shrink-0 rounded-full font-bold transition-all duration-300 inline-flex items-center justify-center gap-2 bg-primary text-[#1c1c0d] shadow-primary-glow dark:shadow-primary-glow-dark hover:opacity-90 hover:shadow-primary-glow-hover dark:hover:shadow-primary-glow-hover-dark px-5 min-h-[2.25rem] text-sm"
-                            >
-                              Ver roteiro completo
-                            </Link>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] font-semibold text-text-secondary/90 text-center rounded-full bg-background-light/92 dark:bg-white/[0.07] py-2 px-4 border border-border-light dark:border-white/12">
-                            {hiddenPremiumStopsSameDay === 1 ? 'Mais uma parada no plano completo' : `Mais ${hiddenPremiumStopsSameDay} no plano completo`}
-                          </span>
-                        )}
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-              {!isSelectedDayPremiumLockedUi && dayActivities.length === 0 && activities.length > 0 && !roteiroEditOpen ? (
-                <div className="text-center py-10 px-4 text-text-secondary rounded-2xl border border-dashed border-border-light dark:border-border-dark mb-4">
-                  <Icon name="event_busy" className="text-4xl mb-3 opacity-40 mx-auto text-primary" />
-                  <p className="text-sm font-medium text-[#1c1c0d] dark:text-white">Nenhuma parada neste dia</p>
-                  <p className="text-xs sm:text-sm mt-2">
-                    Troque o dia acima {!hasFullAccess && premiumRestriction ? 'ou desbloqueie o roteiro completo.' : '.'}
-                  </p>
-                </div>
-              ) : null}
-              {activities.length === 0 && (
-                <div className="text-center py-10 px-4 text-text-secondary rounded-2xl border border-dashed border-border-light dark:border-border-dark">
-                  <Icon name="route" className="text-4xl mb-3 opacity-40 mx-auto text-primary" />
-                  <p className="text-sm font-medium text-[#1c1c0d] dark:text-white">Nenhuma atividade ainda</p>
-                  <p className="text-xs sm:text-sm mt-2 max-w-xs mx-auto">
-                    {isPlanning
-                      ? 'Use o botão acima para gerar o roteiro, ou abra a aba TDV se quiser escolher lugares antes.'
-                      : 'Explore Descobrir ou crie outro planejamento.'}
-                  </p>
-                </div>
-              )}
-            </div>
-            {roteiroEditOpen && draftActivities && !isSelectedDayPremiumLockedUi ? (
-              <div className="flex-shrink-0 z-20 px-3 sm:px-6 pt-2 sm:pt-4 pb-2 sm:pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-border-light dark:border-border-dark bg-white dark:bg-card-dark flex flex-row gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="rounded-xl font-bold flex-1 sm:flex-none sm:min-h-[2.65rem] text-xs sm:text-sm"
-                  onClick={handleSaveRoteiroDraft}
-                  disabled={savingRoteiro || !tripId}
-                >
-                  <Icon name="save" className="text-base" aria-hidden />
-                  <span className="sm:hidden">{savingRoteiro ? 'Salvando…' : 'Salvar'}</span>
-                  <span className="hidden sm:inline">{savingRoteiro ? 'Salvando…' : 'Salvar alterações'}</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl font-bold flex-1 sm:flex-none sm:min-h-[2.65rem] text-xs sm:text-sm"
-                  onClick={() => {
-                    if (
-                      typeof globalThis.confirm === 'function' &&
-                      globalThis.confirm('Descartar todas as edições não salvas neste roteiro?')
-                    ) {
-                      handleCancelRoteiroEdit()
-                    }
-                  }}
-                  disabled={savingRoteiro}
-                >
-                  <span className="sm:hidden">Cancelar</span>
-                  <span className="hidden sm:inline">Cancelar edição</span>
-                </Button>
-              </div>
-            ) : null}
-            {mode === MODE_ROTEIRO ? (
-              <ItineraryMobileMapDrawer
-                open={mobileMapOpen}
-                onOpenChange={setMobileMapOpen}
-                tripId={tripId}
-                day={effectiveSelectedDay}
-                activities={dayActivities}
-                accommodations={dayAccommodations}
-                disabled={isSelectedDayPremiumLockedUi}
-                routeRestricted={isRouteRestricted}
-                highlightedIndex={trackedMapHighlight}
-                preferLocalRoute={roteiroEditOpen}
-                hideDuringRoteiroDrag={dragReorder.isOverlayActive}
-                showAccommodationRoutes={showAccommodationRoutes}
-                onShowAccommodationRoutesChange={handleShowAccommodationRoutesChange}
-              />
-            ) : null}
-          </section>
-        ) : null}
-
-        <section
-          className={`min-w-0 flex flex-col relative overflow-hidden ${
-            mode === MODE_ROTEIRO
-              ? 'hidden lg:flex flex-1 min-h-0 bg-gray-200 dark:bg-gray-900/50'
-              : 'flex-1 min-h-0'
-          }`}
-        >
-          {isPlanning && mode === MODE_TDV ? (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              <TinderView
-                tripId={tripId}
-                trip={trip}
-                onItineraryUpdate={refetchItinerary}
-                isActive={mode === MODE_TDV}
-                onTdvSatisfied={handleFinalizeTdv}
-                finalizingTdv={finalizingTdv}
-              />
-            </div>
+            </section>
           ) : null}
-          <div
-            className={`flex-1 flex flex-col min-h-0 overflow-hidden bg-white dark:bg-card-dark ${
-              mode === MODE_DOCUMENTOS ? 'flex' : 'hidden'
-            }`}
-          >
-            <DocumentosView
-              tripId={tripId}
-              trip={trip}
-              hasPlanejamentoCompleto={hasFullAccess}
-              isActive={mode === MODE_DOCUMENTOS}
-              onUpgrade={async () => {
-                const tripData = await tripService.getTrip(tripId)
-                setTrip(tripData)
-                await refetchItineraryImmediate()
-              }}
-            />
-          </div>
-          {mode === MODE_ROTEIRO ? (
-            <div className="roteiro-map-surface relative flex-1 min-h-0 w-full h-full">
-              <ItineraryDayMap
-                tripId={tripId}
-                day={effectiveSelectedDay}
-                activities={dayActivities}
-                accommodations={dayAccommodations}
-                disabled={isSelectedDayPremiumLockedUi}
-                routeRestricted={isRouteRestricted}
-                highlightedIndex={trackedMapHighlight}
-                preferLocalRoute={roteiroEditOpen}
-                className="absolute inset-0 h-full w-full"
-                ariaLabel={`Mapa do roteiro — dia ${effectiveSelectedDay}`}
-                showAccommodationRoutes={showAccommodationRoutes}
-                onShowAccommodationRoutesChange={handleShowAccommodationRoutesChange}
-              />
-            </div>
-          ) : null}
-        </section>
+          <ItineraryRoteiroMapColumn
+            tripId={tripId}
+            trip={trip}
+            setTrip={setTrip}
+            view={view}
+            modes={modes}
+            edit={edit}
+            meals={meals}
+            mapUi={mapUi}
+            finalizingTdv={finalize.finalizingTdv}
+            handleFinalizeTdv={finalize.handleFinalizeTdv}
+            refetchItinerary={refetchItinerary}
+            refetchItineraryImmediate={refetchItineraryImmediate}
+          />
+          <ItineraryTdvOverlayShell
+            modes={modes}
+            tripId={tripId}
+            trip={trip}
+            edit={edit}
+            t={t}
+          />
+        </div>
       </div>
-
-      <DeletePlanningOverlay
-        open={showDeleteConfirm}
-        onClose={() => setShowDeleteConfirm(false)}
-        onConfirm={handleDeletePlanning}
-        deleting={deleting}
-        tripLabel={destLabel}
+      <ItineraryGlobalOverlays
+        trip={trip}
+        destLabel={destLabel}
+        dateToDayMap={dateToDayMap}
+        view={view}
+        modes={modes}
+        edit={edit}
+        stay={stay}
+        actions={actions}
+        page={page}
       />
-      <FinalizeItineraryOverlay open={finalizingTdv} />
-      <RoteiroDragOverlay active={dragReorder.isOverlayActive}>
-        <ItineraryDragGhost
-          activity={dragReorder.ghostActivity}
-          index={
-            dragReorder.ghostActivity
-              ? dayActivities.findIndex((a) => String(a.id) === String(dragReorder.ghostActivity.id))
-              : 0
-          }
-          style={
-            dragReorder.ghostStyle &&
-            (dragReorder.phase === 'dragging' ||
-              dragReorder.phase === 'landing' ||
-              dragReorder.phase === 'reverting')
-              ? {
-                  left: dragReorder.ghostStyle.left,
-                  top: dragReorder.ghostStyle.top,
-                  width: dragReorder.ghostStyle.width,
-                  animate: dragReorder.ghostStyle.animate,
-                  visible: dragReorder.ghostStyle.visible !== false,
-                  outOfList: Boolean(dragReorder.ghostStyle.outOfList),
-                }
-              : null
-          }
-        />
-      </RoteiroDragOverlay>
-    </div>
-    <ItineraryPrintView
-      trip={trip}
-      activities={persistedActivities}
-      days={days}
-      dateToDayMap={dateToDayMap}
-      destLabel={destLabel}
-      hasFullAccess={hasFullAccess}
-      premiumRestriction={premiumRestriction}
-    />
     </>
   )
 }

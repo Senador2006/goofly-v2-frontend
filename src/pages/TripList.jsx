@@ -138,9 +138,12 @@ export function TripList() {
                         Roteiro
                       </Button>
                     </Link>
-                    <Link to="/discover" onClick={(e) => e.stopPropagation()}>
+                    <Link
+                      to={`/trips/${trip.id}/itinerary?tab=tdv`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Button variant="secondary" size="sm">
-                        Descobrir
+                        Tinder
                       </Button>
                     </Link>
                     {confirmDeleteId === trip.id ? (

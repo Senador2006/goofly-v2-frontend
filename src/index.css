@@ -2,12 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* DateInput — overlay nativo no ícone: hit-target do picker cobre a área inteira
+ * (necessário no Safari iOS, onde showPicker para type=date não é suportado). */
+.date-input-picker {
+  position: absolute;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: transparent;
+}
+.date-input-picker::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 /* Leaflet — RF08.3.
- * Estilos base do Leaflet são importados em `main.jsx` (PostCSS exige
- * que `@import` esteja antes de qualquer outra diretiva; misturar com
- * `@tailwind` quebra o build do Vite). Aqui ficam só as overrides do
- * tema escuro, aplicadas via filtro CSS sobre os tiles OSM para evitar
- * dependência de provedores pagos (Mapbox/Stadia) só por dark mode. */
+ * Estilos base (`leaflet/dist/leaflet.css`) entram só nos módulos de mapa
+ * (`ItineraryDayMap`, `MemoryMap`) — não no entry — para não bloquear
+ * Login/Landing. Aqui ficam só as overrides do tema escuro, aplicadas via
+ * filtro CSS sobre os tiles OSM para evitar dependência de provedores
+ * pagos (Mapbox/Stadia) só por dark mode. */
 .dark .leaflet-container .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.95) saturate(0.85);
 }
@@ -22,8 +45,202 @@
   border: none !important;
 }
 
+/* Balão de parada do mapa: mini-card com capa (mesmo visual dos cards) */
+.goofly-map-stop-popup .leaflet-popup-content-wrapper {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.06);
+  background: #ffffff;
+}
+.goofly-map-stop-popup .leaflet-popup-content {
+  margin: 0;
+  width: 200px !important;
+  min-width: 200px;
+}
+.goofly-map-stop-popup:has(.goofly-map-stop-stack-popup) .leaflet-popup-content {
+  width: 220px !important;
+  min-width: 220px;
+}
+.goofly-map-stop-popup .leaflet-popup-tip {
+  background: #ffffff;
+  border: none;
+  box-shadow: none;
+}
+.goofly-map-stop-popup .leaflet-popup-close-button {
+  top: 4px !important;
+  right: 4px !important;
+  width: 22px !important;
+  height: 22px !important;
+  padding: 0 !important;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #374151 !important;
+  font-size: 16px !important;
+  line-height: 20px !important;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.goofly-map-stop-popup__cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #e5e7eb;
+}
+.goofly-map-stop-popup__track-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+.goofly-map-stop-popup__track-wrap--swipe {
+  cursor: grab;
+  touch-action: none;
+}
+.goofly-map-stop-popup__track-wrap--swipe:active {
+  cursor: grabbing;
+}
+.goofly-map-stop-popup__track {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  will-change: transform;
+}
+.goofly-map-stop-popup__slide {
+  position: relative;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.goofly-map-stop-popup__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.goofly-map-stop-popup__arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.goofly-map-stop-popup__arrow:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+.goofly-map-stop-popup__arrow:active {
+  transform: translateY(-50%) scale(0.95);
+}
+.goofly-map-stop-popup__arrow--prev {
+  left: 0.35rem;
+}
+.goofly-map-stop-popup__arrow--next {
+  right: 0.35rem;
+}
+.goofly-map-stop-popup__dots {
+  position: absolute;
+  left: 50%;
+  bottom: 0.4rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  max-width: calc(100% - 3.5rem);
+  padding: 0.2rem 0.45rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transform: translateX(-50%);
+  pointer-events: none;
+  overflow: hidden;
+}
+.goofly-map-stop-popup__dot {
+  width: 0.3rem;
+  height: 0.3rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.55);
+  transition: width 0.25s ease, background-color 0.25s ease;
+}
+.goofly-map-stop-popup__dot--active {
+  width: 0.7rem;
+  background: #fff;
+}
+.goofly-map-stop-popup__body {
+  padding: 0.625rem 0.75rem 0.75rem;
+}
+.dark .goofly-map-stop-popup .leaflet-popup-content-wrapper {
+  background: #161616;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.dark .goofly-map-stop-popup .leaflet-popup-tip {
+  background: #161616;
+}
+.dark .goofly-map-stop-popup .leaflet-popup-close-button {
+  background: rgba(22, 22, 22, 0.92) !important;
+  color: #e5e7eb !important;
+}
+.dark .goofly-map-stop-popup__cover {
+  background: #2c2c2e;
+}
+
 .goofly-acc-leg-polyline {
   transition: opacity 0.2s ease;
+}
+
+.material-icons-outlined {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+@media (min-width: 1024px) {
+  html,
+  body,
+  #root {
+    overflow-x: visible;
+    overscroll-behavior-x: auto;
+  }
 }
 
 body {
@@ -32,8 +249,59 @@ body {
   min-height: 100vh;
 }
 
+.mobile-task-shell {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .mobile-task-cta {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--goofly-mobile-nav-height) - 1px);
+    z-index: 1050;
+    padding: 0.75rem 1rem;
+    background-color: rgb(240 240 238 / 0.96);
+    border-top: 1px solid rgba(17, 17, 17, 0.08);
+    backdrop-filter: blur(10px);
+  }
+
+  .dark .mobile-task-cta {
+    background-color: rgb(17 17 17 / 0.96);
+    border-top-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .mobile-task-cta-spacer {
+    height: 7rem;
+  }
+
+  .newtrip-choice-chips {
+    gap: clamp(0.35rem, 1.6vw, 0.5rem);
+  }
+
+  .newtrip-choice-chip {
+    padding-block: clamp(0.32rem, 1.7vw, 0.48rem);
+    padding-inline: clamp(0.58rem, 2.5vw, 0.78rem);
+    font-size: clamp(0.75rem, 3.35vw, 0.875rem);
+    line-height: 1.25;
+  }
+}
+
+#paymentBrick_container {
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+#paymentBrick_container iframe {
+  max-width: 100% !important;
+}
+
 :root {
   --z-roteiro-drag-overlay: 1200;
+  --z-tdv-overlay: 1100;
+  --goofly-mobile-nav-height: 4.75rem;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -80,16 +348,294 @@ body {
   background-color: rgba(255, 255, 255, 0.42);
 }
 
-/* TDV mobile: trava o <main> do Layout — sem scroll; card entre abas e MobileNav */
+/* TDV mobile: trava o <main> do Layout — sem scroll; card entre abas e MobileNav.
+   Mantém padding-bottom: o lock não pode zerar a reserva da nav fixa (senão
+   .tdv-action-bar fica atrás do MobileNav e os botões “somem”). */
 @media (max-width: 1023px) {
   main.tdv-mobile-lock {
     overflow: hidden !important;
     overscroll-behavior: none;
-    padding: 0 !important;
+    padding: 0 0 var(--goofly-mobile-nav-height, 4.75rem) 0 !important;
     display: flex;
     flex-direction: column;
     min-height: 0;
   }
+}
+
+/* TDV pós-unlock: painel desliza de cima sobre o roteiro */
+.tdv-overlay-shell {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-tdv-overlay);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tdv-overlay-panel {
+  pointer-events: auto;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f0f0ee;
+  transform: translate3d(0, -105%, 0);
+  transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  backface-visibility: hidden;
+}
+
+.dark .tdv-overlay-panel {
+  background: #0e0e0e;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.tdv-overlay-panel--open {
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tdv-overlay-panel {
+    transition: none;
+  }
+}
+
+/* Abas + ações: só opacity/transform (compositor) — sem max-width a cada frame */
+.itinerary-header-mode-cluster {
+  position: relative;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.itinerary-header-tabs {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.itinerary-header-actions {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  opacity: 0;
+  transform: translate3d(-12px, 0, 0);
+  transition:
+    opacity 220ms ease,
+    transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+  /* Fora do fluxo sem animar largura (evita jank de layout). */
+  width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.itinerary-header-actions--open {
+  width: auto;
+  margin-left: 0.5rem;
+  overflow: visible;
+  visibility: visible;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  pointer-events: auto;
+}
+
+/* Mobile: abas numa faixa, selo + ações na outra — sem width:0 (corta ícones). */
+@media (max-width: 1023.98px) {
+  .itinerary-header-mode-cluster {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .itinerary-header-tabs-row {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .itinerary-header-tabs-row .itinerary-header-tabs {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .itinerary-header-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .itinerary-header-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .itinerary-header-actions {
+    width: 100%;
+    margin-left: 0;
+    overflow: hidden;
+    max-height: 0;
+    transform: translate3d(0, -8px, 0);
+  }
+
+  .itinerary-header-actions--open {
+    width: 100%;
+    margin-left: 0;
+    max-height: 2.75rem;
+    overflow: visible;
+    visibility: visible;
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    pointer-events: auto;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 0.375rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itinerary-header-actions {
+    transition: none;
+  }
+}
+
+/* Barra de dias: display, sem grid 0fr/1fr (Safari some a fileira). */
+.itinerary-day-chips-slot {
+  display: none;
+  pointer-events: none;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.itinerary-day-chips-slot--open {
+  display: block;
+  pointer-events: auto;
+}
+
+.itinerary-day-chips-slot__inner {
+  min-width: 0;
+  max-width: 100%;
+  opacity: 0;
+  transform: translate3d(0, -10px, 0);
+  transition:
+    opacity 240ms ease,
+    transform 400ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.itinerary-day-chips-slot--open .itinerary-day-chips-slot__inner {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itinerary-day-chips-slot__inner {
+    transition: none;
+  }
+}
+
+/* Modificar Roteiro — enter / exit / swap */
+@keyframes roteiro-modify-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes roteiro-modify-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    max-height: 5rem;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-12px) scale(0.96);
+    max-height: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+@keyframes roteiro-modify-like-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    max-height: 4.5rem;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(14px) scale(0.94);
+    max-height: 0;
+    margin: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+.roteiro-modify-row--enter {
+  animation: roteiro-modify-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.roteiro-modify-row--exit {
+  animation: roteiro-modify-exit 300ms cubic-bezier(0.4, 0, 1, 1) both;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.roteiro-modify-row--swap-hide .roteiro-modify-stop-card,
+.roteiro-modify-like--swap-hide .roteiro-modify-stop-card {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.roteiro-modify-like--exit {
+  animation: roteiro-modify-like-exit 300ms cubic-bezier(0.4, 0, 1, 1) both;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.roteiro-modify-swap-ghost {
+  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roteiro-modify-row--enter,
+  .roteiro-modify-row--exit,
+  .roteiro-modify-like--exit {
+    animation: none;
+  }
+
+  .roteiro-modify-row--swap-hide .roteiro-modify-stop-card,
+  .roteiro-modify-like--swap-hide .roteiro-modify-stop-card {
+    visibility: visible;
+  }
+}
+
+body.roteiro-like-drag-active {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+body.roteiro-like-drag-active * {
+  cursor: grabbing !important;
 }
 
 .glass-effect {
@@ -161,11 +707,11 @@ body {
   border-color: rgb(254 193 7 / 0.4) !important;
 }
 
-/* Cards de benefícios — hover com borda amarela e lift */
+/* Cards de benefícios — borda dourada da referência */
 .landing-page .landing-benefit-card {
-  background: #1E1B17;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1.5rem;
+  background: #141414;
+  border: 1px solid rgba(197, 145, 46, 0.55);
+  border-radius: 1.25rem;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
     background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
     border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -173,26 +719,73 @@ body {
 }
 
 .landing-page .landing-benefit-card:hover {
-  background: #2C2820;
-  border-color: rgba(254, 193, 7, 0.35);
+  background: #1C1C1C;
+  border-color: rgba(254, 193, 7, 0.7);
   transform: translateY(-4px);
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.28),
-    0 0 0 1px rgba(254, 193, 7, 0.18);
+    0 0 18px rgba(254, 193, 7, 0.12);
 }
 
-.landing-page .landing-benefit-icon {
-  transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+.landing-page .landing-check-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--landing-yellow);
+  color: var(--landing-yellow);
 }
 
-.landing-page .landing-benefit-card:hover .landing-benefit-icon {
-  border-color: rgba(254, 193, 7, 0.45);
-  background: rgba(254, 193, 7, 0.14);
+.landing-page .landing-stat-card {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.9rem;
+}
+
+.landing-page .landing-dest-card {
+  border-radius: 1.35rem;
+}
+
+.landing-page .landing-dest-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--landing-yellow);
+  color: var(--landing-yellow);
+  background: rgba(0, 0, 0, 0.45);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.landing-page .landing-dest-card:hover .landing-dest-arrow {
+  background: var(--landing-yellow);
+  color: #111111;
+  transform: translateX(2px);
+}
+
+.landing-page .landing-callout-dark {
+  border: 1px solid rgba(254, 193, 7, 0.45);
+  border-radius: 1rem;
+  box-shadow: 0 0 18px rgba(254, 193, 7, 0.08);
+}
+
+.landing-page .landing-callout-light {
+  background: #FFF6E8;
+  border-radius: 9999px;
+}
+
+.landing-page .landing-step-card {
+  box-shadow: 0 10px 30px rgba(18, 16, 14, 0.07);
+  border: 1px solid rgba(18, 16, 14, 0.05);
 }
 
 .landing-page .font-display {
   font-family: 'Playfair Display', Georgia, serif;
+  line-height: 1.4;
 }
 
 .landing-page .fade-up {
@@ -254,22 +847,22 @@ body {
 
 .landing-page .landing-btn-nav-secondary {
   padding: 0.5rem 1.25rem;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #111111;
+  color: #ffffff;
   background: transparent;
-  border: 1.5px solid rgba(17, 17, 17, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
 }
 
 .landing-page .landing-btn-nav-secondary:hover {
-  border-color: #111111;
-  background: #F5F2ED;
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .landing-page .landing-btn-nav-primary {
   padding: 0.625rem 1.25rem;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 0.875rem;
   font-weight: 700;
   color: #111111;
@@ -280,20 +873,20 @@ body {
 }
 
 .landing-page .landing-btn-nav-primary .material-icons-outlined {
-  font-size: 1.375rem;
+  font-size: 1.25rem;
   line-height: 1;
 }
 
 .landing-page .landing-btn-nav-primary:hover {
-  background: var(--landing-yellow-dark);
-  color: #FFFDF7;
+  background: var(--landing-yellow-hover);
+  color: #111111;
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(212, 160, 10, 0.32);
 }
 
 .landing-page .landing-btn-card-primary {
-  padding: 0.75rem 1.5rem;
-  border-radius: 10px;
+  padding: 0.85rem 1.5rem;
+  border-radius: 9999px;
   font-size: 0.875rem;
   font-weight: 700;
   color: #111111;
@@ -305,6 +898,21 @@ body {
 .landing-page .landing-btn-card-primary:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(212, 160, 10, 0.28);
+}
+
+.landing-page .landing-btn-card-outline {
+  padding: 0.85rem 1.5rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #111111;
+  background: #ffffff;
+  border: 2px solid #111111;
+}
+
+.landing-page .landing-btn-card-outline:hover {
+  background: #111111;
+  color: #ffffff;
 }
 
 .goofly-tour-popover.driver-popover {
@@ -370,6 +978,11 @@ body {
   color: #ffffff;
 }
 
+.landing-page .guide-button-fab:hover span:first-of-type {
+  background: #111111;
+  color: var(--landing-yellow);
+}
+
 body.site-tour-active .guide-button-fab {
   opacity: 0;
   pointer-events: none;
@@ -377,7 +990,8 @@ body.site-tour-active .guide-button-fab {
 
 /* Place Autocomplete (Places API novo) — tema Goofly (claro/escuro via `html.dark`).
  * O widget segue `prefers-color-scheme` do SO por padrão; `color-scheme` e tokens
- * devem ser definidos no `gmp-place-autocomplete`, não só no wrapper. */
+ * devem ser definidos no `gmp-place-autocomplete`, não só no wrapper.
+ * Usado no desktop; no mobile o campo usa balão custom (`.goofly-place-ac-popover`). */
 .goofly-google-place-ac-frame {
   min-height: 3.125rem;
   font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
@@ -389,10 +1003,16 @@ body.site-tour-active .guide-button-fab {
 
 .goofly-google-place-ac-frame gmp-place-autocomplete {
   display: block;
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 3.125rem;
+  font-size: 1rem;
   /* Alinhado a `rounded-xl` do tailwind.config (3rem) — mesmos pills dos inputs do form */
+  border: none;
   border-radius: 3rem;
+  outline: none;
   color-scheme: light;
   background-color: #F5F5F5;
   --gmp-mat-color-surface: #F5F5F5;
@@ -429,6 +1049,17 @@ body.site-tour-active .guide-button-fab {
   --gmp-mat-color-secondary-container: #161616;
 }
 
+/* Balão custom do autocomplete (somente mobile) — scroll por arraste. */
+.goofly-place-ac-popover {
+  font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+.goofly-place-ac-list {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
 /* Exportação PDF simples — `window.print()` + layout em ItineraryPrintView */
 @media print {
   @page {
@@ -440,6 +1071,8 @@ body.site-tour-active .guide-button-fab {
   body {
     background: #fff !important;
     color: #111 !important;
+    overflow: visible !important;
+    max-width: none !important;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
@@ -515,6 +1148,176 @@ body.roteiro-drag-active .roteiro-mobile-map-drag-suppressed {
 
 /* Mapa mobile — cortina / carrossel */
 @media (max-width: 1023px) {
+  .goofly-map-stop-popup--mobile.leaflet-popup {
+    margin-bottom: 0;
+  }
+
+  .goofly-map-stop-popup--mobile .leaflet-popup-content-wrapper {
+    border-radius: 0.625rem;
+  }
+
+  .goofly-map-stop-popup--mobile .leaflet-popup-content {
+    width: 148px !important;
+    min-width: 148px;
+  }
+
+  .goofly-map-stop-popup--mobile .leaflet-popup-tip-container {
+    margin-top: -1px;
+  }
+
+  /* Bottom sheet de refeição / parada — padrão place card (Google/Apple Maps) */
+  .goofly-meal-map-sheet,
+  .goofly-stop-map-sheet {
+    animation: goofly-meal-sheet-in 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .roteiro-map-surface .leaflet-control-zoom {
+    border: none !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16) !important;
+    border-radius: 0.45rem;
+    overflow: hidden;
+  }
+
+  .roteiro-map-surface .leaflet-control-zoom a {
+    width: 22px !important;
+    height: 22px !important;
+    line-height: 22px !important;
+    font-size: 13px !important;
+  }
+
+  .goofly-stop-map-sheet__cover {
+    aspect-ratio: 2.2 / 1;
+    max-height: 128px;
+  }
+
+  /* Stack: switcher + capa — card um pouco mais baixo que o full, sem cobrir o topo */
+  .goofly-stop-map-sheet__card {
+    max-height: min(48dvh, 20rem);
+  }
+
+  .goofly-stop-map-sheet__card[data-stack='true'] {
+    max-height: min(46dvh, 19rem);
+  }
+
+  .goofly-stop-map-sheet__cover--stack {
+    aspect-ratio: 2.4 / 1;
+    max-height: 112px;
+  }
+
+  .goofly-stop-map-sheet__track-wrap {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    touch-action: pan-y;
+  }
+
+  .goofly-stop-map-sheet__track-wrap--swipe {
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .goofly-stop-map-sheet__track-wrap--swipe:active {
+    cursor: grabbing;
+  }
+
+  .goofly-stop-map-sheet__track {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    will-change: transform;
+  }
+
+  .goofly-stop-map-sheet__slide {
+    position: relative;
+    flex: 0 0 100%;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .goofly-stop-map-sheet__img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .goofly-stop-map-sheet__arrow {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 9999px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    transform: translateY(-50%);
+  }
+
+  .goofly-stop-map-sheet__arrow--prev {
+    left: 0.4rem;
+  }
+
+  .goofly-stop-map-sheet__arrow--next {
+    right: 0.4rem;
+  }
+
+  .goofly-stop-map-sheet__dots {
+    position: absolute;
+    left: 50%;
+    bottom: 0.4rem;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.28rem;
+    max-width: calc(100% - 3rem);
+    padding: 0.2rem 0.4rem;
+    border-radius: 9999px;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    transform: translateX(-50%);
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .goofly-stop-map-sheet__dot {
+    width: 0.3rem;
+    height: 0.3rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.55);
+    transition:
+      width 0.25s ease,
+      background-color 0.25s ease;
+  }
+
+  .goofly-stop-map-sheet__dot--active {
+    width: 0.7rem;
+    background: #fff;
+  }
+
+  @keyframes goofly-meal-sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   .roteiro-mobile-map-stage .roteiro-list-scroll {
     transition:
       transform 580ms cubic-bezier(0.32, 1.05, 0.55, 1),
@@ -529,6 +1332,11 @@ body.roteiro-drag-active .roteiro-mobile-map-drag-suppressed {
     opacity: 0.42;
     filter: blur(1px);
     pointer-events: none;
+  }
+
+  /* Filhos com pointer-events-auto (ex.: CTA de compra) não devem furar o bloqueio. */
+  .roteiro-mobile-map-stage.roteiro-mobile-map-open .roteiro-list-scroll * {
+    pointer-events: none !important;
   }
 
   .roteiro-mobile-map-panel {
@@ -569,7 +1377,9 @@ body.roteiro-drag-active .roteiro-mobile-map-drag-suppressed {
 @media (prefers-reduced-motion: reduce) {
   .roteiro-mobile-map-stage .roteiro-list-scroll,
   .roteiro-mobile-map-panel,
-  .roteiro-mobile-map-handle {
+  .roteiro-mobile-map-handle,
+  .goofly-meal-map-sheet,
+  .goofly-stop-map-sheet {
     transition-duration: 0.01ms !important;
     animation: none !important;
   }
@@ -690,5 +1500,43 @@ body.roteiro-drag-active .roteiro-mobile-map-drag-suppressed {
 
   .roteiro-activity-card--hidden-during-landing {
     opacity: 1;
+  }
+}
+
+/* Hospedagem: voo do botão até o card novo */
+.acc-stay-fly-ghost {
+  will-change: transform, opacity, border-radius;
+  transition: none;
+  box-shadow: 0 10px 28px rgba(254, 198, 65, 0.28);
+}
+
+.acc-stay-fly-ghost--go {
+  transition:
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.acc-stay-card-entering {
+  animation: acc-stay-card-settle 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes acc-stay-card-settle {
+  from {
+    opacity: 0.72;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acc-stay-fly-ghost,
+  .acc-stay-fly-ghost--go,
+  .acc-stay-card-entering {
+    animation: none !important;
+    transition: none !important;
   }
 }

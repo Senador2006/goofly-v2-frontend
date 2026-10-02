@@ -81,11 +81,29 @@ function hasPixPayload(result) {
   return Boolean(result?.qr_code || result?.qr_code_base64 || result?.ticket_url)
 }
 
+function normalizeBrickSubmit(raw) {
+  // Brick passa { selectedPaymentMethod, formData } — às vezes o próprio formData.
+  const selectedPaymentMethod = raw?.selectedPaymentMethod || raw?.paymentType || null
+  const data = raw?.formData ?? raw
+  let paymentMethodId = data?.payment_method_id
+  if (!paymentMethodId && (selectedPaymentMethod === 'bank_transfer' || selectedPaymentMethod === 'bankTransfer')) {
+    paymentMethodId = 'pix'
+  }
+  return { data, selectedPaymentMethod, paymentMethodId }
+}
+
+function isPixSubmit(paymentMethodId, selectedPaymentMethod, result) {
+  if (hasPixPayload(result)) return true
+  if (String(paymentMethodId || '').toLowerCase() === 'pix') return true
+  return selectedPaymentMethod === 'bank_transfer' || selectedPaymentMethod === 'bankTransfer'
+}
+
 export function Pagamento() {
   useDocumentTitle('Planejamento Completo')
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tripId = normalizeTripId(searchParams.get('tripId'))
+  const fromTdv = searchParams.get('from') === 'tdv'
   const { user, isAdmin } = useAuth()
 
   const [trips, setTrips] = useState([])
@@ -102,6 +120,13 @@ export function Pagamento() {
   const brickControllerRef = useRef(null)
   const isMountedRef = useRef(false)
   const pollTimerRef = useRef(null)
+  /** Evita que o unmount intencional do Brick (ao ir para a tela PIX) vire mensagem de erro. */
+  const suppressBrickErrorRef = useRef(false)
+  const startPixPollingRef = useRef(null)
+  const finishUnlockRef = useRef(null)
+  const tripIdRef = useRef(tripId)
+  const userEmailRef = useRef(user?.email)
+  const planningAmountRef = useRef(null)
 
   const selectedTrip = useMemo(
     () => trips.find((t) => String(t.id) === String(tripId)) ?? null,
@@ -119,6 +144,10 @@ export function Pagamento() {
 
   const planningAmount =
     priceQuote?.amountBrl != null ? Number(priceQuote.amountBrl) : null
+
+  tripIdRef.current = tripId
+  userEmailRef.current = user?.email
+  planningAmountRef.current = planningAmount
 
   const clearPoll = useCallback(() => {
     if (pollTimerRef.current) {
@@ -151,21 +180,24 @@ export function Pagamento() {
       setPixPending(null)
       setPollHint(null)
       setTimeout(() => {
-        navigate(`/trips/${id}/itinerary?unlocked=1`, { replace: true })
+        // Sempre reabre o TDV pós-unlock: aba (planejando) ou overlay (ativa).
+        navigate(`/trips/${id}/itinerary?tab=tdv&unlocked=1`, { replace: true })
       }, 1200)
     },
-    [navigate, planningAmount]
+    [navigate, planningAmount, fromTdv]
   )
 
   const startPixPolling = useCallback(
     (id, pixPayload) => {
       clearPoll()
+      suppressBrickErrorRef.current = true
+      setError(null)
       setPixPending(pixPayload)
       setShowBrick(false)
       setPollHint('Aguardando confirmação do PIX…')
       const startedAt = Date.now()
 
-      pollTimerRef.current = setInterval(async () => {
+      const checkStatus = async () => {
         if (!isMountedRef.current) {
           clearPoll()
           return
@@ -207,10 +239,20 @@ export function Pagamento() {
         } catch (err) {
           logger.error('Poll status PIX:', err)
         }
-      }, POLL_INTERVAL_MS)
+      }
+
+      // Primeiro check após 3s — dá tempo de o usuário ver o QR antes de um redirect imediato
+      // se o pagamento já tiver sido confirmado muito rápido.
+      pollTimerRef.current = setInterval(checkStatus, POLL_INTERVAL_MS)
+      setTimeout(() => {
+        if (pollTimerRef.current) checkStatus()
+      }, 3000)
     },
     [clearPoll, finishUnlock]
   )
+
+  startPixPollingRef.current = startPixPolling
+  finishUnlockRef.current = finishUnlock
 
   useEffect(() => {
     let cancelled = false
@@ -290,9 +332,10 @@ export function Pagamento() {
   }
 
   useEffect(() => {
-    if (!showBrick || pixPending) return
+    if (!showBrick) return
 
     let cancelled = false
+    suppressBrickErrorRef.current = false
 
     const mountBrick = async () => {
       try {
@@ -302,7 +345,8 @@ export function Pagamento() {
           throw new Error('A chave pública do Mercado Pago não está configurada.')
         }
 
-        if (planningAmount == null || Number.isNaN(planningAmount)) {
+        const amountNow = planningAmountRef.current
+        if (amountNow == null || Number.isNaN(amountNow)) {
           throw new Error('Preço não disponível. Recarregue a página.')
         }
 
@@ -316,73 +360,95 @@ export function Pagamento() {
 
         const mp = new MercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY)
         const bricksBuilder = mp.bricks()
-        const amountForBrick = Number(planningAmount.toFixed(2))
+        const amountForBrick = Number(Number(amountNow).toFixed(2))
         brickControllerRef.current = await bricksBuilder.create('payment', 'paymentBrick_container', {
           initialization: {
             amount: amountForBrick,
           },
           customization: {
+            visual: {
+              hideFormTitle: true,
+              style: {
+                theme: 'flat',
+              },
+            },
             paymentMethods: {
+              // Crédito + débito. Sem boleto (ticket). PIX via bankTransfer.
               creditCard: 'all',
               debitCard: 'all',
-              bankTransfer: 'all',
+              bankTransfer: ['pix'],
             },
           },
           callbacks: {
             onReady: () => {},
-            onSubmit: async (formData) => {
-              setLoading(true)
-              setError(null)
-              try {
-                const data = formData.formData ?? formData
-                const payload = {
-                  tripId: tripId || undefined,
-                  token: data.token,
-                  payment_method_id: data.payment_method_id,
-                  transaction_amount:
-                    data.transaction_amount != null ? data.transaction_amount : amountForBrick,
-                  payer: {
-                    email: data.payer?.email || user?.email,
-                    identification: {
-                      type: data.payer?.identification?.type,
-                      number: data.payer?.identification?.number,
+            onSubmit: (rawSubmit) =>
+              new Promise((resolve, reject) => {
+                ;(async () => {
+                  setLoading(true)
+                  setError(null)
+                  try {
+                    const { data, selectedPaymentMethod, paymentMethodId } = normalizeBrickSubmit(rawSubmit)
+                    const currentTripId = tripIdRef.current
+                    const payload = {
+                      tripId: currentTripId || undefined,
+                      token: data.token,
+                      payment_method_id: paymentMethodId,
+                      transaction_amount:
+                        data.transaction_amount != null ? data.transaction_amount : amountForBrick,
+                      payer: {
+                        email: data.payer?.email || userEmailRef.current,
+                        identification: {
+                          type: data.payer?.identification?.type,
+                          number: data.payer?.identification?.number,
+                        },
+                      },
+                    }
+
+                    const paymentResult = await paymentService.pay(payload)
+
+                    if (isApprovedPayment(paymentResult)) {
+                      await finishUnlockRef.current?.(currentTripId, paymentResult)
+                      resolve()
+                      return
+                    }
+
+                    if (isRefusedPayment(paymentResult)) {
+                      throw new Error('O pagamento foi recusado. Verifique os dados ou tente outro cartão.')
+                    }
+
+                    if (
+                      isPixSubmit(paymentMethodId, selectedPaymentMethod, paymentResult) &&
+                      (isPendingPayment(paymentResult) || hasPixPayload(paymentResult) || !isApprovedPayment(paymentResult))
+                    ) {
+                      // Sucesso do Brick: PIX criado. Mostra QR e faz poll — não rejeitar a Promise.
+                      startPixPollingRef.current?.(currentTripId, paymentResult)
+                      resolve()
+                      return
+                    }
+
+                    if (isPendingPayment(paymentResult)) {
+                      throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
+                    }
+
+                    throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
+                  } catch (err) {
+                    if (isMountedRef.current && !suppressBrickErrorRef.current) {
+                      setError(
+                        err.response?.data?.error?.message ||
+                          err.message ||
+                          'Erro ao processar o pagamento.'
+                      )
+                    }
+                    reject(err)
+                  } finally {
+                    if (isMountedRef.current) {
+                      setLoading(false)
                     }
                   }
-                }
-
-                const paymentResult = await paymentService.pay(payload)
-
-                if (isApprovedPayment(paymentResult)) {
-                  await finishUnlock(tripId, paymentResult)
-                  return
-                }
-
-                if (isRefusedPayment(paymentResult)) {
-                  throw new Error('O pagamento foi recusado. Verifique os dados ou tente outro cartão.')
-                }
-
-                await userService.completeCheckout({ tripId })
-                if (isPendingPayment(paymentResult) || hasPixPayload(paymentResult)) {
-                  if (String(payload.payment_method_id || '').toLowerCase() === 'pix' || hasPixPayload(paymentResult)) {
-                    startPixPolling(tripId, paymentResult)
-                    return
-                  }
-                  throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
-                }
-
-                throw new Error('O pagamento ainda não foi aprovado. Tente novamente em alguns instantes.')
-              } catch (err) {
-                if (isMountedRef.current) {
-                  setError(err.response?.data?.error?.message || err.message || 'Erro ao processar o pagamento.')
-                }
-                throw err
-              } finally {
-                if (isMountedRef.current) {
-                  setLoading(false)
-                }
-              }
-            },
+                })()
+              }),
             onError: (brickError) => {
+              if (suppressBrickErrorRef.current || cancelled) return
               logger.error('Erro no Brick:', brickError)
               if (isMountedRef.current) {
                 setError('O checkout apresentou um problema ao carregar. Recarregue a página e tente novamente.')
@@ -406,11 +472,12 @@ export function Pagamento() {
       }
       brickControllerRef.current = null
     }
-  }, [showBrick, pixPending, navigate, tripId, user?.email, planningAmount, finishUnlock, startPixPolling])
+    // Só remonta quando o usuário abre o Brick de novo — callbacks via refs.
+  }, [showBrick])
 
   if (success) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6">
+      <div className="mobile-task-shell min-h-[60vh] flex flex-col items-center justify-center py-6">
         <div className="rounded-full bg-primary/20 p-4 mb-6">
           <Icon name="check_circle" className="text-5xl text-primary" />
         </div>
@@ -428,7 +495,7 @@ export function Pagamento() {
 
   if (tripsError) {
     return (
-      <div className="max-w-lg mx-auto p-6">
+      <div className="mobile-task-shell w-full max-w-lg mx-auto py-4">
         <div className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-xl">{tripsError}</div>
       </div>
     )
@@ -436,7 +503,7 @@ export function Pagamento() {
 
   if (trips.length === 0) {
     return (
-      <div className="max-w-lg mx-auto p-6">
+      <div className="mobile-task-shell w-full max-w-lg mx-auto py-4">
         <EmptyState
           icon="luggage"
           title="Nenhuma viagem cadastrada"
@@ -461,7 +528,7 @@ export function Pagamento() {
       : null
 
     return (
-      <div className="max-w-lg mx-auto p-6">
+      <div className="mobile-task-shell w-full max-w-lg mx-auto py-4">
         <h1 className="text-2xl md:text-3xl font-black text-foreground dark:text-white mb-2">
           Pague com PIX
         </h1>
@@ -470,8 +537,12 @@ export function Pagamento() {
         </p>
 
         {qrSrc && (
-          <div className="flex justify-center mb-6">
-            <img src={qrSrc} alt="QR Code PIX" className="w-56 h-56 bg-white rounded-xl p-2" />
+          <div className="mb-6 flex justify-center">
+            <img
+              src={qrSrc}
+              alt="QR Code PIX"
+              className="h-auto w-full max-w-[min(14rem,70vw)] bg-white rounded-xl p-2"
+            />
           </div>
         )}
 
@@ -481,7 +552,7 @@ export function Pagamento() {
             <textarea
               readOnly
               value={pixPending.qr_code}
-              className="w-full text-xs p-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-card-dark text-foreground dark:text-white"
+              className="w-full min-w-0 break-all text-base p-3 rounded-xl border border-border-light dark:border-border-dark bg-background-light dark:bg-card-dark text-foreground dark:text-white"
               rows={4}
             />
             <Button
@@ -512,6 +583,13 @@ export function Pagamento() {
           </a>
         )}
 
+        {!qrSrc && !pixPending.qr_code && !pixPending.ticket_url && (
+          <p className="text-sm text-text-secondary mb-6">
+            O PIX foi gerado. Se o QR não aparecer, conclua pelo e-mail ou app do Mercado Pago — esta
+            página libera o roteiro automaticamente após a confirmação.
+          </p>
+        )}
+
         {pollHint && (
           <p className="text-sm text-text-secondary mb-4 flex items-center gap-2">
             <Icon name="hourglass_empty" className="text-primary" />
@@ -531,6 +609,7 @@ export function Pagamento() {
           disabled={loading}
           onClick={() => {
             clearPoll()
+            suppressBrickErrorRef.current = false
             setPixPending(null)
             setPollHint(null)
             setError(null)
@@ -543,28 +622,49 @@ export function Pagamento() {
     )
   }
 
+  const startCheckout = () => {
+    trackMetaEvent('InitiateCheckout', {
+      value: planningAmount,
+      currency: 'BRL',
+      content_ids: tripId ? [String(tripId)] : undefined,
+      content_type: 'product',
+      content_name: 'planejamento_completo',
+    })
+    setShowBrick(true)
+  }
+
+  const payButton = (
+    <Button
+      className="w-full min-h-11 rounded-full py-4 font-bold"
+      onClick={startCheckout}
+      disabled={loading || !canPay}
+    >
+      Pagar agora
+    </Button>
+  )
+
   return (
-    <div className="max-w-lg mx-auto p-6">
-      <h1 className="text-2xl md:text-3xl font-black text-foreground dark:text-white mb-2">
+    <div className="mobile-task-shell w-full max-w-lg mx-auto min-w-0 overflow-x-clip">
+      <h1 className="text-xl md:text-3xl font-black text-foreground dark:text-white mb-2">
         Desbloqueie seu roteiro
       </h1>
-      <p className="text-text-secondary mb-4">
+      <p className="text-sm md:text-base text-text-secondary mb-4 break-words">
         O Planejamento Completo desbloqueia 100% do roteiro otimizado, checklist de documentos com IA e
         recomendações por viagem. O Tinder de Viagens permanece disponível para todos na fase de
         planejamento.
       </p>
       {isAdmin && (
-        <p className="text-xs text-text-secondary bg-background-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-2 mb-6">
+        <p className="text-xs text-text-secondary bg-background-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-xl px-4 py-2 mb-6 break-words">
           Como administrador, você pode liberar o planejamento desta viagem sem processar pagamento.
         </p>
       )}
 
-      <div className="mb-6">
+      <div className="mb-6 min-w-0">
         <p className="text-sm font-medium text-foreground dark:text-white mb-2">
           Selecione a viagem que deseja desbloquear
         </p>
         {!tripId && (
-          <p className="text-xs text-text-secondary mb-3">
+          <p className="text-xs text-text-secondary mb-3 break-words">
             O valor depende do destino (nacional ou internacional). Escolha a viagem abaixo para ver o preço correto.
           </p>
         )}
@@ -577,7 +677,7 @@ export function Pagamento() {
       </div>
 
       {tripId && isSelectedUnlocked && (
-        <div className="mb-6 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-800 dark:text-emerald-200">
+        <div className="mb-6 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-800 dark:text-emerald-200 break-words">
           Esta viagem já possui planejamento completo desbloqueado.{' '}
           <Link to={`/trips/${tripId}/itinerary`} className="font-semibold underline">
             Ver roteiro
@@ -586,33 +686,35 @@ export function Pagamento() {
       )}
 
       {tripId && !selectedTrip && !priceLoading && (
-        <div className="mb-6 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-800 dark:text-amber-200">
+        <div className="mb-6 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-800 dark:text-amber-200 break-words">
           A viagem informada na URL não foi encontrada. Selecione uma viagem válida abaixo.
         </div>
       )}
 
-      <div className="bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-2xl p-6 mb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="rounded-full bg-primary/20 p-2">
+      <div className="bg-background-light dark:bg-background-dark border border-border-light dark:border-border-dark rounded-2xl p-4 md:p-6 mb-6 min-w-0">
+        <div className="flex min-w-0 items-center gap-3 mb-4">
+          <div className="rounded-full bg-primary/20 p-2 shrink-0">
             <Icon name="route" className="text-2xl text-primary" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h2 className="font-bold text-foreground dark:text-white">Planejamento Completo</h2>
             <p className="text-sm text-text-secondary">Sua viagem, sem limite</p>
           </div>
         </div>
         <ul className="space-y-2 text-sm text-text-secondary mb-6">
-          <li className="flex items-center gap-2">
-            <Icon name="check" className="text-primary shrink-0" />
-            Roteiro otimizado completo — todas as paradas e dias
+          <li className="flex items-start gap-2">
+            <Icon name="check" className="text-primary shrink-0 mt-0.5" />
+            <span className="min-w-0 break-words">Roteiro otimizado completo — todas as paradas e dias</span>
           </li>
-          <li className="flex items-center gap-2">
-            <Icon name="check" className="text-primary shrink-0" />
-            Assistente de documentos e recomendações de bagagem por IA (por viagem)
+          <li className="flex items-start gap-2">
+            <Icon name="check" className="text-primary shrink-0 mt-0.5" />
+            <span className="min-w-0 break-words">
+              Assistente de documentos e recomendações de bagagem por IA (por viagem)
+            </span>
           </li>
-          <li className="flex items-center gap-2">
-            <Icon name="check" className="text-primary shrink-0" />
-            Válido para este planejamento
+          <li className="flex items-start gap-2">
+            <Icon name="check" className="text-primary shrink-0 mt-0.5" />
+            <span className="min-w-0 break-words">Válido para este planejamento</span>
           </li>
         </ul>
         {!tripId ? (
@@ -624,57 +726,49 @@ export function Pagamento() {
         ) : planningAmount != null ? (
           <>
             <p className="text-2xl font-black text-foreground dark:text-white">
-              {formatBRL(planningAmount)}{' '}
-              <span className="text-sm font-normal text-text-secondary">
-                {priceQuote?.tier === 'domestic'
-                  ? 'viagem nacional'
-                  : priceQuote?.tier === 'international'
-                    ? 'viagem internacional'
-                    : 'preço vigente'}
-              </span>
+              {formatBRL(planningAmount)}
             </p>
-            <p className="text-xs text-text-secondary mt-2">
+            <p className="text-sm font-normal text-text-secondary mt-0.5">
+              {priceQuote?.tier === 'domestic'
+                ? 'viagem nacional'
+                : priceQuote?.tier === 'international'
+                  ? 'viagem internacional'
+                  : 'preço vigente'}
+            </p>
+            <p className="text-xs text-text-secondary mt-2 break-words">
               Nacional: apenas destinos no Brasil · Internacional: destino em outro país ou país não informado
             </p>
           </>
         ) : (
-          <p className="text-sm text-text-secondary">
+          <p className="text-sm text-text-secondary break-words">
             Valor indisponível — selecione outra viagem ou tente novamente.
           </p>
         )}
       </div>
 
       {error && (
-        <div className="mb-4 p-3 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 text-sm">
+        <div className="mb-4 p-3 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 text-sm break-words">
           {error}
         </div>
       )}
 
       {!showBrick ? (
-        <Button
-          className="w-full rounded-full py-4 font-bold"
-          onClick={() => {
-            trackMetaEvent('InitiateCheckout', {
-              value: planningAmount,
-              currency: 'BRL',
-              content_ids: tripId ? [String(tripId)] : undefined,
-              content_type: 'product',
-              content_name: 'planejamento_completo',
-            })
-            setShowBrick(true)
-          }}
-          disabled={loading || !canPay}
-        >
-          Pagar agora
-        </Button>
+        <div className="hidden md:block">
+          <p className="text-xs text-text-secondary mb-3 text-center">
+            Aceitamos cartão de crédito, cartão de débito e PIX. Boleto não está disponível.
+          </p>
+          {payButton}
+        </div>
       ) : (
-        <div id="paymentBrick_container" />
+        <div className="w-full min-w-0 overflow-x-clip">
+          <div id="paymentBrick_container" />
+        </div>
       )}
 
       {isAdmin && (
         <Button
           variant="secondary"
-          className="w-full mt-4"
+          className="w-full mt-4 min-h-11"
           disabled={loading || !tripId || isSelectedUnlocked}
           onClick={async () => {
             setLoading(true)
@@ -686,7 +780,7 @@ export function Pagamento() {
               await userService.activatePlanningAdmin(tripId)
               setSuccess(true)
               setTimeout(() => {
-                navigate(`/trips/${tripId}/itinerary?unlocked=1`, { replace: true })
+                navigate(`/trips/${tripId}/itinerary?tab=tdv&unlocked=1`, { replace: true })
               }, 1500)
             } catch (err) {
               setError(err.response?.data?.error?.message || 'Não foi possível ativar o planejamento.')
@@ -702,10 +796,22 @@ export function Pagamento() {
       <button
         type="button"
         onClick={() => navigate(-1)}
-        className="w-full mt-4 py-3 text-sm text-text-secondary hover:text-foreground dark:hover:text-white transition-colors"
+        className="w-full mt-4 min-h-11 py-3 text-sm text-text-secondary hover:text-foreground dark:hover:text-white transition-colors"
       >
         Voltar
       </button>
+
+      {!showBrick ? (
+        <>
+          <div className="mobile-task-cta-spacer md:hidden" aria-hidden />
+          <div className="mobile-task-cta md:hidden">
+            <p className="text-xs text-text-secondary mb-2 text-center">
+              Aceitamos cartão, débito e PIX. Sem boleto.
+            </p>
+            {payButton}
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }
