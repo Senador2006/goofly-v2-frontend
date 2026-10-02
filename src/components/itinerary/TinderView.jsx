@@ -9,8 +9,11 @@ import { getTdvPlaceId } from '../../utils/tdvLikeEntry'
 import { useT } from '../../i18n'
 import { PlaceCardGallery } from './PlaceCardGallery'
 import { TdvPaywall } from './TdvPaywall'
+import { useTdvActionGuide } from '../../hooks/useTdvActionGuide'
 import { useTdvDeck } from '../../hooks/useTdvDeck'
 import { useTdvSwipe } from '../../hooks/useTdvSwipe'
+import { TdvActionCoach } from './TdvActionCoach'
+import { TdvIntroScreen } from './TdvIntroScreen'
 
 function getPlaceId(p) {
   return getTdvPlaceId(p)
@@ -72,6 +75,20 @@ function writeModifyIntroAcknowledged(tripId) {
   } catch {
     /* ignore */
   }
+}
+
+function ActionHint({ show, fading, className, children }) {
+  if (!show) return null
+  return (
+    <span
+      aria-hidden
+      className={`pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold leading-none motion-safe:transition-opacity motion-safe:duration-300 lg:text-[11px] ${
+        fading ? 'opacity-0' : 'opacity-100'
+      } ${className}`}
+    >
+      {children}
+    </span>
+  )
 }
 
 /**
@@ -156,6 +173,15 @@ export function TinderView({
   )
 
   const {
+    coachSeen,
+    reducedMotion,
+    finishCoach,
+    recordChoice,
+    hintsFading,
+    hintsDismissed,
+  } = useTdvActionGuide(tripId)
+
+  const {
     swipeFeedback,
     undoStack,
     undoNotice,
@@ -179,8 +205,28 @@ export function TinderView({
     setDeckUnavailable,
     sessionDeckBaselineRef,
     consumedSinceSessionRef,
+    onChoice: recordChoice,
   })
   replaceUndoStackBridgeRef.current = replaceUndoStack
+
+  const dislikeBtnRef = useRef(null)
+  const likeBtnRef = useRef(null)
+  const finalizeBtnRef = useRef(null)
+  const coachAnchors = useMemo(
+    () => ({
+      dislike: dislikeBtnRef,
+      like: likeBtnRef,
+      finalize: finalizeBtnRef,
+    }),
+    [],
+  )
+  const showCoach =
+    introAcknowledged &&
+    Boolean(currentPlace) &&
+    !coachSeen &&
+    !reducedMotion &&
+    !finalizingTdv
+  const showActionLabels = (coachSeen || reducedMotion) && !showCoach && !hintsDismissed
 
   const SHEET_DISMISS_PX = 88
   const SHEET_DISMISS_MS = 340
@@ -566,33 +612,16 @@ export function TinderView({
 
   if (!introAcknowledged && (loading || introReady)) {
     return (
-      <div
-        className="flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden bg-[#f0f0ee] px-6 py-8 dark:bg-[#0e0e0e]"
-        role="status"
-        aria-live="polite"
-      >
-        <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
-          {loading ? <LoadingSpinner className="p-4" /> : null}
-          <p className="text-sm leading-relaxed text-text-secondary">
-            {isPostUnlock ? t('tdv.modify_intro_body') : t('tdv.intro_body')}
-          </p>
-          <Button
-            type="button"
-            className="rounded-full"
-            disabled={loading || !introReady}
-            onClick={() => {
-              if (isPostUnlock) {
-                writeModifyIntroAcknowledged(tripId)
-              } else {
-                writeIntroAcknowledged(tripId)
-              }
-              setIntroAcknowledged(true)
-            }}
-          >
-            {isPostUnlock ? t('tdv.modify_intro_understood') : t('tdv.intro_understood')}
-          </Button>
-        </div>
-      </div>
+      <TdvIntroScreen
+        loading={loading}
+        ready={introReady}
+        isPostUnlock={isPostUnlock}
+        onStart={() => {
+          if (isPostUnlock) writeModifyIntroAcknowledged(tripId)
+          else writeIntroAcknowledged(tripId)
+          setIntroAcknowledged(true)
+        }}
+      />
     )
   }
 
@@ -650,24 +679,42 @@ export function TinderView({
       >
         <Icon name="undo" className="text-lg lg:text-2xl" />
       </button>
-      <button
-        type="button"
-        onClick={handleDislike}
-        disabled={finalizingTdv}
-        className={dislikeBtnClass}
-        aria-label="Descartar"
-      >
-        <Icon name="close" className="text-xl lg:text-3xl" />
-      </button>
-      <button
-        type="button"
-        onClick={handleLike}
-        disabled={finalizingTdv}
-        className={likeBtnClass}
-        aria-label="Curtir"
-      >
-        <Icon name="favorite" className="text-2xl lg:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
-      </button>
+      <div className="relative shrink-0">
+        <button
+          ref={dislikeBtnRef}
+          type="button"
+          onClick={() => {
+            handleDislike()
+            if (showCoach) finishCoach()
+          }}
+          disabled={finalizingTdv}
+          className={dislikeBtnClass}
+          aria-label="Descartar"
+        >
+          <Icon name="close" className="text-xl lg:text-3xl" />
+        </button>
+        <ActionHint show={showActionLabels} fading={hintsFading} className="text-red-600 dark:text-red-400">
+          {t('tdv.intro_pill_no')}
+        </ActionHint>
+      </div>
+      <div className="relative shrink-0">
+        <button
+          ref={likeBtnRef}
+          type="button"
+          onClick={() => {
+            handleLike()
+            if (showCoach) finishCoach()
+          }}
+          disabled={finalizingTdv}
+          className={likeBtnClass}
+          aria-label="Curtir"
+        >
+          <Icon name="favorite" className="text-2xl lg:text-4xl" style={{ fontVariationSettings: "'FILL' 1" }} />
+        </button>
+        <ActionHint show={showActionLabels} fading={hintsFading} className="text-[#5c4810] dark:text-primary">
+          {t('tdv.intro_pill_want')}
+        </ActionHint>
+      </div>
       <div className="relative shrink-0" ref={finalizeConfirmRef}>
         {finalizeConfirmOpen ? (
           <div
@@ -695,8 +742,10 @@ export function TinderView({
           </div>
         ) : null}
         <button
+          ref={finalizeBtnRef}
           type="button"
           onClick={() => {
+            if (showCoach) finishCoach()
             setFinalizeConfirmOpen((open) => {
               if (open) setBalloonLockWarnOpen(false)
               return !open
@@ -723,6 +772,13 @@ export function TinderView({
             filled={!finalizingTdv}
           />
         </button>
+        <ActionHint
+          show={showActionLabels}
+          fading={hintsFading}
+          className="text-emerald-700 dark:text-emerald-400"
+        >
+          {isPostUnlock ? t('tdv.modify_intro_pill') : t('tdv.intro_pill_generate')}
+        </ActionHint>
       </div>
     </>
   )
@@ -896,16 +952,27 @@ export function TinderView({
             </div>
           </div>
 
-          <div className="tdv-action-bar relative z-[30] flex shrink-0 flex-col items-center border-t border-zinc-200/90 bg-white px-3 py-2 shadow-[0_-4px_16px_rgba(17,17,17,0.04)] dark:border-white/[0.07] dark:bg-[#141414] dark:shadow-[0_-6px_20px_rgba(0,0,0,0.35)] lg:px-5 lg:py-2.5">
+          <div
+            className={`tdv-action-bar relative z-[30] flex shrink-0 flex-col items-center border-t border-zinc-200/90 bg-white px-3 shadow-[0_-4px_16px_rgba(17,17,17,0.04)] dark:border-white/[0.07] dark:bg-[#141414] dark:shadow-[0_-6px_20px_rgba(0,0,0,0.35)] lg:px-5 ${
+              showActionLabels ? 'pt-2 pb-7 lg:pt-2.5 lg:pb-8' : 'py-2 lg:py-2.5'
+            }`}
+          >
             {undoNotice ? (
               <p className="mb-1 max-w-[20rem] px-2 text-center text-[10px] leading-snug text-red-600 dark:text-red-400 lg:text-[11px]" role="alert">
                 {undoNotice}
               </p>
             ) : null}
             <div className="flex w-full max-w-md items-center justify-between px-1 lg:max-w-lg lg:px-3">
+              {/* Legenda absoluta: o texto não altera a posição dos círculos. */}
               {actionButtons}
             </div>
           </div>
+          <TdvActionCoach
+            active={showCoach}
+            isPostUnlock={isPostUnlock}
+            anchors={coachAnchors}
+            onFinish={finishCoach}
+          />
 
           {/* Mobile: histórico à direita; pontinhos ficam à esquerda (PlaceCardGallery) */}
           <div className="absolute right-3 top-3 z-[45] lg:hidden">{historyTriggerButton}</div>
