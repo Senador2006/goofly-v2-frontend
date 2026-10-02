@@ -105,9 +105,17 @@ export default {
     skip: 'Pular',
     like: 'Adicionar ao roteiro',
     dislike: 'Não me interessa',
-    intro_body:
-      'Tinder de Viagem: Descubra seu estilo! Dê like nas experiências que você curte e deslike nas que não fazem seu estilo. Quando estiver satisfeito, dê um check ✓ e deixe a Goofly completar seu roteiro.',
-    intro_understood: 'Entendido',
+    intro_title: 'É um Tinder de lugares',
+    intro_line: 'Um toque em cada lugar. O check monta o roteiro.',
+    intro_start: 'Começar',
+    intro_pill_no: 'Não',
+    intro_pill_want: 'Quero',
+    intro_pill_generate: 'Gera',
+    coach_no_detail: 'Passo este lugar',
+    coach_want_detail: 'Guardo para o roteiro',
+    coach_generate_detail: 'A IA monta com o que você curtiu',
+    coach_modify_detail: 'Abre suas curtidas no roteiro',
+    coach_skip: 'Pular instrução',
     lock_warn_title: 'TDV ficará bloqueado',
     lock_warn_body:
       'Ao gerar o roteiro no modo gratuito, você perde o acesso à aba TDV até desbloquear o planejamento completo desta viagem. Deseja continuar?',
@@ -121,9 +129,10 @@ export default {
     unlock_tdv_ready_body:
       'Toque na aba TDV para abrir o Tinder de Viagens sobre o roteiro e usar Modificar Roteiro com suas curtidas.',
     unlock_tdv_ready_cta: 'Abrir TDV',
-    modify_intro_body:
-      'Agora suas curtidas entram no roteiro pelo Modificar Roteiro. Continue explorando no TDV e, quando quiser, troque, inclua ou remova paradas com as picks que curtir.',
-    modify_intro_understood: 'Entendi',
+    modify_intro_title: 'Curtidas no roteiro',
+    modify_intro_line: 'O check abre o Modificar Roteiro.',
+    modify_intro_continue: 'Continuar',
+    modify_intro_pill: 'Modifica',
     modify_cta: 'Modificar Roteiro',
     modify_confirm_body:
       'Vamos abrir suas curtidas ao lado do roteiro para você inserir, remover ou trocar paradas. Nada é gerado pela IA — só você edita e conclui.',
