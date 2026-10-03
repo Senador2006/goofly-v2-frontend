@@ -269,7 +269,7 @@ export function ItineraryRoteiroTimeline({
         <div className="text-center py-10 px-4 text-text-secondary rounded-2xl border border-dashed border-border-light dark:border-border-dark">
           <Icon name="route" className="text-4xl mb-3 opacity-40 mx-auto text-primary" />
           <p className="text-sm font-medium text-[#1c1c0d] dark:text-white">Nenhuma atividade ainda</p>
-          <p className="text-xs sm:text-sm mt-2 max-w-xs mx-auto">{modes.isPlanning ? 'Use o botão acima para gerar o roteiro, ou abra a aba TDV se quiser escolher lugares antes.' : 'Abra o Tinder de Viagens na nav ou crie outro planejamento.'}</p>
+          <p className="text-xs sm:text-sm mt-2 max-w-xs mx-auto">{modes.isPlanning ? 'Use o botão acima para gerar o roteiro, ou abra a aba Tinder se quiser escolher lugares antes.' : 'Abra a aba Tinder ou crie outro planejamento.'}</p>
         </div>
       ) : null}
     </div>

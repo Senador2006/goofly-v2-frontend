@@ -108,7 +108,7 @@ export function ItineraryModeTabs({
 
   const tabClass = (id) => {
     const selected = activeTab === id
-    return `relative z-[1] shrink-0 px-2.5 sm:px-3.5 lg:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors disabled:cursor-not-allowed ${
+    return `relative z-[1] shrink-0 whitespace-nowrap px-2 sm:px-3.5 lg:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors disabled:cursor-not-allowed ${
       selected
         ? 'text-black'
         : id === 'tdv' && tdvLocked
@@ -120,7 +120,7 @@ export function ItineraryModeTabs({
   return (
     <div
       ref={listRef}
-      className={`relative flex w-max max-w-none flex-nowrap items-center gap-1.5 rounded-2xl border border-zinc-200/80 bg-zinc-100/90 p-1 dark:border-white/[0.08] dark:bg-white/[0.06] sm:gap-2 ${
+      className={`relative flex w-max max-w-none flex-nowrap items-center gap-1 rounded-2xl border border-zinc-200/80 bg-zinc-100/90 p-1 dark:border-white/[0.08] dark:bg-white/[0.06] sm:gap-2 ${
         finalizing ? 'pointer-events-none opacity-60' : ''
       }`}
       aria-disabled={finalizing || undefined}
@@ -161,9 +161,9 @@ export function ItineraryModeTabs({
           else tabRefs.current.delete('tdv')
         }}
         onClick={onTdv}
-        className={`${tabClass('tdv')} flex items-center gap-1.5`}
+        className={`${tabClass('tdv')} flex items-center gap-1 sm:gap-1.5`}
       >
-        TDV
+        Tinder
         {tdvLocked ? <Icon name="lock" className="text-xs opacity-80" /> : null}
       </button>
 

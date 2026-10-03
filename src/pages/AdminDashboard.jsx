@@ -87,8 +87,8 @@ export function AdminDashboard() {
                 : null
             }
           />
-          <MetricCard label="Likes (TDV)" value={metrics?.engagement?.likes_total ?? '—'} />
-          <MetricCard label="Dislikes (TDV)" value={metrics?.engagement?.dislikes_total ?? '—'} />
+          <MetricCard label="Likes (Tinder)" value={metrics?.engagement?.likes_total ?? '—'} />
+          <MetricCard label="Dislikes (Tinder)" value={metrics?.engagement?.dislikes_total ?? '—'} />
         </div>
 
         {metrics?.trips?.by_status && Object.keys(metrics.trips.by_status).length > 0 && (

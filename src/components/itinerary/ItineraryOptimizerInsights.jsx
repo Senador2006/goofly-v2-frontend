@@ -30,7 +30,7 @@ function formatOptimizerStats(stats) {
     parts.push(`${stats.totalMealPlaces} sugestões gastronômicas`)
   }
   if (Number.isFinite(Number(stats.tdvLikeCount)) && Number(stats.tdvLikeCount) > 0) {
-    parts.push(`${stats.tdvLikeCount} do TDV`)
+    parts.push(`${stats.tdvLikeCount} do Tinder`)
   }
   if (Number.isFinite(Number(stats.aiSuggestedCount)) && Number(stats.aiSuggestedCount) > 0) {
     parts.push(`${stats.aiSuggestedCount} sugeridas pela IA`)

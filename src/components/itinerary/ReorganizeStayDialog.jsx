@@ -73,7 +73,7 @@ export function ReorganizeStayDialog({ open, onKeep, onReorganize, stayName }) {
             >
               O otimizador reordena as paradas do roteiro atual
               {stayName ? ` para ficar mais perto de ${stayName}` : ' para ficar mais perto da estadia'}
-              . Edições manuais (Modificar Roteiro) são preservadas — não recria a partir das curtidas TDV.
+              . Edições manuais (Modificar Roteiro) são preservadas — não recria a partir das curtidas do Tinder.
             </p>
           </div>
         </div>

@@ -99,7 +99,7 @@ export function useFinalizeTdv({
         return
       }
       clearFinalizeTdvSession(tripId)
-      setFinalizeError(err.response?.data?.error?.message || 'Não foi possível finalizar o TDV')
+      setFinalizeError(err.response?.data?.error?.message || 'Não foi possível finalizar o Tinder')
       finalizeInFlightRef.current = false
       setFinalizingTdv(false)
     }

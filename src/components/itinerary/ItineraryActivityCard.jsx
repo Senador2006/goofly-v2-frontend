@@ -31,7 +31,7 @@ function activityNeedsTicket(act) {
 /** @param {{ source?: string }} act */
 function sourceBadgeLabel(act) {
   const s = String(act.source || '').trim()
-  if (s === 'tdv_like') return 'TDV'
+  if (s === 'tdv_like') return 'Tinder'
   if (s === 'ai_suggested') return 'IA'
   return null
 }
@@ -419,7 +419,7 @@ function CardEditFields({
             Parada {index + 1}
           </span>
           {badge ? (
-            <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
+            <span className="text-[10px] font-bold tracking-normal text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded whitespace-nowrap">
               {badge}
             </span>
           ) : null}
@@ -434,7 +434,7 @@ function CardEditFields({
       {canDragReorder ? (
         <div className="flex flex-wrap items-center gap-2 -mt-1">
           {badge ? (
-            <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded">
+            <span className="text-[10px] font-bold tracking-normal text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded whitespace-nowrap">
               {badge}
             </span>
           ) : null}
@@ -664,8 +664,8 @@ function CardBody({
             ) : null}
             {badge ? (
               <span
-                className="text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded"
-                title={act.source === 'tdv_like' ? 'Preferência TDV' : 'Sugerido pela IA'}
+                className="text-[10px] font-bold tracking-normal text-text-secondary bg-border-light/80 dark:bg-border-dark px-2 py-0.5 rounded whitespace-nowrap"
+                title={act.source === 'tdv_like' ? 'Preferência do Tinder' : 'Sugerido pela IA'}
               >
                 {badge}
               </span>
@@ -699,7 +699,7 @@ function CardBody({
             ) : (
               <p className="text-xs italic text-text-secondary/70 leading-relaxed">
                 {act.source === 'tdv_like'
-                  ? 'Parada selecionada nas suas preferências (TDV).'
+                  ? 'Parada selecionada nas suas preferências (Tinder).'
                   : 'Sugestão da IA para este horário do roteiro.'}
               </p>
             )}

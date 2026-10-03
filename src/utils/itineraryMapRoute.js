@@ -1,5 +1,13 @@
 import { routeGeometryToLatLngs, readLatLng } from './coordinates.js'
 import { accommodationStableId, isAccommodationPlottable } from './accommodationDayResolver.js'
+import { sortDayActivities } from './itineraryDayHelpers.js'
+
+/**
+ * Zoom em que a refeição deixa de ser um traço até a parada e passa a
+ * ser uma parada da rota. Igual ao zoom de foco do pin (rua), sem alterar
+ * o fitBounds do dia.
+ */
+export const MEAL_STOP_ROUTE_MIN_ZOOM = 15
 
 /** IDs estáveis das atividades visíveis no mapa (prévia premium). */
 export function buildVisibleActivityIdSet(activities) {
@@ -170,4 +178,104 @@ export function plottableAccommodationsFromProps(fromProps) {
     .filter((a) => isAccommodationPlottable(a))
     .map((a, i) => normalizeMapAccommodation(a, `prop-${i}`))
     .filter(Boolean)
+}
+
+/** @param {Record<string, string> | null | undefined} selectedMealIds */
+export function mealSelectionCacheSignature(selectedMealIds) {
+  return Object.entries(selectedMealIds || {})
+    .map(([slot, id]) => [String(slot), String(id ?? '').trim()])
+    .filter(([, id]) => id)
+    .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]))
+    .map(([slot, id]) => `${slot}=${id}`)
+    .join('|')
+}
+
+/**
+ * A mesma refeição escolhida reaproveita a rota já pedida.
+ * Sem escolha, a chave do dia permanece a antiga.
+ * @param {string} baseKey
+ * @param {Record<string, string> | null | undefined} selectedMealIds
+ */
+export function withMealSelectionCacheKey(baseKey, selectedMealIds) {
+  const sig = mealSelectionCacheSignature(selectedMealIds)
+  return sig ? `${baseKey}:meals:${sig}` : baseKey
+}
+
+/**
+ * @param {{
+ *   zoom?: number,
+ *   showMeals?: boolean,
+ *   activityPositions?: [number, number][],
+ *   viaMealPositions?: [number, number][],
+ *   mealAnchorLegs?: { slotKey?: string, positions: [number, number][] }[],
+ * }} input
+ */
+export function resolveDisplayedDayRoute({
+  zoom,
+  showMeals = true,
+  activityPositions = [],
+  viaMealPositions = [],
+  mealAnchorLegs = [],
+}) {
+  const activity = Array.isArray(activityPositions) ? activityPositions : []
+  const via = Array.isArray(viaMealPositions) ? viaMealPositions : []
+  const anchors = showMeals && Array.isArray(mealAnchorLegs) ? mealAnchorLegs : []
+  const mealsOnRoad =
+    showMeals && Number(zoom) >= MEAL_STOP_ROUTE_MIN_ZOOM && via.length >= 2
+  return {
+    mealsOnRoad,
+    positions: mealsOnRoad ? via : activity,
+    mealAnchorLegs: mealsOnRoad ? [] : anchors,
+  }
+}
+
+/** @param {Record<string, unknown>} act */
+function timelineActivityId(act) {
+  return String(act?.id ?? act?.placeId ?? act?.place_id ?? '').trim()
+}
+
+/**
+ * Pontos plotáveis do dia na ordem do roteiro. Refeição sem coordenada
+ * (não escolhida / sem pin) não entra.
+ * @param {Record<string, unknown>[]} timelineActivities
+ * @param {Map<string, [number, number]>} coordsByActivityId
+ */
+export function coordsForRoutedDay(timelineActivities, coordsByActivityId) {
+  const lookup = coordsByActivityId instanceof Map ? coordsByActivityId : new Map()
+  /** @type {[number, number][]} */
+  const out = []
+  for (const act of sortDayActivities(timelineActivities || [])) {
+    const coords = lookup.get(timelineActivityId(act))
+    if (Array.isArray(coords) && coords.length >= 2) out.push(coords)
+  }
+  return out
+}
+
+/** @param {Array<[number, number] | null | undefined>} orderedCoords */
+export function resolveLodgingLegEndpoints(orderedCoords) {
+  const points = (orderedCoords || []).filter(
+    (p) =>
+      Array.isArray(p) &&
+      p.length >= 2 &&
+      Number.isFinite(Number(p[0])) &&
+      Number.isFinite(Number(p[1])),
+  )
+  if (points.length === 0) return { toFirst: null, fromLast: null }
+  return { toFirst: points[0], fromLast: points[points.length - 1] }
+}
+
+/**
+ * Trocar a refeição não apaga o traço já na tela. Trocar de dia apaga,
+ * para não mostrar a rota do dia anterior.
+ */
+export function shouldBlankRouteForNextFetch({
+  previousDay,
+  nextDay,
+  previousMealSig,
+  nextMealSig,
+}) {
+  if (previousDay == null) return true
+  if (previousDay !== nextDay) return true
+  if (previousMealSig !== nextMealSig) return false
+  return true
 }

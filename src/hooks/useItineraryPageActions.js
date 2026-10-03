@@ -31,7 +31,7 @@ export function useItineraryPageActions({
 
   const handleReoptimizeItinerary = useCallback(async () => {
     const confirmed = globalThis.confirm?.(
-      'Isso recria o roteiro a partir das curtidas TDV e descarta edições manuais do Modificar Roteiro. Continuar?',
+      'Isso recria o roteiro a partir das curtidas do Tinder e descarta edições manuais do Modificar Roteiro. Continuar?',
     )
     if (confirmed) await runRebuildFromTdvLikes()
   }, [runRebuildFromTdvLikes])

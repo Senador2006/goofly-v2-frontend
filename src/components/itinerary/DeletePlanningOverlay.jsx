@@ -97,7 +97,7 @@ export function DeletePlanningOverlay({ open, onClose, onConfirm, deleting = fal
           </div>
 
           <p id="delete-planning-desc" className="mt-4 text-sm text-text-secondary leading-relaxed">
-            Tem certeza que deseja apagar este planejamento? Todas as curtidas, descartes e o progresso do TDV serão
+            Tem certeza que deseja apagar este planejamento? Todas as curtidas, descartes e o progresso do Tinder serão
             perdidos. Esta ação não pode ser desfeita.
           </p>
 
