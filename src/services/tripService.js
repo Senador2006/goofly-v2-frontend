@@ -10,6 +10,15 @@ import api, {
  *   res.body = { data, meta, error, message }
  * `data` é o payload de domínio (trip / lista / itinerário).
  */
+
+function selectedMealIdsQuery(selectedMealIds) {
+  const ids = Object.values(selectedMealIds || {})
+    .map((id) => String(id ?? '').trim())
+    .filter(Boolean)
+    .sort()
+  return ids.length ? JSON.stringify(ids) : ''
+}
+
 export const tripService = {
   getTrips: (params) => api.get('/trips', { params }).then((res) => res.body.data || []),
   getTrip: (id, options = {}) =>
@@ -53,15 +62,43 @@ export const tripService = {
     api
       .post(`/trips/${tripId}/finalize-tdv`, {}, { timeout: AI_TIMEOUT_MS })
       .then((res) => res.body?.data ?? res.data?.data ?? res.data),
-  getItineraryRoute: (tripId, { day = 1, profile = 'foot-walking' } = {}) =>
-    api
+  getItineraryRoute: (
+    tripId,
+    { day = 1, profile = 'foot-walking', selectedMealIds = null, routeMeals = true } = {},
+  ) => {
+    const mealIds = routeMeals ? selectedMealIdsQuery(selectedMealIds) : ''
+    return api
       .get(`/trips/${tripId}/itinerary/route`, {
-        params: { day, profile, _t: Date.now() },
+        params: {
+          day,
+          profile,
+          ...(mealIds ? { mealIds } : {}),
+          ...(routeMeals ? {} : { routeMeals: '0' }),
+          _t: Date.now(),
+        },
         headers: { 'Cache-Control': 'no-cache' },
       })
-      .then((res) => res.body.data),
-  previewItineraryRoute: (tripId, { day = 1, profile = 'foot-walking', activities = [], mealActivities = [] } = {}) =>
+      .then((res) => res.body.data)
+  },
+  previewItineraryRoute: (
+    tripId,
+    {
+      day = 1,
+      profile = 'foot-walking',
+      activities = [],
+      mealActivities = [],
+      selectedMealIds = null,
+      routeMeals = true,
+    } = {},
+  ) =>
     api
-      .post(`/trips/${tripId}/itinerary/route/preview`, { day, profile, activities, mealActivities })
+      .post(`/trips/${tripId}/itinerary/route/preview`, {
+        day,
+        profile,
+        activities,
+        mealActivities,
+        ...(routeMeals && selectedMealIds ? { selectedMealIds } : {}),
+        ...(routeMeals ? {} : { routeMeals: false }),
+      })
       .then((res) => res.body.data),
 }

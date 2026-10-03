@@ -18,7 +18,7 @@ function prefersReducedMotion() {
 function activityFromLike(like, day) {
   const nid =
     globalThis.crypto?.randomUUID?.() || `tdv-${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const title = like?.name || like?.title || 'Parada do TDV'
+  const title = like?.name || like?.title || 'Parada do Tinder'
   const placeId = like?.placeId ?? like?.place_id
   const act = {
     id: nid,

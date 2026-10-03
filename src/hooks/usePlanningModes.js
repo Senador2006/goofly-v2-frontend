@@ -277,7 +277,7 @@ export function usePlanningModes({
       return
     }
     if (likeReplaceOpen) {
-      setTdvLockHint('Conclua ou cancele a modificação do roteiro antes de abrir o TDV.')
+      setTdvLockHint('Conclua ou cancele a modificação do roteiro antes de abrir o Tinder.')
       return
     }
     if (tdvAsOverlay) {

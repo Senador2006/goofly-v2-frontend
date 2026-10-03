@@ -31,7 +31,7 @@ function unwrapDiscover(res) {
 
 function assertDiscoverCircuitClosed() {
   if (!isTdvDiscoverCircuitOpen()) return
-  const err = new Error('TDV discover temporariamente pausado (rate limit)')
+  const err = new Error('Tinder temporariamente pausado. Tente de novo em instantes.')
   err.code = 'TDV_DISCOVER_CIRCUIT_OPEN'
   throw err
 }

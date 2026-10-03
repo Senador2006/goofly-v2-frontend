@@ -7,6 +7,7 @@ import {
   readLatLng,
   formatRouteDistance,
   formatRouteDuration,
+  routeGeometryToLatLngs,
 } from '../../utils/coordinates'
 import { routeDataMatchesDay } from '../../utils/itineraryRouteDay'
 import {
@@ -15,9 +16,15 @@ import {
   buildVisibleActivityIdSet,
   mergeAccommodationsForMap,
   plottableAccommodationsFromProps,
+  coordsForRoutedDay,
+  mealSelectionCacheSignature,
+  resolveDisplayedDayRoute,
   resolveLegPolylinePositions,
+  resolveLodgingLegEndpoints,
   resolveMapMarkers,
   resolvePolylinePositions,
+  shouldBlankRouteForNextFetch,
+  withMealSelectionCacheKey,
   orderDaysForPrefetch,
 } from '../../utils/itineraryMapRoute'
 import {
@@ -183,6 +190,25 @@ function isFiniteLatLng(c) {
  * para evitar salto brusco de zoom.
  * @param {{ coords: number[][], enabled?: boolean }} props
  */
+/** Publica o zoom só no fim do gesto, sem refazer fitBounds nem o layout dos pins. */
+function PublishMapZoom({ onZoom }) {
+  const map = useMap()
+  const onZoomRef = useRef(onZoom)
+  onZoomRef.current = onZoom
+  useEffect(() => {
+    const publish = () => {
+      const z = Number(map.getZoom())
+      if (Number.isFinite(z) && typeof onZoomRef.current === 'function') onZoomRef.current(z)
+    }
+    publish()
+    map.on('zoomend', publish)
+    return () => {
+      map.off('zoomend', publish)
+    }
+  }, [map])
+  return null
+}
+
 function FitBoundsToPoints({ coords, enabled = true }) {
   const map = useMap()
   const prevSigRef = useRef('')
@@ -962,6 +988,8 @@ export function ItineraryDayMap({
 }) {
   const [routeData, setRouteData] = useState(null)
   const [routeDay, setRouteDay] = useState(null)
+  const [routeMealSig, setRouteMealSig] = useState('')
+  const [mapZoom, setMapZoom] = useState(2)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [pinLayout, setPinLayout] = useState(() => ({
@@ -983,6 +1011,10 @@ export function ItineraryDayMap({
   const [mobileStopFocus, setMobileStopFocus] = useState(null)
   const [mobileStopFrameNonce, setMobileStopFrameNonce] = useState(0)
   const fetchGenRef = useRef(0)
+  const shownRouteRef = useRef({ day: null, mealSig: '' })
+  const onMapZoom = useCallback((z) => {
+    setMapZoom((prev) => (Math.abs(prev - z) < 0.01 ? prev : z))
+  }, [])
 
   const onPinLayout = useCallback((result) => {
     setPinLayout({
@@ -1033,6 +1065,11 @@ export function ItineraryDayMap({
       ),
     [mealSlots],
   )
+  const mealSelectionSig = useMemo(
+    () =>
+      `${mealSelectionCacheSignature(showMealsOnMap ? selectedMealIds : {})}:${showMealsOnMap ? 'on' : 'off'}`,
+    [selectedMealIds, showMealsOnMap],
+  )
   const accSig = useMemo(() => accommodationsCacheSignature(accommodations), [accommodations])
   const dayNum = day != null ? Number(day) : null
   const allMealActivities = useMemo(
@@ -1063,33 +1100,40 @@ export function ItineraryDayMap({
 
   useEffect(() => {
     if (!tripId || !dayNum || !Number.isFinite(dayNum) || dayNum < 1 || disabled) {
+      shownRouteRef.current = { day: null, mealSig: '' }
       setRouteData(null)
       setRouteDay(null)
+      setRouteMealSig('')
       setLoading(false)
       setError(null)
       return undefined
     }
 
     if (!shouldFetchDayRoute(activities, accommodations)) {
+      shownRouteRef.current = { day: null, mealSig: '' }
       setRouteData(null)
       setRouteDay(null)
+      setRouteMealSig('')
       setLoading(false)
       setError(null)
       return undefined
     }
 
-    // mealSelection NÃO entra na key: a API devolve todos os mealMarkers;
-    // a opção ativa é filtrada no client (resolveVisibleMealMarkers).
-    const key = preferLocalRoute
+    const dayKey = preferLocalRoute
       ? draftCacheKey(tripId, dayNum, accSig)
       : dayRouteCacheKey(tripId, dayNum, routeRestricted)
+    const key = showMealsOnMap
+      ? withMealSelectionCacheKey(dayKey, selectedMealIds)
+      : `${dayKey}:nomeals`
     const cached = routeCacheByKey.get(key)
-    const combinedSig = `${activitySig}|${mealSig}`
+    const combinedSig = `${activitySig}|${mealSig}|${mealSelectionSig}`
     if (cached && routeDataMatchesDay(cached.data, dayNum)) {
       // Draft: ainda valida assinatura das activities (renomear / editar).
       if (!preferLocalRoute || cached.activitySig === combinedSig) {
+        shownRouteRef.current = { day: dayNum, mealSig: mealSelectionSig }
         setRouteData(cached.data)
         setRouteDay(dayNum)
+        setRouteMealSig(mealSelectionSig)
         setLoading(false)
         setError(null)
         let cancelPrefetch = () => {}
@@ -1117,8 +1161,18 @@ export function ItineraryDayMap({
     const runFetch = () => {
       if (cancelled || fetchGenRef.current !== gen) return
 
-      setRouteData(null)
-      setRouteDay(null)
+      const blank = shouldBlankRouteForNextFetch({
+        previousDay: shownRouteRef.current.day,
+        nextDay: dayNum,
+        previousMealSig: shownRouteRef.current.mealSig,
+        nextMealSig: mealSelectionSig,
+      })
+      if (blank) {
+        shownRouteRef.current = { day: null, mealSig: '' }
+        setRouteData(null)
+        setRouteDay(null)
+        setRouteMealSig('')
+      }
       setLoading(true)
       setError(null)
 
@@ -1137,30 +1191,45 @@ export function ItineraryDayMap({
             profile: ROUTE_PROFILE,
             activities: slimActivitiesForRoutePreview(activities),
             mealActivities: slimActivitiesForRoutePreview(allMealActivities),
+            selectedMealIds,
+            routeMeals: showMealsOnMap,
           })
-        : tripService.getItineraryRoute(tripId, { day: dayNum, profile: ROUTE_PROFILE })
+        : tripService.getItineraryRoute(tripId, {
+            day: dayNum,
+            profile: ROUTE_PROFILE,
+            selectedMealIds,
+            routeMeals: showMealsOnMap,
+          })
 
       request
         .then((data) => {
           if (cancelled || fetchGenRef.current !== gen) return
           if (!routeDataMatchesDay(data, dayNum)) {
             routeCacheByKey.delete(key)
+            shownRouteRef.current = { day: null, mealSig: '' }
             setRouteData(null)
             setRouteDay(null)
+            setRouteMealSig('')
             return
           }
           routeCacheByKey.set(key, {
             data,
             activitySig: preferLocalRoute ? combinedSig : 'live',
           })
+          shownRouteRef.current = { day: dayNum, mealSig: mealSelectionSig }
           setRouteData(data)
           setRouteDay(dayNum)
+          setRouteMealSig(mealSelectionSig)
         })
         .catch((err) => {
           if (cancelled || fetchGenRef.current !== gen) return
           setError(err?.message || 'Não foi possível carregar a rota')
-          setRouteData(null)
-          setRouteDay(null)
+          if (blank) {
+            shownRouteRef.current = { day: null, mealSig: '' }
+            setRouteData(null)
+            setRouteDay(null)
+            setRouteMealSig('')
+          }
         })
         .finally(() => {
           if (!cancelled && fetchGenRef.current === gen) setLoading(false)
@@ -1175,7 +1244,7 @@ export function ItineraryDayMap({
       clearTimeout(timer)
       cancelPrefetch()
     }
-  }, [tripId, dayNum, activitySig, mealSig, accSig, disabled, preferLocalRoute, routeRestricted, activities, accommodations, allMealActivities, prefetchDaysList])
+  }, [tripId, dayNum, activitySig, mealSig, mealSelectionSig, selectedMealIds, showMealsOnMap, accSig, disabled, preferLocalRoute, routeRestricted, activities, accommodations, allMealActivities, prefetchDaysList])
 
   const routePayloadValid =
     routeData != null && routeDay === dayNum && routeDataMatchesDay(routeData, dayNum)
@@ -1284,24 +1353,46 @@ export function ItineraryDayMap({
     [routePayloadValid, routeData, markers, routeRestricted, apiRouteSafeForPreview],
   )
 
+  const viaMealPositions = useMemo(() => {
+    if (!routePayloadValid || routeMealSig !== mealSelectionSig) return []
+    if (routeRestricted && !apiRouteSafeForPreview) return []
+    return routeGeometryToLatLngs(routeData?.routeViaMeals)
+  }, [routePayloadValid, routeMealSig, mealSelectionSig, routeRestricted, apiRouteSafeForPreview, routeData])
+
+  const lodgingEnds = useMemo(() => {
+    const byId = new Map()
+    for (const m of markers) {
+      if (m?.activityId && m.coords) byId.set(String(m.activityId), m.coords)
+    }
+    if (showMealsOnMap) {
+      for (const m of visibleMealMarkers) {
+        const id = String(m?.activityId ?? '')
+        if (id && m.coords) byId.set(id, m.coords)
+      }
+    }
+    const timeline = timelineActivities.length > 0 ? timelineActivities : activities
+    return resolveLodgingLegEndpoints(coordsForRoutedDay(timeline, byId))
+  }, [markers, showMealsOnMap, visibleMealMarkers, timelineActivities, activities])
+
   const legToFirstPositions = useMemo(() => {
-    if (!primaryAccommodation?.coords || markers.length < 1) return []
+    const target = lodgingEnds.toFirst || markers[0]?.coords
+    if (!primaryAccommodation?.coords || !target) return []
     return resolveLegPolylinePositions(
       routePayloadValid ? routeData?.legs?.toFirst : null,
       primaryAccommodation.coords,
-      markers[0].coords,
+      target,
     )
-  }, [primaryAccommodation, markers, routePayloadValid, routeData])
+  }, [lodgingEnds, primaryAccommodation, markers, routePayloadValid, routeData])
 
   const legFromLastPositions = useMemo(() => {
-    if (!primaryAccommodation?.coords || markers.length < 1) return []
-    const last = markers[markers.length - 1]
+    const origin = lodgingEnds.fromLast || markers[markers.length - 1]?.coords
+    if (!primaryAccommodation?.coords || !origin) return []
     return resolveLegPolylinePositions(
       routePayloadValid ? routeData?.legs?.fromLast : null,
-      last.coords,
+      origin,
       primaryAccommodation.coords,
     )
-  }, [primaryAccommodation, markers, routePayloadValid, routeData])
+  }, [lodgingEnds, primaryAccommodation, markers, routePayloadValid, routeData])
 
   const accommodationLegDisplay = useMemo(
     () =>
@@ -1323,7 +1414,7 @@ export function ItineraryDayMap({
   const showAccommodationRoutesToggle =
     !disabled &&
     Boolean(primaryAccommodation?.coords) &&
-    markers.length >= 1 &&
+    (markers.length >= 1 || Boolean(lodgingEnds.toFirst)) &&
     typeof onShowAccommodationRoutesChange === 'function'
 
   const showMealsToggle =
@@ -1442,6 +1533,22 @@ export function ItineraryDayMap({
     warnings.includes('geoapify_not_configured') ||
     warnings.includes('ors_not_configured') ||
     usingMarkerPolylineFallback
+
+  const displayedRoute = useMemo(
+    () =>
+      resolveDisplayedDayRoute({
+        zoom: mapZoom,
+        showMeals: showMealsOnMap,
+        activityPositions: polylinePositions,
+        viaMealPositions,
+        mealAnchorLegs: mealLegPolylines,
+      }),
+    [mapZoom, showMealsOnMap, polylinePositions, viaMealPositions, mealLegPolylines],
+  )
+  const routeLineStraight = displayedRoute.mealsOnRoad
+    ? routeData?.routeViaMealsSource === 'straight_line' ||
+      routeData?.routeViaMeals?.properties?.source === 'straight_line'
+    : showStraightHint
 
   const highlightedMealMarker = useMemo(() => {
     if (highlightedMealSlotKey == null) return null
@@ -1565,14 +1672,15 @@ export function ItineraryDayMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Rotas: <a href="https://www.geoapify.com/">Geoapify</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {polylinePositions.length >= 2 ? (
+        <PublishMapZoom onZoom={onMapZoom} />
+        {displayedRoute.positions.length >= 2 ? (
           <Polyline
-            positions={polylinePositions}
+            positions={displayedRoute.positions}
             pathOptions={{
               color: '#3b82f6',
               weight: 4,
               opacity: 0.85,
-              dashArray: showStraightHint ? '8 8' : undefined,
+              dashArray: routeLineStraight ? '8 8' : undefined,
             }}
           />
         ) : null}
@@ -1613,7 +1721,7 @@ export function ItineraryDayMap({
           />
         ) : null}
         {showMealsOnMap
-          ? mealLegPolylines.map((leg) => (
+          ? displayedRoute.mealAnchorLegs.map((leg) => (
               <Polyline
                 key={`meal-leg-${leg.slotKey}`}
                 positions={leg.positions}
