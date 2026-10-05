@@ -89,8 +89,18 @@ function coordinatesFromPlace(place) {
   return null
 }
 
-/** Coleção de tipos da Places API (novo) — apenas cidades. */
-const CITY_PRIMARY_TYPES = ['(cities)']
+/**
+ * Tipos explícitos da Places API (New) para destino de viagem.
+ * Evita `(cities)` (perde arquipélagos/distritos) e `(regions)` (abre país/estado/bairro).
+ * Até 5 valores; sem `country` nem `administrative_area_level_1`.
+ */
+const CITY_PRIMARY_TYPES = [
+  'locality',
+  'administrative_area_level_2',
+  'postal_town',
+  'archipelago',
+  'colloquial_area',
+]
 
 /**
  * @param {'city' | 'place'} resultKind

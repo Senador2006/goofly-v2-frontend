@@ -135,7 +135,6 @@ export default {
     modify_intro_body:
       'Agora suas curtidas entram no roteiro pelo Modificar Roteiro. Continue explorando no Tinder e, quando quiser, troque, inclua ou remova paradas com as picks que curtir.',
     modify_intro_understood: 'Entendi',
-      'Toque na aba TDV para abrir o Tinder de Viagens sobre o roteiro e usar Modificar Roteiro com suas curtidas.',
     modify_intro_title: 'Curtidas no roteiro',
     modify_intro_line: 'O check abre o Modificar Roteiro.',
     modify_intro_continue: 'Continuar',
