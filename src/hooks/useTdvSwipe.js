@@ -38,7 +38,10 @@ export function useTdvSwipe({
   setDeckUnavailable,
   sessionDeckBaselineRef,
   consumedSinceSessionRef,
+  onChoice,
 }) {
+  const onChoiceRef = useRef(onChoice)
+  onChoiceRef.current = onChoice
   const [swipeFeedback, setSwipeFeedback] = useState(null)
   /** Pilha LIFO: desfazer só a última curtida/descarte (espelha o servidor). */
   const [undoStack, setUndoStack] = useState([])
@@ -102,6 +105,7 @@ export function useTdvSwipe({
       setError('Lugar sem ID válido')
       return
     }
+    onChoiceRef.current?.()
     const placeSnapshot = {
       ...currentPlace,
       id: currentPlace.id ?? placeId,
@@ -222,6 +226,7 @@ export function useTdvSwipe({
       setError('Lugar sem ID válido')
       return
     }
+    onChoiceRef.current?.()
     const placeSnapshot = {
       ...currentPlace,
       id: currentPlace.id ?? placeId,
