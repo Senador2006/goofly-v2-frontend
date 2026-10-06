@@ -50,6 +50,36 @@ test('B14: shouldRetryPrefetchOnEmpty respeita teto de swipes', () => {
   )
 })
 
+test('shouldRetryPrefetchOnEmpty: retry até 4º emergência com swipes < 10', () => {
+  assert.equal(
+    shouldRetryPrefetchOnEmpty({
+      tdvLimit: {
+        unlocked: false,
+        placesSwiped: 6,
+        batchesUsed: 3,
+        freeMaxBatches: 2,
+        freeRefillBatches: 1,
+        freeEmergencyBatches: 1,
+      },
+    }),
+    true
+  )
+  assert.equal(
+    shouldRetryPrefetchOnEmpty({
+      tdvLimit: {
+        unlocked: false,
+        placesSwiped: 6,
+        batchesUsed: 4,
+        freeMaxBatches: 2,
+        freeRefillBatches: 1,
+        freeEmergencyBatches: 1,
+        placesIssued: 6,
+      },
+    }),
+    false
+  )
+})
+
 test('C20: isPaidBatchCap e shouldRetryPrefetchOnEmpty respeitam teto pago', () => {
     assert.equal(
       isPaidBatchCap({

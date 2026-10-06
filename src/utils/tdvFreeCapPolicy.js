@@ -11,6 +11,8 @@ export const FREE_CAP_SOFT_RETRY_MS = 400
 export const FREE_CAP_MAX_PLACES = 10
 /** Espelho do default BE `TDV_PAID_MAX_BATCHES` (C20). */
 export const PAID_MAX_BATCHES_DEFAULT = 30
+/** Espelho do default BE: 2 base + 1 refill + 1 emergência (cache zerado). */
+export const FREE_EMERGENCY_BATCHES_DEFAULT = 1
 
 export function isHardFreeCap(res, swipeCount = 0) {
   if (res?.placesSource !== 'free_cap') return false
@@ -31,7 +33,7 @@ export function isPaidBatchCap(res) {
   return used >= max
 }
 
-/** Prefetch vazio/`none`: retry se ainda há orçamento de swipe + batches (base ou refill). */
+/** Prefetch vazio/`none`: retry se ainda há orçamento de swipe + batches (base, refill ou emergência). */
 export function shouldRetryPrefetchOnEmpty(res, swipeCount = 0) {
   const limit = res?.tdvLimit
   if (!limit) return true
@@ -42,9 +44,12 @@ export function shouldRetryPrefetchOnEmpty(res, swipeCount = 0) {
   const batchesUsed = Number(limit.batchesUsed) || 0
   const freeMaxBatches = Number(limit.freeMaxBatches) || 2
   const freeRefillBatches = Number(limit.freeRefillBatches) || 1
+  const freeEmergencyBatches =
+    Number(limit.freeEmergencyBatches) || FREE_EMERGENCY_BATCHES_DEFAULT
   const refillCap = freeMaxBatches + freeRefillBatches
-  // Base batches, flag de lote curto, ou slot de refill (3º) ainda disponível.
-  if (refillEligible(limit) || batchesUsed < refillCap) return true
+  const absoluteCap = refillCap + freeEmergencyBatches
+  // Base, flag de lote curto, refill (3º) ou emergência (4º, cache zerado).
+  if (refillEligible(limit) || batchesUsed < absoluteCap) return true
   const placesIssued = Number(limit.placesIssued) || 0
   return placesIssued > swiped
 }
