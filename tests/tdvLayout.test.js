@@ -40,7 +40,7 @@ test('TinderView: card relativo à área disponível e finalize antes do histór
   )
   const belowFoldBlock = tinderView.slice(
     tinderView.indexOf('const belowFoldContent'),
-    tinderView.indexOf('if (loading)')
+    tinderView.indexOf('if (loading && !showIntro)')
   )
   assert.match(belowFoldBlock, /\{finalizePanel\}[\s\S]*\{choicesPanel\}/)
 })
