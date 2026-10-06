@@ -61,6 +61,14 @@ describe('Fase 1 — Rotas e redirects', () => {
     assert.match(app, /isAuthenticated \? '\/dashboard' : '\/'/)
   })
 
+  it('401 em rota pública não força o visitante anônimo para /login', () => {
+    const api = read('src/services/api.js')
+    assert.match(api, /function isPublicAuthPath/)
+    assert.match(api, /path === '\/' \|\| path === '\/login' \|\| path === '\/register'/)
+    assert.match(api, /function enforceProtectedSession/)
+    assert.match(api, /if \(!shouldForceLogin\(\)\) return/)
+  })
+
   it('Login navega para /dashboard após sucesso', () => {
     assert.match(read('src/pages/Login.jsx'), /navigate\(['"]\/dashboard['"]\)/)
   })
