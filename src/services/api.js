@@ -171,6 +171,16 @@ export const gatewayApi = createApiClient(gatewayBaseURL)
  */
 let inFlightRefresh = null
 
+/** Landing, login e cadastro: visitante sem sessão permanece na página. */
+export function isPublicAuthPath(pathname) {
+  const path = String(pathname || '/').split('?')[0].replace(/\/+$/, '') || '/'
+  return path === '/' || path === '/login' || path === '/register'
+}
+
+function shouldForceLogin() {
+  return typeof window !== 'undefined' && !isPublicAuthPath(window.location.pathname)
+}
+
 async function hardLogout() {
   if (typeof window === 'undefined') return
   // Best-effort: pede ao gateway para limpar os cookies httpOnly.
@@ -183,9 +193,15 @@ async function hardLogout() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
-  if (!window.location.pathname.includes('/login')) {
+  if (shouldForceLogin()) {
     window.location.href = '/login'
   }
+}
+
+/** 401 em rota protegida encerra a sessão. Em /, /login e /register não navega. */
+function enforceProtectedSession() {
+  if (!shouldForceLogin()) return
+  hardLogout()
 }
 
 async function performRefresh(client) {
@@ -221,9 +237,7 @@ function attachAuthRetry(client) {
         !window.location.pathname.includes('/login')
 
       if (!shouldTryRefresh) {
-        if (status === 401 && typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          hardLogout()
-        }
+        if (status === 401) enforceProtectedSession()
         return Promise.reject(error)
       }
 
@@ -234,7 +248,7 @@ function attachAuthRetry(client) {
         return client.request(original)
       } catch (refreshErr) {
         if (refreshErr.response?.status !== 429) {
-          hardLogout()
+          enforceProtectedSession()
         }
         return Promise.reject(refreshErr)
       }
