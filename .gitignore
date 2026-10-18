@@ -6,13 +6,10 @@ dist
 dist-ssr
 *.local
 
-# Environment
+# Environment — never commit real env files; only .env.example (placeholders)
 .env
-.env.local
-.env.*.local
-.env.example
-.env.development
-.env.production
+.env.*
+!.env.example
 
 # Logs
 npm-debug.log*

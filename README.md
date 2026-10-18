@@ -36,13 +36,18 @@ npm run preview
 
 ## 🔧 Variáveis de Ambiente
 
-Copie `.env.example` para `.env`. Em projetos Vite, variáveis devem ter prefixo `VITE_`:
+Copie `.env.example` para `.env` local. **Não versionar** `.env` / `.env.production` — valores reais só no ambiente local ou no painel do host (Render → Environment), no build.
 
-- `VITE_API_GATEWAY_URL` - URL do API Gateway (ex: `http://localhost:3000/api`)
+Em projetos Vite, variáveis de cliente usam prefixo `VITE_`:
+
+- `VITE_API_GATEWAY_URL` - URL do API Gateway (ex: `http://localhost:3000/api`; prod: `/api/v1`)
 - `VITE_ENV` - Ambiente (development/production)
 - `VITE_DEMO_MODE=true` - Modo demo sem autenticação (opcional)
-- `VITE_META_PIXEL_ID` - Meta Pixel ID (opcional; vazio = não carrega)
-- `VITE_GA_MEASUREMENT_ID` - Google Analytics 4 Measurement ID, ex: `G-XXXXXXXX` (opcional; vazio = não carrega)
+- `VITE_TURNSTILE_SITE_KEY` - Cloudflare Turnstile (site key)
+- `VITE_MERCADOPAGO_PUBLIC_KEY` - Mercado Pago (public key)
+- `VITE_GOOGLE_MAPS_API_KEY` - Google Maps (Places)
+- `VITE_META_PIXEL_ID` - Meta Pixel (opcional; vazio = não carrega)
+- `VITE_GA_MEASUREMENT_ID` - Google Analytics 4, ex: `G-XXXXXXXX` (opcional; vazio = não carrega)
 
 ## 📁 Estrutura
 
