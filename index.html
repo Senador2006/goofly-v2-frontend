@@ -38,6 +38,23 @@
         "description": "Planejador inteligente de viagens com IA"
       }
     </script>
+    <!-- Google Analytics 4 (gtag.js): ID vem de VITE_GA_MEASUREMENT_ID no build. Vazio = não carrega. -->
+    <script>
+      (function () {
+        var measurementId = '%VITE_GA_MEASUREMENT_ID%';
+        if (!measurementId || measurementId.indexOf('%VITE_') === 0) return;
+        window.__GA_MEASUREMENT_ID__ = measurementId;
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        window.gtag = gtag;
+        gtag('js', new Date());
+        gtag('config', measurementId);
+        var s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(measurementId);
+        document.head.appendChild(s);
+      })();
+    </script>
     <!-- Meta Pixel: o ID vem de VITE_META_PIXEL_ID no build. Vazio = não carrega. -->
     <script>
       (function () {

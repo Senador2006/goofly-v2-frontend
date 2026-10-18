@@ -41,6 +41,8 @@ Copie `.env.example` para `.env`. Em projetos Vite, variáveis devem ter prefixo
 - `VITE_API_GATEWAY_URL` - URL do API Gateway (ex: `http://localhost:3000/api`)
 - `VITE_ENV` - Ambiente (development/production)
 - `VITE_DEMO_MODE=true` - Modo demo sem autenticação (opcional)
+- `VITE_META_PIXEL_ID` - Meta Pixel ID (opcional; vazio = não carrega)
+- `VITE_GA_MEASUREMENT_ID` - Google Analytics 4 Measurement ID, ex: `G-XXXXXXXX` (opcional; vazio = não carrega)
 
 ## 📁 Estrutura
 

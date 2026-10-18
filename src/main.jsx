@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AuthProvider } from './context/AuthContext'
+import { GoogleAnalyticsProvider } from './components/analytics/GoogleAnalyticsProvider'
 import { MetaPixelProvider } from './components/analytics/MetaPixelProvider'
 import { ThemeProvider } from './context/ThemeContext'
 import { I18nProvider } from './i18n'
@@ -18,11 +19,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <I18nProvider>
         <ThemeProvider>
           <AuthProvider>
-            <MetaPixelProvider>
-              <ErrorBoundary name="root">
-                <App />
-              </ErrorBoundary>
-            </MetaPixelProvider>
+            <GoogleAnalyticsProvider>
+              <MetaPixelProvider>
+                <ErrorBoundary name="root">
+                  <App />
+                </ErrorBoundary>
+              </MetaPixelProvider>
+            </GoogleAnalyticsProvider>
           </AuthProvider>
         </ThemeProvider>
       </I18nProvider>
