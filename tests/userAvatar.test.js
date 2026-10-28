@@ -22,7 +22,8 @@ describe('UserAvatar — header e perfil', () => {
   it('Header usa UserAvatar e não placeholder bg-gray-200 vazio', () => {
     const header = read('src/components/layout/Header.jsx')
     assert.match(header, /UserAvatar/)
-    assert.match(header, /to="\/settings"/)
+    assert.match(header, /accountWallPath\('\/settings'\)/)
+    assert.match(header, /: '\/settings'/)
     assert.doesNotMatch(header, /bg-gray-200/)
   })
 

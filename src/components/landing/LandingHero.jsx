@@ -32,8 +32,8 @@ export function LandingHero() {
           </p>
 
           <div data-tour="hero-cta" className="flex flex-col sm:flex-row gap-3 mb-10">
-            <Link to="/register" className="landing-btn landing-btn-hero-primary w-full sm:w-auto">
-              Começar agora — é grátis
+            <Link to="/trips/new" className="landing-btn landing-btn-hero-primary w-full sm:w-auto">
+              Começar a planejar
               <Icon name="arrow_forward" className="text-base" />
             </Link>
             <Link to="/login" className="landing-btn landing-btn-hero-secondary w-full sm:w-auto">
@@ -67,7 +67,7 @@ export function LandingHero() {
           {heroDestinations.map((d) => (
             <Link
               key={d.city}
-              to="/register"
+              to="/trips/new"
               className={`landing-dest-card group relative overflow-hidden min-h-[200px] lg:min-h-[230px] ${
                 d.span ? 'col-span-2 min-h-[240px] lg:min-h-[280px]' : ''
               }`}

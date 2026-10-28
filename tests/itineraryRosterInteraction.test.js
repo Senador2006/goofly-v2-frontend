@@ -44,7 +44,7 @@ describe('Itinerary roster interaction', () => {
   it('mudança de dia da parada rastreada sincroniza selectedDay e scroll', () => {
     assert.match(
       editSessionSource,
-      /trackedFollowRef\.current = \{ id: activity\.id, reason: 'day-change' \}/,
+      /trackedFollowRef\.current = \{ id: unitId, reason: 'day-change' \}/,
     )
     assert.match(editSessionSource, /scrollIntoView\(\{ behavior: 'smooth', block: 'nearest' \}\)/)
   })

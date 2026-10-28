@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { tripService } from '../services/tripService'
 import { userService } from '../services/userService'
 import { isRequestAbort } from '../services/api'
@@ -8,6 +9,8 @@ import {
   isOptimizerPending,
   pollItineraryUntilOptimizerReady,
 } from '../utils/optimizerPollHelpers'
+import { useAuth } from '../context/AuthContext'
+import { accountWallPath } from '../utils/accountWall'
 
 export function itineraryActivitiesSignature(itineraryData) {
   return (itineraryData?.activities || [])
@@ -31,6 +34,8 @@ export function itineraryLoadErrorMessage(err) {
  * @param {string | undefined} tripId
  */
 export function useItineraryData(tripId) {
+  const { isGuest } = useAuth()
+  const navigate = useNavigate()
   const [trip, setTrip] = useState(null)
   const [itinerary, setItinerary] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -159,6 +164,10 @@ export function useItineraryData(tripId) {
 
   const runOptimize = useCallback(
     async (mode = 'reorder_existing') => {
+      if (isGuest) {
+        navigate(accountWallPath(`/trips/${tripId}/itinerary`))
+        return
+      }
       setReorganizingStay(true)
       try {
         let data = await tripService.optimizeItinerary(tripId, { mode })
@@ -181,7 +190,7 @@ export function useItineraryData(tripId) {
         setReorganizingStay(false)
       }
     },
-    [tripId],
+    [tripId, isGuest, navigate],
   )
 
   /** C17 — reordena o roteiro atual (preserva Modificar Roteiro). */

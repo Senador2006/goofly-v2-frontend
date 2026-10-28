@@ -3,9 +3,10 @@ import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { Icon } from '../common/Icon'
 import { UserAvatar } from '../common/UserAvatar'
+import { accountWallPath } from '../../utils/accountWall'
 
-export function Header({ title, subtitle, showSearch = false }) {
-  const { user } = useAuth()
+export function Header({ title, subtitle, showSearch: _showSearch = false }) {
+  const { user, isGuest } = useAuth()
   const { isDark, toggleTheme } = useTheme()
   const profileLabel = user?.name?.trim()
     ? `Perfil de ${user.name.trim()}`
@@ -34,7 +35,7 @@ export function Header({ title, subtitle, showSearch = false }) {
           <span className="absolute top-3 right-3 size-2 bg-red-500 rounded-full border-2 border-white dark:border-card-dark" />
         </button>
         <Link
-          to="/settings"
+          to={isGuest ? accountWallPath('/settings') : '/settings'}
           className="rounded-full hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           aria-label={profileLabel}
           title={profileLabel}

@@ -171,21 +171,62 @@ export const gatewayApi = createApiClient(gatewayBaseURL)
  */
 let inFlightRefresh = null
 
-async function hardLogout() {
-  if (typeof window === 'undefined') return
-  // Best-effort: pede ao gateway para limpar os cookies httpOnly.
+async function clearServerCookies() {
   try {
     await api.post('/auth/logout', {}, { _skipAuthRetry: true })
   } catch (_) {
     // Ignora — segue limpando o estado local de qualquer forma.
   }
-  // Limpa resquícios de sessões antigas (pré-cookie) e o cache do user.
+}
+
+function readCachedKind() {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(USER_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed.kind === 'guest' ? 'guest' : 'user'
+  } catch {
+    return null
+  }
+}
+
+function clearLocalSession() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
-  if (!window.location.pathname.includes('/login')) {
+}
+
+async function hardLogout() {
+  if (typeof window === 'undefined') return
+  await clearServerCookies()
+  clearLocalSession()
+  const path = window.location.pathname
+  if (!path.includes('/login') && !path.includes('/register')) {
     window.location.href = '/login'
   }
+}
+
+async function onRefreshFailed() {
+  const kind = readCachedKind()
+  await clearServerCookies()
+  clearLocalSession()
+  if (typeof window === 'undefined') return
+  if (kind === 'user') {
+    const path = window.location.pathname
+    if (!path.includes('/login') && !path.includes('/register')) {
+      window.location.href = '/login'
+    }
+    return
+  }
+  if (kind !== 'guest') return
+  if (sessionStorage.getItem('goofly:guest-remint') === '1') {
+    sessionStorage.removeItem('goofly:guest-remint')
+    return
+  }
+  sessionStorage.setItem('goofly:guest-remint', '1')
+  window.location.reload()
 }
 
 async function performRefresh(client) {
@@ -212,16 +253,18 @@ function attachAuthRetry(client) {
       const original = error.config || {}
       const status = error.response?.status
       const isAuthCall = typeof original.url === 'string' && original.url.includes('/auth/')
+      const path = typeof window !== 'undefined' ? window.location.pathname : ''
+      const onAuthPage = path.includes('/login') || path.includes('/register')
       const shouldTryRefresh =
         status === 401 &&
         !original._retry &&
         !original._skipAuthRetry &&
         !isAuthCall &&
         typeof window !== 'undefined' &&
-        !window.location.pathname.includes('/login')
+        !onAuthPage
 
       if (!shouldTryRefresh) {
-        if (status === 401 && typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        if (status === 401 && typeof window !== 'undefined' && !onAuthPage && !isAuthCall && readCachedKind() === 'user') {
           hardLogout()
         }
         return Promise.reject(error)
@@ -234,7 +277,7 @@ function attachAuthRetry(client) {
         return client.request(original)
       } catch (refreshErr) {
         if (refreshErr.response?.status !== 429) {
-          hardLogout()
+          await onRefreshFailed()
         }
         return Promise.reject(refreshErr)
       }

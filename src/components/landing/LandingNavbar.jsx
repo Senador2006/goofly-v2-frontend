@@ -55,9 +55,9 @@ export function LandingNavbar() {
             <Link to="/login" className="landing-btn landing-btn-nav-secondary">
               Entrar
             </Link>
-            <Link to="/register" className="landing-btn landing-btn-nav-primary">
+            <Link to="/trips/new" className="landing-btn landing-btn-nav-primary">
               <Icon name="flight" />
-              Começar agora
+              Começar a planejar
             </Link>
           </div>
 
@@ -95,9 +95,9 @@ export function LandingNavbar() {
             <Link to="/login" className="landing-btn landing-btn-nav-secondary w-full justify-center">
               Entrar
             </Link>
-            <Link to="/register" className="landing-btn landing-btn-nav-primary w-full justify-center">
+            <Link to="/trips/new" className="landing-btn landing-btn-nav-primary w-full justify-center">
               <Icon name="flight" />
-              Começar agora
+              Começar a planejar
             </Link>
           </div>
         </div>

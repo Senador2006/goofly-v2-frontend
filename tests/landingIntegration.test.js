@@ -50,9 +50,11 @@ describe('Fase 1 — Rotas e redirects', () => {
     assert.match(app, /function PublicRoute[\s\S]*Navigate to="\/dashboard"/)
   })
 
-  it('ProtectedRoute redireciona anônimo para /login', () => {
+  it('ProtectedRoute abre o app em modo visitante e RegisteredRoute exige conta', () => {
     const app = read('src/App.jsx')
-    assert.match(app, /function ProtectedRoute[\s\S]*Navigate to="\/login"/)
+    assert.match(app, /function ProtectedRoute[\s\S]*<SessionRoute>\{children\}<\/SessionRoute>/)
+    assert.match(app, /function SessionRoute[\s\S]*ensureGuest\(/)
+    assert.match(app, /function RegisteredRoute[\s\S]*\/login\?returnTo=/)
   })
 
   it('CatchAllRedirect envia autenticado ao dashboard e anônimo à landing', () => {
@@ -61,12 +63,12 @@ describe('Fase 1 — Rotas e redirects', () => {
     assert.match(app, /isAuthenticated \? '\/dashboard' : '\/'/)
   })
 
-  it('Login navega para /dashboard após sucesso', () => {
-    assert.match(read('src/pages/Login.jsx'), /navigate\(['"]\/dashboard['"]\)/)
+  it('Login volta para returnTo ou /dashboard após sucesso', () => {
+    assert.match(read('src/pages/Login.jsx'), /navigate\(searchParams\.get\('returnTo'\) \? returnTo : '\/dashboard'\)/)
   })
 
-  it('Register navega para /dashboard após sucesso', () => {
-    assert.match(read('src/pages/Register.jsx'), /navigate\(['"]\/dashboard['"]\)/)
+  it('Register volta para returnTo ou /dashboard após sucesso', () => {
+    assert.match(read('src/pages/Register.jsx'), /navigate\(searchParams\.get\('returnTo'\) \? returnTo : '\/dashboard'\)/)
   })
 
   it('Sidebar aponta Início para /dashboard', () => {
@@ -137,7 +139,7 @@ describe('Fase 2 — Landing convergida ao frontend', () => {
     const hero = read('src/components/landing/LandingHero.jsx')
     assert.match(hero, /landing-btn-hero-primary/)
     assert.match(hero, /landing-btn-hero-secondary/)
-    assert.match(hero, /<Link[\s\S]*to="\/register"/)
+    assert.match(hero, /<Link[\s\S]*to="\/trips\/new"/)
     assert.match(hero, /<Link[\s\S]*to="\/login"/)
   })
 

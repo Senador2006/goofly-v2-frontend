@@ -40,6 +40,7 @@ test('C12: useFinalizeTdv — inFlight + sessionStorage resume + poll optimizer'
   assert.match(finalizeHookSrc, /pollItineraryUntilOptimizerReady/)
   assert.match(finalizeHookSrc, /finalizeResumeKey/)
   assert.match(finalizeHookSrc, /onSuccess\?\.\(/)
+  assert.match(finalizeHookSrc, /accountWallPath\(`\/trips\/\$\{tripId\}\/itinerary\?tab=tdv`\)/)
 })
 
 test('C12: usePlanningModes — unlocked=1, tab=tdv, overlay timers, tab guards', () => {

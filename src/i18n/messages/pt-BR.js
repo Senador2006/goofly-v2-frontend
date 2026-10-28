@@ -15,6 +15,18 @@ export default {
       'Planejador inteligente de viagens com Tinder de Viagens, roteiro com IA, recomendações por interesse e checklist de documentos.'
   },
 
+  guest: {
+    banner: 'Visitante. A viagem fica neste navegador e some após 7 dias sem entrar.',
+    banner_short: 'Some em 7 dias sem entrar.',
+    new_trip:
+      'Você está no modo visitante. Esta viagem fica neste navegador e some depois de 7 dias sem você entrar.',
+    dismiss: 'Fechar aviso',
+    login: 'Entrar',
+    register: 'Criar conta',
+    wall: 'Entre ou crie uma conta para continuar. A viagem feita como visitante entra na sua conta.',
+    visitor: 'Visitante'
+  },
+
   nav: {
     dashboard: 'Dashboard',
     trips: 'Minhas viagens',
