@@ -16,7 +16,7 @@ export function LandingOffers() {
             </h2>
           </div>
           <Link
-            to="/register"
+            to="/trips/new"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary border-b border-primary pb-px hover:opacity-70 transition-opacity"
           >
             Montar meu roteiro
@@ -28,7 +28,7 @@ export function LandingOffers() {
           {offers.map((o) => (
             <Link
               key={o.city}
-              to="/register"
+              to="/trips/new"
               className="group block rounded-2xl overflow-hidden bg-white border border-foreground/10 hover:-translate-y-1.5 hover:shadow-lg hover:border-transparent transition-all"
             >
               <div className="aspect-[4/3] overflow-hidden bg-background-light">

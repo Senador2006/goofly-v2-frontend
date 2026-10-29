@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { tripService } from '../services/tripService'
 import { clearItineraryRouteCache } from '../components/itinerary/ItineraryDayMap'
 import {
@@ -12,6 +13,8 @@ import {
   isOptimizerPending,
   pollItineraryUntilOptimizerReady,
 } from '../utils/optimizerPollHelpers'
+import { useAuth } from '../context/AuthContext'
+import { accountWallPath } from '../utils/accountWall'
 
 /**
  * Finalize TDV → optimize + resume pós-refresh (sessionStorage).
@@ -48,6 +51,8 @@ export function useFinalizeTdv({
   const [finalizeError, setFinalizeError] = useState(null)
   const [finalizeResumeKey, setFinalizeResumeKey] = useState(0)
   const finalizeInFlightRef = useRef(false)
+  const { isGuest } = useAuth()
+  const navigate = useNavigate()
 
   const applyFinalizeSuccess = useCallback(
     (tripData, itineraryData) => {
@@ -72,6 +77,10 @@ export function useFinalizeTdv({
 
   const handleFinalizeTdv = useCallback(async () => {
     if (!tripId || finalizeInFlightRef.current) return
+    if (isGuest) {
+      navigate(accountWallPath(`/trips/${tripId}/itinerary?tab=tdv`))
+      return
+    }
     finalizeInFlightRef.current = true
     onBeforeFinalize?.()
     markFinalizeTdvSession(tripId)
@@ -103,7 +112,7 @@ export function useFinalizeTdv({
       finalizeInFlightRef.current = false
       setFinalizingTdv(false)
     }
-  }, [tripId, applyFinalizeSuccess, onBeforeFinalize])
+  }, [tripId, applyFinalizeSuccess, onBeforeFinalize, isGuest, navigate])
 
   const requestFinalizeTdv = useCallback(() => {
     if (!hasFullAccess) {

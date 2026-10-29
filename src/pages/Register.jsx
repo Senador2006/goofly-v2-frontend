@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { AuthPageLayout, AUTH_INPUT_CLASS } from '../components/auth/AuthPageLayout'
 import { TurnstileWidget } from '../components/auth/TurnstileWidget'
 import { Button } from '../components/common/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { safeReturnTo } from '../utils/accountWall'
 import { trackMetaEvent } from '../utils/metaPixel'
 
 export function Register() {
@@ -18,6 +19,8 @@ export function Register() {
   const [loading, setLoading] = useState(false)
   const { register } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const returnTo = safeReturnTo(searchParams.get('returnTo'))
   const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || ''
 
   const handleCaptchaTokenChange = useCallback((token) => {
@@ -48,7 +51,7 @@ export function Register() {
     try {
       await register(name, email, password, captchaToken)
       trackMetaEvent('CompleteRegistration', { status: true, content_name: 'goofly_signup' })
-      navigate('/dashboard')
+      navigate(searchParams.get('returnTo') ? returnTo : '/dashboard')
     } catch (err) {
       setCaptchaToken('')
       setCaptchaResetNonce((value) => value + 1)
@@ -71,7 +74,7 @@ export function Register() {
       footer={
         <p className="mt-6 text-center text-sm text-text-secondary">
           Ja tem conta?{' '}
-          <Link to="/login" className="text-primary font-bold hover:underline">
+          <Link to={`/login${searchParams.toString() ? `?${searchParams.toString()}` : ''}`} className="text-primary font-bold hover:underline">
             Entrar
           </Link>
         </p>

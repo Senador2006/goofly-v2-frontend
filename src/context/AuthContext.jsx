@@ -88,6 +88,7 @@ export function AuthProvider({ children }) {
         setUser(userData)
         setSessionVerified(true)
         cacheUser(userData)
+        sessionStorage.removeItem('goofly:guest-remint')
       })
       .catch((err) => {
         if (cancelled) return
@@ -106,6 +107,26 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  const ensureGuest = useCallback(async () => {
+    if (ensureGuest.inflight) return ensureGuest.inflight
+    ensureGuest.inflight = api
+      .post('/auth/guest', {})
+      .then((res) => {
+        const payload = res.body?.data || res.data?.data || res.data || {}
+        const userData = payload.user
+        if (!userData) return null
+        setUser(userData)
+        setSessionVerified(true)
+        cacheUser(userData)
+        sessionStorage.removeItem('goofly:guest-remint')
+        return userData
+      })
+      .finally(() => {
+        ensureGuest.inflight = null
+      })
+    return ensureGuest.inflight
   }, [])
 
   const login = useCallback(async (email, password, captchaToken) => {
@@ -160,14 +181,16 @@ export function AuthProvider({ children }) {
       register,
       logout,
       refreshUser,
+      ensureGuest,
       applyUserUpdate,
       loading,
       sessionVerified,
-      // Não confiar só no cache: autenticado só após boot e com user presente.
       isAuthenticated: !!user && !loading,
+      isGuest: !!user && !loading && user.kind === 'guest',
+      isRegistered: !!user && !loading && user.kind !== 'guest',
       isAdmin,
     }),
-    [user, login, register, logout, refreshUser, applyUserUpdate, loading, sessionVerified, isAdmin]
+    [user, login, register, logout, refreshUser, ensureGuest, applyUserUpdate, loading, sessionVerified, isAdmin]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

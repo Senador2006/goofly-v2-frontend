@@ -2,11 +2,14 @@ import { useLayoutEffect, useRef } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Icon } from '../common/Icon'
 import { MOBILE_NAV_ITEMS } from '../../config/navigation'
+import { useAuth } from '../../context/AuthContext'
+import { accountWallPath } from '../../utils/accountWall'
 
 const MOBILE_NAV_HEIGHT_VAR = '--goofly-mobile-nav-height'
 
 export function MobileNav({ className = '' }) {
   const navRef = useRef(null)
+  const { isGuest } = useAuth()
 
   useLayoutEffect(() => {
     const el = navRef.current
@@ -36,10 +39,12 @@ export function MobileNav({ className = '' }) {
       aria-label="Navegação principal"
       className={`lg:hidden fixed bottom-0 left-0 right-0 z-[1100] bg-white dark:bg-card-dark border-t border-border-light dark:border-border-dark px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex justify-around ${className}`.trim()}
     >
-      {MOBILE_NAV_ITEMS.map(({ to, icon, label }) => (
+      {MOBILE_NAV_ITEMS.map(({ to, icon, label }) => {
+        const guestWall = isGuest && (to === '/memories' || to === '/settings')
+        return (
         <NavLink
           key={to}
-          to={to}
+          to={guestWall ? accountWallPath(to) : to}
           aria-label={to === '/settings' ? 'Perfil e configurações' : undefined}
           className={({ isActive }) =>
             `flex flex-col items-center gap-1 py-2 px-2 rounded-full transition-colors min-w-[56px] ${
@@ -50,7 +55,8 @@ export function MobileNav({ className = '' }) {
           <Icon name={icon} className="text-2xl" />
           <span className="text-[10px] font-bold leading-none">{label}</span>
         </NavLink>
-      ))}
+        )
+      })}
     </nav>
   )
 }

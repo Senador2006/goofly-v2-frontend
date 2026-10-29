@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import { Layout } from './components/layout/Layout'
 import { Login } from './pages/Login'
@@ -45,8 +45,52 @@ function RouteFallback() {
   )
 }
 
-function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth()
+function SessionRoute({ children }) {
+  const { isAuthenticated, loading, ensureGuest } = useAuth()
+  const [startingGuest, setStartingGuest] = useState(false)
+  const [guestError, setGuestError] = useState(false)
+
+  useEffect(() => {
+    if (loading || isAuthenticated) return undefined
+    let cancelled = false
+    setStartingGuest(true)
+    setGuestError(false)
+    ensureGuest()
+      .then((user) => {
+        if (!cancelled && !user) setGuestError(true)
+      })
+      .catch(() => {
+        if (!cancelled) setGuestError(true)
+      })
+      .finally(() => {
+        setStartingGuest(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loading, isAuthenticated, ensureGuest])
+
+  if (guestError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark px-6 text-center">
+        <p>Não foi possível iniciar o modo visitante. Atualize a página e tente de novo.</p>
+      </div>
+    )
+  }
+
+  if (loading || startingGuest || !isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
+        <div className="animate-pulse text-primary text-4xl">...</div>
+      </div>
+    )
+  }
+  return children
+}
+
+function RegisteredRoute({ children }) {
+  const { isRegistered, loading } = useAuth()
+  const location = useLocation()
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
@@ -54,14 +98,19 @@ function ProtectedRoute({ children }) {
       </div>
     )
   }
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
+  if (!isRegistered) {
+    const returnTo = `${location.pathname}${location.search}`
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />
   }
   return children
 }
 
+function ProtectedRoute({ children }) {
+  return <SessionRoute>{children}</SessionRoute>
+}
+
 function PublicRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth()
+  const { isRegistered, loading } = useAuth()
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
@@ -69,14 +118,14 @@ function PublicRoute({ children }) {
       </div>
     )
   }
-  if (isAuthenticated) {
+  if (isRegistered) {
     return <Navigate to="/dashboard" replace />
   }
   return children
 }
 
 export function LandingOrRedirect() {
-  const { isAuthenticated, loading } = useAuth()
+  const { isRegistered, loading } = useAuth()
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -84,7 +133,7 @@ export function LandingOrRedirect() {
       </div>
     )
   }
-  if (isAuthenticated) {
+  if (isRegistered) {
     return <Navigate to="/dashboard" replace />
   }
   return (
@@ -131,11 +180,11 @@ export default function App() {
           path="/admin"
           element={
             <RouteErrorBoundary name="app">
-              <ProtectedRoute>
+              <RegisteredRoute>
                 <AdminRoute>
                   <AdminDashboard />
                 </AdminRoute>
-              </ProtectedRoute>
+              </RegisteredRoute>
             </RouteErrorBoundary>
           }
         />
@@ -150,10 +199,10 @@ export default function App() {
           <Route path="/trips" element={<TripList />} />
           <Route path="/trips/new" element={<NewTrip />} />
           <Route path="/trips/:tripId/itinerary" element={<Itinerary />} />
-          <Route path="/pagamento" element={<Pagamento />} />
+          <Route path="/pagamento" element={<RegisteredRoute><Pagamento /></RegisteredRoute>} />
           <Route path="/discover" element={<Discover />} />
-          <Route path="/memories" element={<Memories />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/memories" element={<RegisteredRoute><Memories /></RegisteredRoute>} />
+          <Route path="/settings" element={<RegisteredRoute><Settings /></RegisteredRoute>} />
         </Route>
         <Route path="*" element={<CatchAllRedirect />} />
       </Routes>

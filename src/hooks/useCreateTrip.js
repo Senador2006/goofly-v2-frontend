@@ -69,6 +69,18 @@ export function useCreateTrip({
       navigate(`/trips/${trip.id}/itinerary?tab=tdv`)
     } catch (err) {
       if (isRequestAbort(err) || ac.signal.aborted) return
+      if (err.response?.data?.error?.code === 'GUEST_TRIP_LIMIT') {
+        try {
+          const trips = await tripService.getTrips()
+          const existing = Array.isArray(trips) ? trips[0] : null
+          if (existing?.id) {
+            navigate(`/trips/${existing.id}/itinerary?tab=tdv`)
+            return
+          }
+        } catch {
+          // cai no aviso abaixo
+        }
+      }
       setApiError(err.response?.data?.error?.message || err.message || 'Erro ao criar viagem')
       requestAnimationFrame(() => {
         errorBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })

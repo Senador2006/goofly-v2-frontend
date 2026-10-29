@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { GuestSessionBanner } from '../auth/GuestSessionBanner'
 import { Icon } from '../common/Icon'
 import { Button } from '../common/Button'
 import { ItineraryModeTabs } from './ItineraryModeTabs'
@@ -7,6 +9,7 @@ import { ItineraryOptimizerInsightsPopover } from './ItineraryOptimizerInsights'
 import { getPremiumDayTotals } from '../../utils/itineraryPremiumHelpers'
 
 export function ItineraryHeader({ view, modes, edit, actions, page }) {
+  const { isGuest } = useAuth()
   const modeTabs = (
     <ItineraryModeTabs
       activeTab={modes.activeModeTab}
@@ -34,15 +37,18 @@ export function ItineraryHeader({ view, modes, edit, actions, page }) {
       }`}
     >
       <div
-        className={`flex items-center gap-2 text-[10px] sm:text-xs font-semibold text-text-secondary overflow-x-auto no-scrollbar ${
+        className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] sm:text-xs font-semibold text-text-secondary ${
           modes.tdvUiActive ? 'mb-1 lg:mb-3' : 'mb-2 sm:mb-3'
         }`}
       >
-        <span>Início</span>
-        <Icon name="chevron_right" className="text-[10px] shrink-0" />
-        <span>Roteiros</span>
-        <Icon name="chevron_right" className="text-[10px] shrink-0" />
-        <span className="text-[#1c1c0d] dark:text-white truncate">{page.destLabel}</span>
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
+          <span>Início</span>
+          <Icon name="chevron_right" className="text-[10px] shrink-0" />
+          <span>Roteiros</span>
+          <Icon name="chevron_right" className="text-[10px] shrink-0" />
+          <span className="text-[#1c1c0d] dark:text-white truncate">{page.destLabel}</span>
+        </div>
+        {isGuest ? <GuestSessionBanner embedded /> : null}
       </div>
       <div className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${modes.tdvUiActive ? 'gap-1.5 lg:gap-3' : 'gap-3'}`}>
         <div className="min-w-0">

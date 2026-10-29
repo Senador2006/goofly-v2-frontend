@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { placeService } from '../services/placeService'
 import { tripService } from '../services/tripService'
 import { clearItineraryRouteCache } from '../components/itinerary/ItineraryDayMap'
@@ -13,6 +14,8 @@ import {
   sortDayActivities,
   swapActivitiesBetweenDays,
 } from '../utils/itineraryDayHelpers'
+import { useAuth } from '../context/AuthContext'
+import { accountWallPath } from '../utils/accountWall'
 import { filterRouteActivities } from '../utils/itineraryMealHelpers'
 import {
   assignDayUnitToDay,
@@ -62,6 +65,8 @@ export function useRoteiroEditSession({
   discardRoteiroEditRef,
   onStartEdit,
 }) {
+  const { isGuest } = useAuth()
+  const navigate = useNavigate()
   const [roteiroEditOpen, setRoteiroEditOpen] = useState(false)
   const [draftActivities, setDraftActivities] = useState(null)
   const [savingRoteiro, setSavingRoteiro] = useState(false)
@@ -322,6 +327,10 @@ export function useRoteiroEditSession({
 
   const handleSaveRoteiroDraft = useCallback(async () => {
     if (!tripId || !draftActivities) return
+    if (isGuest) {
+      navigate(accountWallPath(`/trips/${tripId}/itinerary`))
+      return
+    }
     setSavingRoteiro(true)
     setError(null)
     try {
@@ -351,6 +360,8 @@ export function useRoteiroEditSession({
     setError,
     setItinerary,
     handleCancelRoteiroEdit,
+    isGuest,
+    navigate,
   ])
 
   const handleStartModifyRoteiro = useCallback(async (likesFromTdv) => {
@@ -382,6 +393,10 @@ export function useRoteiroEditSession({
 
   const handleConcludeModifyRoteiro = useCallback(async () => {
     if (!tripId || !likeReplace.draftActivities) return
+    if (isGuest) {
+      navigate(accountWallPath(`/trips/${tripId}/itinerary`))
+      return
+    }
     likeReplace.setSaving(true)
     setError(null)
     try {
@@ -410,6 +425,8 @@ export function useRoteiroEditSession({
     dateToDayMap,
     dragListContext.dayNum,
     setItinerary,
+    isGuest,
+    navigate,
   ])
 
   const handleAddRoteiroStop = useCallback(() => {

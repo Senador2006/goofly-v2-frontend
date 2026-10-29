@@ -49,10 +49,10 @@ describe('U-01 — páginas de auth respeitam dark mode', () => {
   })
 
   it('Login e Register mantêm fluxo de navegação intacto', () => {
-    assert.match(read('src/pages/Login.jsx'), /navigate\(['"]\/dashboard['"]\)/)
-    assert.match(read('src/pages/Register.jsx'), /navigate\(['"]\/dashboard['"]\)/)
-    assert.match(read('src/pages/Login.jsx'), /to="\/register"/)
-    assert.match(read('src/pages/Register.jsx'), /to="\/login"/)
+    assert.match(read('src/pages/Login.jsx'), /navigate\(searchParams\.get\('returnTo'\) \? returnTo : '\/dashboard'\)/)
+    assert.match(read('src/pages/Register.jsx'), /navigate\(searchParams\.get\('returnTo'\) \? returnTo : '\/dashboard'\)/)
+    assert.match(read('src/pages/Login.jsx'), /to=\{`\/register/)
+    assert.match(read('src/pages/Register.jsx'), /to=\{`\/login/)
   })
 
   it('Register mantém TurnstileWidget', () => {

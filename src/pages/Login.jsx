@@ -1,10 +1,12 @@
 import { useCallback, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { AuthPageLayout, AUTH_INPUT_CLASS } from '../components/auth/AuthPageLayout'
 import { TurnstileWidget } from '../components/auth/TurnstileWidget'
 import { Button } from '../components/common/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { safeReturnTo } from '../utils/accountWall'
+import { useT } from '../i18n'
 
 export function Login() {
   useDocumentTitle('Entrar')
@@ -16,6 +18,9 @@ export function Login() {
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const t = useT()
+  const returnTo = safeReturnTo(searchParams.get('returnTo'))
   const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || ''
 
   const handleCaptchaTokenChange = useCallback((token) => {
@@ -39,7 +44,7 @@ export function Login() {
     setLoading(true)
     try {
       await login(email, password, captchaToken)
-      navigate('/dashboard')
+      navigate(searchParams.get('returnTo') ? returnTo : '/dashboard')
     } catch (err) {
       setCaptchaToken('')
       setCaptchaResetNonce((value) => value + 1)
@@ -61,12 +66,15 @@ export function Login() {
       footer={
         <p className="mt-6 text-center text-sm text-text-secondary">
           Não tem conta?{' '}
-          <Link to="/register" className="text-primary font-bold hover:underline">
+          <Link to={`/register${searchParams.toString() ? `?${searchParams.toString()}` : ''}`} className="text-primary font-bold hover:underline">
             Cadastre-se
           </Link>
         </p>
       }
     >
+      {searchParams.get('returnTo') ? (
+        <p className="mb-4 text-sm text-text-secondary">{t('guest.wall')}</p>
+      ) : null}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-bold mb-2 text-text-secondary">Email</label>
