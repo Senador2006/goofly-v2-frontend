@@ -171,6 +171,16 @@ export const gatewayApi = createApiClient(gatewayBaseURL)
  */
 let inFlightRefresh = null
 
+/** Landing, login e cadastro: visitante sem sessão permanece na página. */
+export function isPublicAuthPath(pathname) {
+  const path = String(pathname || '/').split('?')[0].replace(/\/+$/, '') || '/'
+  return path === '/' || path === '/login' || path === '/register'
+}
+
+function shouldForceLogin() {
+  return typeof window !== 'undefined' && !isPublicAuthPath(window.location.pathname)
+}
+
 async function clearServerCookies() {
   try {
     await api.post('/auth/logout', {}, { _skipAuthRetry: true })
@@ -202,8 +212,7 @@ async function hardLogout() {
   if (typeof window === 'undefined') return
   await clearServerCookies()
   clearLocalSession()
-  const path = window.location.pathname
-  if (!path.includes('/login') && !path.includes('/register')) {
+  if (shouldForceLogin()) {
     window.location.href = '/login'
   }
 }
@@ -214,19 +223,27 @@ async function onRefreshFailed() {
   clearLocalSession()
   if (typeof window === 'undefined') return
   if (kind === 'user') {
-    const path = window.location.pathname
-    if (!path.includes('/login') && !path.includes('/register')) {
+    if (shouldForceLogin()) {
       window.location.href = '/login'
     }
     return
   }
   if (kind !== 'guest') return
+  if (isPublicAuthPath(window.location.pathname)) return
   if (sessionStorage.getItem('goofly:guest-remint') === '1') {
     sessionStorage.removeItem('goofly:guest-remint')
     return
   }
   sessionStorage.setItem('goofly:guest-remint', '1')
   window.location.reload()
+}
+
+/** 401 em rota protegida encerra a sessão. Em /, /login e /register não navega. */
+async function enforceProtectedSession() {
+  if (!shouldForceLogin()) return
+  const kind = readCachedKind()
+  if (kind === 'guest') return onRefreshFailed()
+  if (kind === 'user') return hardLogout()
 }
 
 async function performRefresh(client) {
@@ -264,9 +281,7 @@ function attachAuthRetry(client) {
         !onAuthPage
 
       if (!shouldTryRefresh) {
-        if (status === 401 && typeof window !== 'undefined' && !onAuthPage && !isAuthCall && readCachedKind() === 'user') {
-          hardLogout()
-        }
+        if (status === 401 && !isAuthCall) await enforceProtectedSession()
         return Promise.reject(error)
       }
 

@@ -220,13 +220,10 @@ export function TinderView({
     }),
     [],
   )
-  const showCoach =
-    introAcknowledged &&
-    Boolean(currentPlace) &&
-    !coachSeen &&
-    !reducedMotion &&
-    !finalizingTdv
-  const showActionLabels = (coachSeen || reducedMotion) && !showCoach && !hintsDismissed
+  const tdvRootRef = useRef(null)
+  const showIntro = !introAcknowledged && (loading || introReady)
+  const showCoach = showIntro && !coachSeen && !reducedMotion && !finalizingTdv
+  const showActionLabels = !showCoach && !hintsDismissed
 
   const SHEET_DISMISS_PX = 88
   const SHEET_DISMISS_MS = 340
@@ -601,7 +598,10 @@ export function TinderView({
   )
 
   const belowFoldContent = (
-    <div className="flex h-full min-h-0 w-full flex-col gap-2.5">
+    <div
+      className={`flex h-full min-h-0 w-full flex-col gap-2.5 ${showIntro ? 'pointer-events-none opacity-60' : ''}`}
+      aria-hidden={showIntro || undefined}
+    >
       <div className="mx-auto flex w-full max-w-xl shrink-0 justify-center lg:mx-0 lg:max-w-none lg:justify-start">
         {likesChip}
       </div>
@@ -610,22 +610,7 @@ export function TinderView({
     </div>
   )
 
-  if (!introAcknowledged && (loading || introReady)) {
-    return (
-      <TdvIntroScreen
-        loading={loading}
-        ready={introReady}
-        isPostUnlock={isPostUnlock}
-        onStart={() => {
-          if (isPostUnlock) writeModifyIntroAcknowledged(tripId)
-          else writeIntroAcknowledged(tripId)
-          setIntroAcknowledged(true)
-        }}
-      />
-    )
-  }
-
-  if (loading) {
+  if (loading && !showIntro) {
     return (
       <div className="flex h-full min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#f0f0ee] p-6 dark:bg-[#0e0e0e]" role="status" aria-live="polite">
         <LoadingSpinner />
@@ -633,7 +618,7 @@ export function TinderView({
     )
   }
 
-  if (error) {
+  if (error && !showIntro) {
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden bg-[#f0f0ee] p-6 dark:bg-[#0e0e0e]">
         <div className="w-full max-w-md rounded-2xl border border-red-200/80 bg-red-50 p-4 text-center text-sm text-red-700 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-300" role="alert">
@@ -683,10 +668,7 @@ export function TinderView({
         <button
           ref={dislikeBtnRef}
           type="button"
-          onClick={() => {
-            handleDislike()
-            if (showCoach) finishCoach()
-          }}
+          onClick={handleDislike}
           disabled={finalizingTdv}
           className={dislikeBtnClass}
           aria-label="Descartar"
@@ -701,10 +683,7 @@ export function TinderView({
         <button
           ref={likeBtnRef}
           type="button"
-          onClick={() => {
-            handleLike()
-            if (showCoach) finishCoach()
-          }}
+          onClick={handleLike}
           disabled={finalizingTdv}
           className={likeBtnClass}
           aria-label="Curtir"
@@ -745,7 +724,6 @@ export function TinderView({
           ref={finalizeBtnRef}
           type="button"
           onClick={() => {
-            if (showCoach) finishCoach()
             setFinalizeConfirmOpen((open) => {
               if (open) setBalloonLockWarnOpen(false)
               return !open
@@ -870,8 +848,11 @@ export function TinderView({
   ) : null
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f0f0ee] dark:bg-[#0e0e0e]">
-      {placesSource === 'mock' && (
+    <div
+      ref={tdvRootRef}
+      className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#f0f0ee] dark:bg-[#0e0e0e]"
+    >
+      {placesSource === 'mock' && !showIntro && (
         <div className="flex-shrink-0 border-b border-amber-400/30 bg-amber-50 px-3 py-1.5 dark:border-amber-500/20 dark:bg-amber-500/10 sm:px-4">
           <p className="mx-auto max-w-3xl text-center text-[11px] text-amber-900 dark:text-amber-200 sm:text-xs">
             {t('tdv.mock_banner')}
@@ -884,7 +865,19 @@ export function TinderView({
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
             <div className="absolute inset-0">
-              {currentPlace ? (
+              {showIntro ? (
+                <TdvIntroScreen
+                  loading={loading}
+                  ready={introReady}
+                  isPostUnlock={isPostUnlock}
+                  onStart={() => {
+                    if (showCoach) finishCoach()
+                    if (isPostUnlock) writeModifyIntroAcknowledged(tripId)
+                    else writeIntroAcknowledged(tripId)
+                    setIntroAcknowledged(true)
+                  }}
+                />
+              ) : currentPlace ? (
                 placeCard
               ) : freeCapReached && !isPostUnlock ? (
                 <TdvPaywall
@@ -962,20 +955,22 @@ export function TinderView({
                 {undoNotice}
               </p>
             ) : null}
-            <div className="flex w-full max-w-md items-center justify-between px-1 lg:max-w-lg lg:px-3">
+            {/* Na intro os botões só ilustram o guia: sem lugar na tela, nada a curtir. */}
+            <div
+              className={`flex w-full max-w-md items-center justify-between px-1 lg:max-w-lg lg:px-3 ${
+                showIntro ? 'pointer-events-none' : ''
+              }`}
+              aria-hidden={showIntro || undefined}
+            >
               {/* Legenda absoluta: o texto não altera a posição dos círculos. */}
               {actionButtons}
             </div>
           </div>
-          <TdvActionCoach
-            active={showCoach}
-            isPostUnlock={isPostUnlock}
-            anchors={coachAnchors}
-            onFinish={finishCoach}
-          />
 
           {/* Mobile: histórico à direita; pontinhos ficam à esquerda (PlaceCardGallery) */}
-          <div className="absolute right-3 top-3 z-[45] lg:hidden">{historyTriggerButton}</div>
+          {showIntro ? null : (
+            <div className="absolute right-3 top-3 z-[45] lg:hidden">{historyTriggerButton}</div>
+          )}
         </div>
 
         {/* Lateral alinhada ao bloco do card — mesmo fundo, sem faixa morta na junção */}
@@ -983,6 +978,14 @@ export function TinderView({
           {belowFoldContent}
         </aside>
       </div>
+
+      <TdvActionCoach
+        active={showCoach}
+        isPostUnlock={isPostUnlock}
+        anchors={coachAnchors}
+        containerRef={tdvRootRef}
+        onFinish={finishCoach}
+      />
 
       {mobilePanelOpen
         ? createPortal(
