@@ -143,6 +143,19 @@ export function AuthProvider({ children }) {
     return res.data
   }, [refreshUser])
 
+  const loginWithGoogle = useCallback(async (credential) => {
+    // Mesmo fluxo do login: o gateway seta os cookies httpOnly e o body traz só `user`.
+    const res = await api.post('/auth/google', { credential })
+    const payload = res.body?.data || res.data?.data || res.data || {}
+    const userData = payload.user || (await refreshUser())
+    if (userData) {
+      setUser(userData)
+      setSessionVerified(true)
+      cacheUser(userData)
+    }
+    return res.data
+  }, [refreshUser])
+
   const register = useCallback(async (name, email, password, captchaToken) => {
     const res = await gatewayApi.post('/auth/register', { name, email, password, captchaToken })
     const payload = res.body?.data || res.data?.data || res.data || {}
@@ -178,6 +191,7 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       login,
+      loginWithGoogle,
       register,
       logout,
       refreshUser,
@@ -190,7 +204,7 @@ export function AuthProvider({ children }) {
       isRegistered: !!user && !loading && user.kind !== 'guest',
       isAdmin,
     }),
-    [user, login, register, logout, refreshUser, ensureGuest, applyUserUpdate, loading, sessionVerified, isAdmin]
+    [user, login, loginWithGoogle, register, logout, refreshUser, ensureGuest, applyUserUpdate, loading, sessionVerified, isAdmin]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

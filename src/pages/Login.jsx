@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { AuthPageLayout, AUTH_INPUT_CLASS } from '../components/auth/AuthPageLayout'
+import { GoogleSignInButton } from '../components/auth/GoogleSignInButton'
 import { TurnstileWidget } from '../components/auth/TurnstileWidget'
 import { Button } from '../components/common/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -16,16 +17,31 @@ export function Login() {
   const [captchaResetNonce, setCaptchaResetNonce] = useState(0)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { login } = useAuth()
+  const { login, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const t = useT()
   const returnTo = safeReturnTo(searchParams.get('returnTo'))
   const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || ''
+  const passwordReset = location.state?.passwordReset === true
 
   const handleCaptchaTokenChange = useCallback((token) => {
     setCaptchaToken(token)
   }, [])
+
+  const handleGoogleCredential = async (credential) => {
+    setError('')
+    setLoading(true)
+    try {
+      await loginWithGoogle(credential)
+      navigate(searchParams.get('returnTo') ? returnTo : '/dashboard')
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Não foi possível entrar com o Google. Tente novamente.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -72,6 +88,11 @@ export function Login() {
         </p>
       }
     >
+      {passwordReset && !error ? (
+        <div className="mb-4 p-3 bg-green-500/10 text-green-700 dark:text-green-400 rounded-xl text-sm">
+          Senha redefinida com sucesso. Entre com a nova senha.
+        </div>
+      ) : null}
       {searchParams.get('returnTo') ? (
         <p className="mb-4 text-sm text-text-secondary">{t('guest.wall')}</p>
       ) : null}
@@ -98,6 +119,11 @@ export function Login() {
             className={AUTH_INPUT_CLASS}
             placeholder="********"
           />
+          <div className="mt-2 text-right">
+            <Link to="/forgot-password" className="text-sm text-primary font-bold hover:underline">
+              Esqueci minha senha
+            </Link>
+          </div>
         </div>
         <div>
           <label className="block text-sm font-bold mb-2 text-text-secondary">Verificacao de seguranca</label>
@@ -111,6 +137,16 @@ export function Login() {
           {loading ? 'Entrando...' : 'Entrar'}
         </Button>
       </form>
+      {import.meta.env.VITE_GOOGLE_CLIENT_ID ? (
+        <>
+          <div className="my-6 flex items-center gap-3 text-xs text-text-secondary uppercase tracking-widest">
+            <span className="h-px flex-1 bg-border-light dark:bg-border-dark" />
+            ou
+            <span className="h-px flex-1 bg-border-light dark:bg-border-dark" />
+          </div>
+          <GoogleSignInButton onCredential={handleGoogleCredential} onError={setError} />
+        </>
+      ) : null}
     </AuthPageLayout>
   )
 }
