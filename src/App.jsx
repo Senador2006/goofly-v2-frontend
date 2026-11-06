@@ -4,6 +4,8 @@ import { useAuth } from './context/AuthContext'
 import { Layout } from './components/layout/Layout'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
+import { ForgotPassword } from './pages/ForgotPassword'
+import { ResetPassword } from './pages/ResetPassword'
 import { AdminRoute } from './components/AdminRoute'
 import { LoadingSpinner } from './components/common/LoadingSpinner'
 import { RouteErrorBoundary } from './components/common/ErrorBoundary'
@@ -173,6 +175,20 @@ export default function App() {
           <RouteErrorBoundary name="auth">
             <PublicRoute>
               <Register />
+            </PublicRoute>
+          </RouteErrorBoundary>
+        } />
+        <Route path="/forgot-password" element={
+          <RouteErrorBoundary name="auth">
+            <PublicRoute>
+              <ForgotPassword />
+            </PublicRoute>
+          </RouteErrorBoundary>
+        } />
+        <Route path="/reset-password" element={
+          <RouteErrorBoundary name="auth">
+            <PublicRoute>
+              <ResetPassword />
             </PublicRoute>
           </RouteErrorBoundary>
         } />
