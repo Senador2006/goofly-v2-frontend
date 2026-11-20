@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* PasswordInput — esconde o botão "revelar" nativo do Edge/IE para não duplicar
+ * o toggle próprio do componente. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 /* DateInput — overlay nativo no ícone: hit-target do picker cobre a área inteira
  * (necessário no Safari iOS, onde showPicker para type=date não é suportado). */
 .date-input-picker {
