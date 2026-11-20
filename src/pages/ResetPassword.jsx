@@ -1,9 +1,17 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../services/api'
-import { AuthPageLayout, AUTH_INPUT_CLASS } from '../components/auth/AuthPageLayout'
+import { AuthPageLayout } from '../components/auth/AuthPageLayout'
+import { PasswordInput } from '../components/auth/PasswordInput'
+import { PasswordMatchHint, PasswordRequirements } from '../components/auth/PasswordRequirements'
 import { Button } from '../components/common/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import {
+  PASSWORD_MISMATCH_MESSAGE,
+  PASSWORD_RULES_ATTR,
+  passwordsMatch,
+  validateNewPassword,
+} from '../utils/authPasswordValidation'
 
 export function ResetPassword() {
   useDocumentTitle('Redefinir senha')
@@ -11,16 +19,23 @@ export function ResetPassword() {
   const token = searchParams.get('token') || ''
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [confirmTouched, setConfirmTouched] = useState(false)
   const [error, setError] = useState(token ? '' : 'Link de redefinição inválido. Solicite um novo.')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+
+  const confirmMatches = passwordsMatch(password, confirmPassword)
+  const showConfirmHint = confirmTouched && confirmPassword.length > 0
+  const confirmMismatch = confirmTouched && !confirmMatches
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
-    if (password !== confirmPassword) {
-      setError('As senhas não coincidem.')
+    const passwordError = validateNewPassword(password, confirmPassword)
+    if (passwordError) {
+      setConfirmTouched(true)
+      setError(passwordError)
       return
     }
 
@@ -53,33 +68,40 @@ export function ResetPassword() {
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-bold mb-2 text-text-secondary">Nova senha</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            className={AUTH_INPUT_CLASS}
-            placeholder="********"
+        <PasswordInput
+          id="reset-password"
+          label="Nova senha"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="new-password"
+          passwordrules={PASSWORD_RULES_ATTR}
+          describedBy="reset-password-rules"
+          required
+          minLength={8}
+          placeholder="********"
+        >
+          <PasswordRequirements id="reset-password-rules" password={password} />
+        </PasswordInput>
+        <PasswordInput
+          id="reset-password-confirm"
+          label="Confirmar nova senha"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          onBlur={() => setConfirmTouched(true)}
+          onInvalid={() => setConfirmTouched(true)}
+          autoComplete="new-password"
+          describedBy="reset-password-confirm-hint"
+          invalid={confirmMismatch}
+          customValidity={confirmPassword && !confirmMatches ? PASSWORD_MISMATCH_MESSAGE : ''}
+          required
+          placeholder="********"
+        >
+          <PasswordMatchHint
+            id="reset-password-confirm-hint"
+            show={showConfirmHint}
+            match={confirmMatches}
           />
-          <p className="mt-2 text-xs text-text-secondary">
-            Mínimo de 8 caracteres, com 1 letra maiúscula, 1 número e 1 símbolo.
-          </p>
-        </div>
-        <div>
-          <label className="block text-sm font-bold mb-2 text-text-secondary">Confirmar nova senha</label>
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={8}
-            className={AUTH_INPUT_CLASS}
-            placeholder="********"
-          />
-        </div>
+        </PasswordInput>
         <Button type="submit" className="w-full justify-center" disabled={loading || !token}>
           {loading ? 'Salvando...' : 'Redefinir senha'}
         </Button>

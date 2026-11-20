@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { useAuth } from '../context/AuthContext'
 import { AuthPageLayout, AUTH_INPUT_CLASS } from '../components/auth/AuthPageLayout'
 import { GoogleSignInButton } from '../components/auth/GoogleSignInButton'
+import { PasswordInput } from '../components/auth/PasswordInput'
 import { TurnstileWidget } from '../components/auth/TurnstileWidget'
 import { Button } from '../components/common/Button'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -98,9 +99,11 @@ export function Login() {
       ) : null}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-bold mb-2 text-text-secondary">Email</label>
+          <label htmlFor="login-email" className="block text-sm font-bold mb-2 text-text-secondary">Email</label>
           <input
+            id="login-email"
             type="email"
+            autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -108,23 +111,22 @@ export function Login() {
             placeholder="seu@email.com"
           />
         </div>
-        <div>
-          <label className="block text-sm font-bold mb-2 text-text-secondary">Senha</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            className={AUTH_INPUT_CLASS}
-            placeholder="********"
-          />
+        <PasswordInput
+          id="login-password"
+          label="Senha"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          required
+          minLength={8}
+          placeholder="********"
+        >
           <div className="mt-2 text-right">
             <Link to="/forgot-password" className="text-sm text-primary font-bold hover:underline">
               Esqueci minha senha
             </Link>
           </div>
-        </div>
+        </PasswordInput>
         <div>
           <label className="block text-sm font-bold mb-2 text-text-secondary">Verificacao de seguranca</label>
           <TurnstileWidget
